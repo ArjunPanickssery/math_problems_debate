@@ -1,11 +1,9 @@
 import random
 from typing import List
-
-from transformers import AutoModelForCausalLM, AutoTokenizer
+import dataclasses 
 
 from data import DatasetItem, load_data, save_to_json
 from model_wrappers import Llama2Wrapper, Llama3Wrapper, ModelWrapper
-from prompts import ARGUMENT_PROMPT, LETTERS
 
 LETTERS = ["A", "B"]
 
@@ -63,23 +61,25 @@ def run_debate(
 
         # Get judge confidence & blind-judge confidence
         judge_confidence = judge.get_judge_confidence(
-            dataset_item.question,
+            dataset_item,
             response_a,
             response_b,
+            is_answer_a_correct,
             [correct_letter, incorrect_letter],
         )
 
         blind_judge_confidence = judge.get_judge_confidence(
-            dataset_item.question,
+            dataset_item,
             None,
             None,
+            is_answer_a_correct,
             [correct_letter, incorrect_letter],
             is_judge_blind=True,
         )
 
         results.append(
             {
-                "item": dataset_item,
+                "item": dataclasses.asdict(dataset_item),
                 "a_debater": debater_a.model_id,
                 "b_debater": debater_b.model_id,
                 debater_a.model_id: response_a,
@@ -95,7 +95,7 @@ def run_debate(
 if __name__ == "__main__":
     train_data, test_data = load_data()
     debater_one = Llama2Wrapper("llama2_7b", "meta-llama/Llama-2-7b-chat-hf")
-    debater_two, judge = Llama3Wrapper(
+    debater_two = judge = Llama3Wrapper(
         "llama3_8b", "meta-llama/Meta-Llama-3-8B-Instruct"
     )
     run_debate(debater_one, debater_two, judge, train_data[:5], "results.json")

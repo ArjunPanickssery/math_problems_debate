@@ -8,7 +8,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 load_dotenv()
 HF_TOKEN = os.getenv("HF_TOKEN")
-
+MAX_LENGTH = 1024
 
 # Wrapper for both debaters and judges
 class ModelWrapper:
@@ -91,6 +91,7 @@ Which answer is correct - (A) {numeric_a} or (B) {numeric_b}?"""
         self.model = AutoModelForCausalLM.from_pretrained(
             model_name,
             device_map="auto",
+            token=HF_TOKEN,
             # torch_dtype=torch.bfloat16
         )
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -137,7 +138,7 @@ Which answer is correct - (A) {numeric_a} or (B) {numeric_b}?"""
                 response_b=response_b,
             )
         full_prompt = self._format_judge_prompt(unformatted_prompt)
-        input_ids = self.tokenizer.encode(full_prompt, return_tensors="pt")
+        input_ids = self.tokenizer.encode(full_prompt, return_tensors="pt").to(self.model.device)
         output = self.model(input_ids).logits[0, -1, :]
         probs = output.softmax(dim=0)
 
@@ -153,7 +154,7 @@ Which answer is correct - (A) {numeric_a} or (B) {numeric_b}?"""
         proof_a: str,
         proof_b: str,
     ):
-        unformatted_prompt = self.MAKE_ARGUMENT_PROMPT.format(
+        unformatted_prompt = self.DEBATER_PROMPT.format(
             question=question,
             justify_letter=justify_letter,
             justify_numeric=justify_numeric,
@@ -161,8 +162,8 @@ Which answer is correct - (A) {numeric_a} or (B) {numeric_b}?"""
             proof_b=proof_b,
         )
         full_prompt = self._format_debater_prompt(unformatted_prompt)
-        input_ids = self.tokenizer.encode(full_prompt, return_tensors="pt")
-        output = self.model.generate(input_ids, max_length=100)
+        input_ids = self.tokenizer.encode(full_prompt, return_tensors="pt").to(self.model.device)
+        output = self.model.generate(input_ids, max_length=MAX_LENGTH)
         decoded = self.tokenizer.decode(output[0], skip_special_tokens=True)
         response = self._extract_argument_from_response(decoded)
         return response
