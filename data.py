@@ -1,13 +1,15 @@
+import dataclasses
 import json
 import os
-from typing import TypedDict, List
-import dataclasses
 from dataclasses import dataclass
+from typing import List, TypedDict
+
 
 @dataclass
 class Answer:
     numeric: float
     proof: str
+
 
 @dataclass
 class DatasetItem:
@@ -16,7 +18,7 @@ class DatasetItem:
     answer_incorrect: Answer
 
 
-def save_to_json(dictionary, file_name):  
+def save_to_json(dictionary, file_name):
     # Create directory if not present
     directory = os.path.dirname(file_name)
     if directory != "" and not os.path.exists(directory):
@@ -32,19 +34,23 @@ def load_from_json(file_name) -> dict:
 
 
 def transform_to_dataset_item(data: List[dict]) -> List[DatasetItem]:
+    """Transforms a list of dicts into a list of DatasetItems"""
     return [
         DatasetItem(
             question=item["question"],
             answer_correct=Answer(
                 proof=item["answer_correct"]["proof"],
-                numeric=item["answer_correct"]["numeric"]
+                numeric=item["answer_correct"]["numeric"],
             ),
             answer_incorrect=Answer(
                 proof=item["answer_incorrect"]["proof"],
-                numeric=item["answer_incorrect"]["numeric"]
-            )
-        ) for item in data if type(item["answer_incorrect"]) == dict
+                numeric=item["answer_incorrect"]["numeric"],
+            ),
+        )
+        for item in data
+        if type(item["answer_incorrect"]) == dict
     ]
+
 
 def load_data() -> tuple[List[DatasetItem], List[DatasetItem]]:
     train_data_raw = load_from_json("data/train_data.json")

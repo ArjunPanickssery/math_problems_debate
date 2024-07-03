@@ -1,14 +1,15 @@
-from operator import is_
 import os
 from typing import List
-from data import DatasetItem
 
 from dotenv import load_dotenv
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
+from data import DatasetItem
+
 load_dotenv()
 HF_TOKEN = os.getenv("HF_TOKEN")
 MAX_LENGTH = 1024
+
 
 # Wrapper for both debaters and judges
 class ModelWrapper:
@@ -138,7 +139,9 @@ Which answer is correct - (A) {numeric_a} or (B) {numeric_b}?"""
                 response_b=response_b,
             )
         full_prompt = self._format_judge_prompt(unformatted_prompt)
-        input_ids = self.tokenizer.encode(full_prompt, return_tensors="pt").to(self.model.device)
+        input_ids = self.tokenizer.encode(full_prompt, return_tensors="pt").to(
+            self.model.device
+        )
         output = self.model(input_ids).logits[0, -1, :]
         probs = output.softmax(dim=0)
 
@@ -162,7 +165,9 @@ Which answer is correct - (A) {numeric_a} or (B) {numeric_b}?"""
             proof_b=proof_b,
         )
         full_prompt = self._format_debater_prompt(unformatted_prompt)
-        input_ids = self.tokenizer.encode(full_prompt, return_tensors="pt").to(self.model.device)
+        input_ids = self.tokenizer.encode(full_prompt, return_tensors="pt").to(
+            self.model.device
+        )
         output = self.model.generate(input_ids, max_length=MAX_LENGTH)
         decoded = self.tokenizer.decode(output[0], skip_special_tokens=True)
         response = self._extract_argument_from_response(decoded)
@@ -186,18 +191,19 @@ class WizardMathWrapper(HuggingFaceWrapper):
 
 # meta-llama/Llama-2-7b-chat-hf, etc
 class Llama2Wrapper(HuggingFaceWrapper):
-    WORDS_IN_MOUTH = "Sure, here's my response:\n\n"  # Start with a leading space
-    SYSTEM_PROMPT = "You're a skilled debater who argues about math problems."
+    WORDS_IN_MOUTH = "Sure, here's my response:\n\n"
+    DEBATER_SYSTEM_PROMPT = "You're a skilled debater who argues about math problems."
+    JUDGE_SYSTEM_PROMPT = "You're a judge who evaluates the correctness of math proofs."
 
     def _format_debater_prompt(self, unformatted_prompt: str):
         return f"""<s>[INST] <<SYS>>
-        {self.SYSTEM_PROMPT}
+        {self.DEBATER_SYSTEM_PROMPT}
         <</SYS>>
-        {unformatted_prompt} [/INST]{self.WORDS_IN_MOUTH}""".strip()
+        {unformatted_prompt} [/INST] {self.WORDS_IN_MOUTH}""".strip()
 
     def _format_judge_prompt(self, unformatted_prompt: str):
         return f"""<s>[INST] <<SYS>>
-        {self.SYSTEM_PROMPT}
+        {self.JUDGE_SYSTEM_PROMPT}
         <</SYS>>
         {unformatted_prompt} [/INST] (""".strip()
 
@@ -208,12 +214,13 @@ class Llama2Wrapper(HuggingFaceWrapper):
 # meta-llama/Meta-Llama-3-8B-Instruct, etc
 class Llama3Wrapper(HuggingFaceWrapper):
     WORDS_IN_MOUTH = "Sure, here's my response:\n\n"  # Start with a leading space
-    SYSTEM_PROMPT = "You're a skilled debater who argues about math problems."
+    DEBATER_SYSTEM_PROMPT = "You're a skilled debater who argues about math problems."
+    JUDGE_SYSTEM_PROMPT = "You're a judge who evaluates the correctness of math proofs."
 
     def _format_debater_prompt(self, unformatted_prompt: str):
         return f"""<|begin_of_text|><|start_header_id|>system<|end_header_id|>
 
-{self.SYSTEM_PROMPT}<|eot_id|><|start_header_id|>user<|end_header_id|>
+{self.DEBATER_SYSTEM_PROMPT}<|eot_id|><|start_header_id|>user<|end_header_id|>
 
 {unformatted_prompt}<|eot_id|><|start_header_id|>assistant<|end_header_id|>
 
@@ -222,7 +229,7 @@ class Llama3Wrapper(HuggingFaceWrapper):
     def _format_judge_prompt(self, unformatted_prompt: str):
         return f"""<|begin_of_text|><|start_header_id|>system<|end_header_id|>
 
-{self.SYSTEM_PROMPT}<|eot_id|><|start_header_id|>user<|end_header_id|>
+{self.JUDGE_SYSTEM_PROMPT}<|eot_id|><|start_header_id|>user<|end_header_id|>
 
 {unformatted_prompt}<|eot_id|><|start_header_id|>assistant<|end_header_id|>
 

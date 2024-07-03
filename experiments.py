@@ -1,6 +1,8 @@
+import dataclasses
 import random
 from typing import List
-import dataclasses 
+
+from tqdm import tqdm
 
 from data import DatasetItem, load_data, save_to_json
 from model_wrappers import Llama2Wrapper, Llama3Wrapper, ModelWrapper
@@ -13,10 +15,10 @@ def run_debate(
     debater_two: ModelWrapper,
     judge: ModelWrapper,
     dataset: List[DatasetItem],
-    output_file: str,
+    output_path: str,
 ):
     results = []
-    for dataset_item in dataset:
+    for dataset_item in tqdm(dataset):
         # Randomize the a/b order of the proofs so that the judge doesn't learn to always pick the first one
         proof_a, proof_b = (
             dataset_item.answer_correct.proof,
@@ -88,8 +90,7 @@ def run_debate(
                 "judge_confidence": judge_confidence,
             }
         )
-        save_to_json(results, output_file)
-        print(results[-1])
+        save_to_json(results, output_path)
 
 
 if __name__ == "__main__":
