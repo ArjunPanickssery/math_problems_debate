@@ -40,25 +40,25 @@ def run_debate(
         # Get arguments
         response_a = debater_a.get_debater_argument(
             dataset_item.question,
-            proof_a,
-            proof_b,
             LETTERS[0],
             (
                 dataset_item.answer_correct.numeric
                 if is_answer_a_correct
                 else dataset_item.answer_incorrect.numeric
             ),
+            proof_a,
+            proof_b,
         )
         response_b = debater_b.get_debater_argument(
             dataset_item.question,
-            proof_a,
-            proof_b,
             LETTERS[1],
             (
                 dataset_item.answer_incorrect.numeric
                 if is_answer_a_correct
                 else dataset_item.answer_correct.numeric
             ),
+            proof_a,
+            proof_b,
         )
 
         # Get judge confidence & blind-judge confidence
