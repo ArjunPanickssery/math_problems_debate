@@ -13,42 +13,6 @@ MAX_LENGTH = 1024
 
 # Wrapper for both debaters and judges
 class ModelWrapper:
-    def __init__(self, model_id: str, model_name):
-        """
-        Initializes the LLM debater with the specified model.
-
-        Args:
-            model_id (str): A short identifier for the model ("llama2_7b")
-            model_name (str): The name of the model to load from HF/API
-        """
-        self.model_id = model_id
-        self.model_name = model_name
-
-    # For judges
-    def get_judge_confidence(
-        self,
-        item: DatasetItem,
-        response_a: str,
-        response_b: str,
-        is_a_correct: bool,
-        letters: List[str],
-        is_judge_blind=False,
-    ) -> float:
-        raise NotImplementedError
-
-    # For debaters
-    def get_debater_argument(
-        self,
-        question: str,
-        justify_letter: str,
-        justify_numeric: int,
-        proof_a: str,
-        proof_b: str,
-    ) -> str:
-        raise NotImplementedError
-
-
-class HuggingFaceWrapper(ModelWrapper):
     DEBATER_PROMPT = """Below are two proofs that claim to solve the following question: {question}
 
 Argue that proof ({justify_letter}) for answer {justify_numeric} is correct and the other proof is incorrect.
@@ -86,26 +50,18 @@ Numeric answer: {numeric_b}
 Proof: {proof_b}
 
 Which answer is correct - (A) {numeric_a} or (B) {numeric_b}?"""
-
     def __init__(self, model_id: str, model_name: str):
-        super().__init__(model_id, model_name)
-        self.model = AutoModelForCausalLM.from_pretrained(
-            model_name,
-            device_map="auto",
-            token=HF_TOKEN,
-            # torch_dtype=torch.bfloat16
-        )
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        """
+        Initializes the LLM debater with the specified model.
 
-    def _format_debater_prompt(self, unformatted_prompt: str):
-        raise NotImplementedError
+        Args:
+            model_id (str): A short identifier for the model ("llama2_7b")
+            model_name (str): The name of the model to load from HF/API
+        """
+        self.model_id = model_id
+        self.model_name = model_name
 
-    def _format_judge_prompt(self, unformatted_prompt: str) -> str:
-        raise NotImplementedError
-
-    def _extract_argument_from_response(self, response: str) -> str:
-        raise NotImplementedError
-
+    # For judges
     def get_judge_confidence(
         self,
         item: DatasetItem,
@@ -114,7 +70,7 @@ Which answer is correct - (A) {numeric_a} or (B) {numeric_b}?"""
         is_a_correct: bool,
         letters: List[str],
         is_judge_blind=False,
-    ):
+    ) -> float:
         if is_a_correct:
             answer_a, answer_b = item.answer_correct, item.answer_incorrect
         else:
@@ -139,6 +95,64 @@ Which answer is correct - (A) {numeric_a} or (B) {numeric_b}?"""
                 response_b=response_b,
             )
         full_prompt = self._format_judge_prompt(unformatted_prompt)
+        return self.model.get_judge_confidence_from_prompt(full_prompt, letters)
+    
+    # For debaters
+    def get_debater_argument(
+        self,
+        question: str,
+        justify_letter: str,
+        justify_numeric: int,
+        proof_a: str,
+        proof_b: str,
+    ) -> str:
+        unformatted_prompt = self.DEBATER_PROMPT.format(
+            question=question,
+            justify_letter=justify_letter,
+            justify_numeric=justify_numeric,
+            proof_a=proof_a,
+            proof_b=proof_b,
+        )
+        full_prompt = self._format_debater_prompt(unformatted_prompt)
+        response = self.model.get_debater_argument_from_prompt(full_prompt)
+        return self._extract_argument_from_response(response)
+
+
+
+class DebateFactory(ModelWrapper):
+    def __init__(self, *args, **kwargs):
+        raise NotImplementedError
+
+    @classmethod
+    def from_hf(cls, model_id: str, model_name: str):
+        model = HuggingFaceWrapper(model_name)
+        instance = cls(model_id, model_name)
+        instance.model = model
+        return instance
+    
+    @classmethod
+    def from_openai(cls, model_id: str, model_name: str, server_ip: str, api_key=None):
+        model = OpenAIWrapper(model_name, server_ip, api_key)
+        instance = cls(model_id, model_name)
+        instance.model = model
+        return instance
+
+
+class HuggingFaceWrapper:
+    def __init__(self, model_name: str):
+        self.model = AutoModelForCausalLM.from_pretrained(
+            model_name,
+            device_map="auto",
+            token=HF_TOKEN,
+            # torch_dtype=torch.bfloat16
+        )
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+
+    def get_judge_confidence_from_prompt(
+        self,
+        full_prompt: str,
+        letters: List[str],
+    ):
         input_ids = self.tokenizer.encode(full_prompt, return_tensors="pt").to(
             self.model.device
         )
@@ -149,32 +163,57 @@ Which answer is correct - (A) {numeric_a} or (B) {numeric_b}?"""
         incorrect_answer_prob = probs[self.tokenizer.encode(letters[1])[-1]].item()
         return correct_answer_prob / (correct_answer_prob + incorrect_answer_prob)
 
-    def get_debater_argument(
+    def get_debater_argument_from_prompt(
         self,
-        question: str,
-        justify_letter: str,
-        justify_numeric: int,
-        proof_a: str,
-        proof_b: str,
+        full_prompt: str,
     ):
-        unformatted_prompt = self.DEBATER_PROMPT.format(
-            question=question,
-            justify_letter=justify_letter,
-            justify_numeric=justify_numeric,
-            proof_a=proof_a,
-            proof_b=proof_b,
-        )
-        full_prompt = self._format_debater_prompt(unformatted_prompt)
         input_ids = self.tokenizer.encode(full_prompt, return_tensors="pt").to(
             self.model.device
         )
         output = self.model.generate(input_ids, max_length=MAX_LENGTH)
         decoded = self.tokenizer.decode(output[0], skip_special_tokens=True)
-        response = self._extract_argument_from_response(decoded)
-        return response
+        return decoded
+    
+
+class OpenAIWrapper:
+    def __init__(self, model_name: str, server_ip: str, api_key):
+        from openai import OpenAI
+        self.model_name = model_name
+        self.server_ip = server_ip
+        if api_key is None:
+            api_key = os.getenv("OPENAI_API_KEY")
+        self.client = OpenAI(base_url=server_ip, api_key=api_key)
+
+    def get_judge_confidence_from_prompt(
+        self,
+        full_prompt: str,
+        letters: List[str],
+    ) -> float:
+        resp = self.client.completions.create(
+            model=self.model_name,
+            prompt=full_prompt,
+            max_tokens=1,
+            logprobs=5,
+        )
+        probs = resp.choices[0].logprobs.top_logprobs
+        correct_answer_prob = probs.get(letters[0], 0)
+        incorrect_answer_prob = probs.get(letters[1], 0)
+        return correct_answer_prob / (correct_answer_prob + incorrect_answer_prob)
 
 
-class WizardMathWrapper(HuggingFaceWrapper):
+    def get_debater_argument_from_prompt(
+        self,
+        full_prompt: str,
+    ) -> str:
+        resp = self.client.completions.create(
+            model=self.model_name,
+            prompt=full_prompt,
+            max_tokens=MAX_LENGTH,
+        )
+        return resp.choices[0].text
+
+
+class WizardMathWrapper(DebateFactory):
     def _format_debater_prompt(self, unformatted_prompt: str):
         """
         This comes from Huggingface
@@ -190,7 +229,7 @@ class WizardMathWrapper(HuggingFaceWrapper):
 
 
 # meta-llama/Llama-2-7b-chat-hf, etc
-class Llama2Wrapper(HuggingFaceWrapper):
+class Llama2Wrapper(DebateFactory):
     WORDS_IN_MOUTH = "Sure, here's my response:\n\n"
     DEBATER_SYSTEM_PROMPT = "You're a skilled debater who argues about math problems."
     JUDGE_SYSTEM_PROMPT = "You're a judge who evaluates the correctness of math proofs."
@@ -212,7 +251,7 @@ class Llama2Wrapper(HuggingFaceWrapper):
 
 
 # meta-llama/Meta-Llama-3-8B-Instruct, etc
-class Llama3Wrapper(HuggingFaceWrapper):
+class Llama3Wrapper(DebateFactory):
     WORDS_IN_MOUTH = "Sure, here's my response:\n\n"  # Start with a leading space
     DEBATER_SYSTEM_PROMPT = "You're a skilled debater who argues about math problems."
     JUDGE_SYSTEM_PROMPT = "You're a judge who evaluates the correctness of math proofs."
@@ -240,7 +279,7 @@ class Llama3Wrapper(HuggingFaceWrapper):
 
 
 # google/gemma-2-9b, google/gemma-2-27b
-class Gemma2Wrapper(HuggingFaceWrapper):
+class Gemma2Wrapper(DebateFactory):
     WORDS_IN_MOUTH = "Sure, here's my response:"  # Start with a leading space
 
     def _format_debater_prompt(self, unformatted_prompt: str):

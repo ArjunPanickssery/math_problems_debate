@@ -37,6 +37,7 @@ def run_debate(
         if random.random() > 0.5:
             debater_a, debater_b = debater_two, debater_one
 
+
         # Get arguments
         response_a = debater_a.get_debater_argument(
             dataset_item.question,
