@@ -120,32 +120,33 @@ Which answer is correct - (A) {numeric_a} or (B) {numeric_b}?"""
 
 
 class DebateFactory(ModelWrapper):
-    def __init__(self, *args, **kwargs):
-        raise NotImplementedError
-
     @classmethod
-    def from_hf(cls, model_id: str, model_name: str):
-        model = HuggingFaceWrapper(model_name)
+    def from_hf(cls, model_id: str, model_name: str, **kwargs):
         instance = cls(model_id, model_name)
+        model = HuggingFaceWrapper(model_name, **kwargs)
         instance.model = model
         return instance
     
     @classmethod
     def from_openai(cls, model_id: str, model_name: str, server_ip: str, api_key=None):
-        model = OpenAIWrapper(model_name, server_ip, api_key)
         instance = cls(model_id, model_name)
+        model = OpenAIWrapper(model_name, server_ip, api_key)
         instance.model = model
         return instance
 
 
 class HuggingFaceWrapper:
-    def __init__(self, model_name: str):
+    def __init__(self, model_name: str, **kwargs):
+        import torch
         self.model = AutoModelForCausalLM.from_pretrained(
             model_name,
-            device_map="auto",
+            device_map="cuda",
             token=HF_TOKEN,
-            # torch_dtype=torch.bfloat16
+            # torch_dtype=torch.bfloat16,
+            **kwargs,
         )
+        # self.model.generation_config.cache_implementation = 'static'
+        self.model = torch.compile(self.model, mode='reduce-overhead', fullgraph=True)
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
 
     def get_judge_confidence_from_prompt(
@@ -156,7 +157,8 @@ class HuggingFaceWrapper:
         input_ids = self.tokenizer.encode(full_prompt, return_tensors="pt").to(
             self.model.device
         )
-        output = self.model(input_ids).logits[0, -1, :]
+        output = self.model.generate(input_ids, max_new_tokens=1, output_scores=True, 
+                                     return_dict_in_generate=True, temperature=1.0)['scores'][0][0]
         probs = output.softmax(dim=0)
 
         correct_answer_prob = probs[self.tokenizer.encode(letters[0])[-1]].item()
