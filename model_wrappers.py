@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from data import DatasetItem
+from cache import Cache, Argument
 
 load_dotenv()
 HF_TOKEN = os.getenv("HF_TOKEN")
@@ -39,11 +40,8 @@ class ModelWrapper:
     # For debaters
     def get_debater_argument(
         self,
-        question: str,
-        justify_letter: str,
-        justify_numeric: int,
-        proof_a: str,
-        proof_b: str,
+        argument: Argument,
+        cache: Cache
     ) -> str:
         raise NotImplementedError
 
@@ -151,18 +149,17 @@ Which answer is correct - (A) {numeric_a} or (B) {numeric_b}?"""
 
     def get_debater_argument(
         self,
-        question: str,
-        justify_letter: str,
-        justify_numeric: int,
-        proof_a: str,
-        proof_b: str,
-    ):
+        argument: Argument,
+        cache: Cache
+    ) -> str:
+        if cache[argument] is not None:
+            return response
         unformatted_prompt = self.DEBATER_PROMPT.format(
-            question=question,
-            justify_letter=justify_letter,
-            justify_numeric=justify_numeric,
-            proof_a=proof_a,
-            proof_b=proof_b,
+            question=argument.question,
+            justify_letter=argument.justify_letter,
+            justify_numeric=argument.justify_numeric,
+            proof_a=argument.proof_a,
+            proof_b=argument.proof_b,
         )
         full_prompt = self._format_debater_prompt(unformatted_prompt)
         input_ids = self.tokenizer.encode(full_prompt, return_tensors="pt").to(
@@ -171,6 +168,8 @@ Which answer is correct - (A) {numeric_a} or (B) {numeric_b}?"""
         output = self.model.generate(input_ids, max_length=MAX_LENGTH)
         decoded = self.tokenizer.decode(output[0], skip_special_tokens=True)
         response = self._extract_argument_from_response(decoded)
+        cache[argument] = response
+        cache.save()
         return response
 
 

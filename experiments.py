@@ -6,6 +6,7 @@ from tqdm import tqdm
 
 from data import DatasetItem, load_data, save_to_json
 from model_wrappers import Llama2Wrapper, Llama3Wrapper, ModelWrapper
+from cache import Cache, Argument
 
 LETTERS = ["A", "B"]
 
@@ -16,7 +17,9 @@ def run_debate(
     judge: ModelWrapper,
     dataset: List[DatasetItem],
     output_path: str,
+    cache_path: str
 ):
+    cache = Cache(cache_path)
     results = []
     for dataset_item in tqdm(dataset):
         # Randomize the a/b order of the proofs so that the judge doesn't learn to always pick the first one
@@ -37,29 +40,32 @@ def run_debate(
         if random.random() > 0.5:
             debater_a, debater_b = debater_two, debater_one
 
+        argument_a = Argument(debater_a.model_id, 
+                              dataset_item.question, 
+                              LETTERS[0], 
+                              (
+                                  dataset_item.answer_correct.numeric
+                                  if is_answer_a_correct
+                                  else dataset_item.answer_incorrect.numeric
+                              ),
+                              proof_a,
+                              proof_b)
+        
+        argument_b = Argument(debater_b.model_id,
+                              dataset_item.question,
+                              LETTERS[1],
+                              (
+                                  dataset_item.answer_incorrect.numeric
+                                  if is_answer_a_correct
+                                  else dataset_item.answer_correct.numeric
+                              ),
+                              proof_a,
+                              proof_b)
+
+
         # Get arguments
-        response_a = debater_a.get_debater_argument(
-            dataset_item.question,
-            LETTERS[0],
-            (
-                dataset_item.answer_correct.numeric
-                if is_answer_a_correct
-                else dataset_item.answer_incorrect.numeric
-            ),
-            proof_a,
-            proof_b,
-        )
-        response_b = debater_b.get_debater_argument(
-            dataset_item.question,
-            LETTERS[1],
-            (
-                dataset_item.answer_incorrect.numeric
-                if is_answer_a_correct
-                else dataset_item.answer_correct.numeric
-            ),
-            proof_a,
-            proof_b,
-        )
+        response_a = debater_a.get_debater_argument(argument_a, cache)
+        response_b = debater_b.get_debater_argument(argument_b, cache)
 
         # Get judge confidence & blind-judge confidence
         judge_confidence = judge.get_judge_confidence(

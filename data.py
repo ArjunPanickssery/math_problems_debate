@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import List, TypedDict
 
 
-@dataclass
+@dataclass(frozen=True)
 class Answer:
     numeric: float
     proof: str
