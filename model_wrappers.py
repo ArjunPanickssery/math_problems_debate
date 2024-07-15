@@ -179,9 +179,15 @@ class HuggingFaceWrapper:
         letters: List[str],
         use_chat_completions=False,
     ):
-        input_ids = self.tokenizer.encode(full_prompt, return_tensors="pt").to(
-            self.model.device
-        )
+        if use_chat_completions:
+            input_ids = self.tokenizer.apply_chat_template([{ "role": "system", "content": self.JUDGE_SYSTEM_PROMPT },
+                                                            { "role": "user", "content": full_prompt}], 
+                                                            return_tensors="pt")
+            letters = [f'({let}' for let in letters]  # add "(" to match model, which will output (A) or (B)
+        else:
+            input_ids = self.tokenizer.encode(full_prompt, return_tensors="pt").to(
+                self.model.device
+            )
         output = self.model.generate(input_ids, max_new_tokens=1, output_scores=True, 
                                      return_dict_in_generate=True, temperature=1.0)['scores'][0][0]
         probs = output.softmax(dim=0)
@@ -193,10 +199,19 @@ class HuggingFaceWrapper:
     def get_debater_argument_from_prompt(
         self,
         full_prompt: str,
+        use_chat_completions=False,
     ):
-        input_ids = self.tokenizer.encode(full_prompt, return_tensors="pt").to(
-            self.model.device
-        )
+        if use_chat_completions:
+            begin_prompt = f" Begin your response with {self.WORDS_IN_MOUTH}." if hasattr(self, "WORDS_IN_MOUTH") else ""
+            input_ids = self.tokenizer.apply_chat_template([{ "role": "system", "content": self.DEBATER_SYSTEM_PROMPT },
+                                                            { "role": "user", "content": full_prompt + begin_prompt}], 
+                                                            return_tensors="pt").to(self.model.device)
+        else:
+            input_ids = self.tokenizer.encode(full_prompt, return_tensors="pt").to(
+                self.model.device
+            )
+
+
         output = self.model.generate(input_ids, max_length=MAX_LENGTH)
         decoded = self.tokenizer.decode(output[0], skip_special_tokens=True)
         return decoded
@@ -269,11 +284,12 @@ class OpenAIWrapper:
         # Using chat completions API disallows WORDS_IN_MOUTH, but makes function calling easier, and 
         # we don't have to worry about custom formatting of prompts between models
         if use_chat_completions:
+            begin_prompt = f" Begin your response with {self.WORDS_IN_MOUTH}." if hasattr(self, "WORDS_IN_MOUTH") else ""
             resp = self.client.chat.completions.create(
                 model=self.model_name,
                 messages=[
                     {"role": "system", "content": self.DEBATER_SYSTEM_PROMPT},
-                    {"role": "user", "content": full_prompt + f" Begin your response with {self.WORDS_IN_MOUTH}"},
+                    {"role": "user", "content": full_prompt + begin_prompt},
                 ],
                 max_tokens=MAX_LENGTH,
             )
@@ -330,6 +346,7 @@ class Llama3Wrapper(DebateFactory):
     WORDS_IN_MOUTH = "Sure, here's my response:\n\n"  # Start with a leading space
     DEBATER_SYSTEM_PROMPT = "You're a skilled debater who argues about math problems."
     JUDGE_SYSTEM_PROMPT = "You're a judge who evaluates the correctness of math proofs."
+    # PREFER_CHAT_COMPLETIONS = True
 
     def _format_debater_prompt(self, unformatted_prompt: str):
         return f"""<|begin_of_text|><|start_header_id|>system<|end_header_id|>
