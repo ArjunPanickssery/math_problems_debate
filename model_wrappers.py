@@ -1,5 +1,6 @@
 import os
-from typing import List
+from typing import List, Union
+import math
 
 from dotenv import load_dotenv
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -70,6 +71,7 @@ Which answer is correct - (A) {numeric_a} or (B) {numeric_b}?"""
         is_a_correct: bool,
         letters: List[str],
         is_judge_blind=False,
+        use_chat_completions=None,
     ) -> float:
         if is_a_correct:
             answer_a, answer_b = item.answer_correct, item.answer_incorrect
@@ -94,8 +96,15 @@ Which answer is correct - (A) {numeric_a} or (B) {numeric_b}?"""
                 proof_b=answer_b.proof,
                 response_b=response_b,
             )
-        full_prompt = self._format_judge_prompt(unformatted_prompt)
-        return self.model.get_judge_confidence_from_prompt(full_prompt, letters)
+        if use_chat_completions is None:
+            use_chat_completions = hasattr(self, "PREFER_CHAT_COMPLETIONS") and self.PREFER_CHAT_COMPLETIONS
+
+        if use_chat_completions:
+            return self.model.get_judge_confidence_from_prompt(unformatted_prompt, letters,
+                                                                use_chat_completions=True)
+        else:
+            full_prompt = self._format_judge_prompt(unformatted_prompt)
+            return self.model.get_judge_confidence_from_prompt(full_prompt, letters)
     
     # For debaters
     def get_debater_argument(
@@ -105,6 +114,7 @@ Which answer is correct - (A) {numeric_a} or (B) {numeric_b}?"""
         justify_numeric: int,
         proof_a: str,
         proof_b: str,
+        use_chat_completions:Union[bool, None] = None,  # if None, use self.PREFER_CHAT_COMPLETIONS (which defaults to False if not provided in wrapper definition)
     ) -> str:
         unformatted_prompt = self.DEBATER_PROMPT.format(
             question=question,
@@ -113,8 +123,15 @@ Which answer is correct - (A) {numeric_a} or (B) {numeric_b}?"""
             proof_a=proof_a,
             proof_b=proof_b,
         )
-        full_prompt = self._format_debater_prompt(unformatted_prompt)
-        response = self.model.get_debater_argument_from_prompt(full_prompt)
+        if use_chat_completions is None:
+            use_chat_completions = hasattr(self, "PREFER_CHAT_COMPLETIONS") and self.PREFER_CHAT_COMPLETIONS
+
+        if use_chat_completions:
+            response = self.model.get_debater_argument_from_prompt(unformatted_prompt, use_chat_completions=True)
+        else:
+            full_prompt = self._format_debater_prompt(unformatted_prompt)
+            response = self.model.get_debater_argument_from_prompt(full_prompt)
+        print(response)
         return self._extract_argument_from_response(response)
 
 
@@ -125,6 +142,7 @@ class DebateFactory(ModelWrapper):
         instance = cls(model_id, model_name)
         model = HuggingFaceWrapper(model_name, **kwargs)
         instance.model = model
+        instance.migrate_prompts(model)
         return instance
     
     @classmethod
@@ -132,7 +150,13 @@ class DebateFactory(ModelWrapper):
         instance = cls(model_id, model_name)
         model = OpenAIWrapper(model_name, server_ip, api_key)
         instance.model = model
+        instance.migrate_prompts(model)
         return instance
+    
+    def migrate_prompts(self, model: Union['OpenAIWrapper'', HuggingFaceWrapper']):
+        for val in ["DEBATER_SYSTEM_PROMPT", "JUDGE_SYSTEM_PROMPT", "WORDS_IN_MOUTH", "PREFER_CHAT_COMPLETIONS"]:
+            if hasattr(self, val):
+                setattr(model, val, getattr(self, val))
 
 
 class HuggingFaceWrapper:
@@ -153,6 +177,7 @@ class HuggingFaceWrapper:
         self,
         full_prompt: str,
         letters: List[str],
+        use_chat_completions=False,
     ):
         input_ids = self.tokenizer.encode(full_prompt, return_tensors="pt").to(
             self.model.device
@@ -190,23 +215,71 @@ class OpenAIWrapper:
         self,
         full_prompt: str,
         letters: List[str],
+        use_chat_completions=False,
     ) -> float:
-        resp = self.client.completions.create(
-            model=self.model_name,
-            prompt=full_prompt,
-            max_tokens=1,
-            logprobs=5,
-        )
-        probs = resp.choices[0].logprobs.top_logprobs
-        correct_answer_prob = probs.get(letters[0], 0)
-        incorrect_answer_prob = probs.get(letters[1], 0)
+        if use_chat_completions:
+            resp = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=[
+                    {"role": "system", "content": self.JUDGE_SYSTEM_PROMPT},
+                    {"role": "user", "content": full_prompt},
+                ],
+                max_tokens=1,
+                logprobs=True,
+                top_logprobs=20,
+                temperature=0.0
+            )
+            probs = resp.choices[0].logprobs.content[0].top_logprobs
+        else:
+            resp = self.client.completions.create(
+                model=self.model_name,
+                prompt=full_prompt,
+                max_tokens=1,
+                logprobs=5,
+                temperature=0.0
+            )
+            probs = resp.choices[0].logprobs.top_logprobs
+
+        found_correct = found_incorrect = False
+        letters = [f'({let}' for let in letters]  # add "(" to match model, which will output (A) or (B)
+        for entry in probs:
+            if isinstance(entry, str):
+                tok = entry
+                logprob = probs[entry]
+            else:
+                tok, logprob = entry.token, entry.logprob
+            if tok == letters[0]:
+                found_correct = True
+                correct_answer_prob = math.exp(logprob)
+            elif tok == letters[1]:
+                found_incorrect = True
+                incorrect_answer_prob = math.exp(logprob)
+        # if either answer was not in the top 20 logprobs, throw an error
+        assert found_correct and found_incorrect, "Correct or incorrect answer not found in logprobs"
+
+        # don't need the full softmax, since we care about the relative probability
         return correct_answer_prob / (correct_answer_prob + incorrect_answer_prob)
 
 
     def get_debater_argument_from_prompt(
         self,
         full_prompt: str,
+        use_chat_completions=False,
     ) -> str:
+        # Using chat completions API disallows WORDS_IN_MOUTH, but makes function calling easier, and 
+        # we don't have to worry about custom formatting of prompts between models
+        if use_chat_completions:
+            resp = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=[
+                    {"role": "system", "content": self.DEBATER_SYSTEM_PROMPT},
+                    {"role": "user", "content": full_prompt + f" Begin your response with {self.WORDS_IN_MOUTH}"},
+                ],
+                max_tokens=MAX_LENGTH,
+            )
+            return resp.choices[0].message.content
+
+        # Using completions API gets us more fine-grained control, but at the cost of more complex prompt formatting
         resp = self.client.completions.create(
             model=self.model_name,
             prompt=full_prompt,
@@ -289,6 +362,16 @@ class Gemma2Wrapper(DebateFactory):
 
     def _format_judge_prompt(self, unformatted_prompt: str):
         return f"""<start_of_turn>user\n{unformatted_prompt}<end_of_turn>\n<start_of_turn>model\n("""
+
+    def _extract_argument_from_response(self, response: str) -> str:
+        return response.split("response:")[1].strip()
+    
+
+class GPT3_5Wrapper(DebateFactory):
+    DEBATER_SYSTEM_PROMPT = "You're a skilled debater who argues about math problems."
+    JUDGE_SYSTEM_PROMPT = "You're a judge who evaluates the correctness of math proofs."
+    WORDS_IN_MOUTH = "Sure, here's my response:\n\n"
+    PREFER_CHAT_COMPLETIONS = True
 
     def _extract_argument_from_response(self, response: str) -> str:
         return response.split("response:")[1].strip()
