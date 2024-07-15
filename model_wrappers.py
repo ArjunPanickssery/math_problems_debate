@@ -153,7 +153,7 @@ Which answer is correct - (A) {numeric_a} or (B) {numeric_b}?"""
         cache: Cache
     ) -> str:
         if cache[argument] is not None:
-            return response
+            return cache[argument]
         unformatted_prompt = self.DEBATER_PROMPT.format(
             question=argument.question,
             justify_letter=argument.justify_letter,
