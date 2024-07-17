@@ -96,7 +96,7 @@ class Judge:
 
     @dataclass
     class TranscriptItem:
-        probabilities: list[float]
+        probabilities: dict[str, float]
 
         def __str__(self):
             return f"## JUDGE PROBABILITY ESTIMATES:\n{self.probabilities}"
@@ -185,7 +185,7 @@ class EndowedJudge:
     def run(self, question: str, possible_answers: list) -> Transcript:
         raise NotImplementedError
 
-    def __call__(self, question: str, possible_answers: list) -> list[float]:
+    def __call__(self, question: str, possible_answers: list) -> dict[str, float]:
         transcript = self.run(question, possible_answers)
         return transcript.judgement.probabilities
 
@@ -235,7 +235,9 @@ class Debate(EndowedJudge):
 
     def end_communication(self, transcript: Transcript) -> bool:
         """Default end_communication method: return True when each possible answer
-        has been argued for at least self.num_turns times. Override in subclass."""
+        has been argued for at least self.num_turns times. Override in subclass.
+        Can also be generalized to a host function that e.g. decides which debater
+        goes next etc."""
         return all(
             sum(item.answer == answer for item in transcript.debate_arguments)
             >= self.num_turns

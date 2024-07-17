@@ -27,6 +27,7 @@ from anthropic import AsyncAnthropic, Anthropic
 from huggingface_hub import snapshot_download
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 import transformers
+import math
 
 
 def get_async_openai_client() -> AsyncOpenAI:
@@ -159,50 +160,86 @@ def _mistral_message_transform(messages):
         mistral_messages.append(mistral_message)
     return mistral_messages
 
+def prepare_messages(prompt: str) -> list[dict[str, str]]:
+    return [
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": prompt},
+    ]
 
-async def query_api_chat(
-    messages: list[dict[str, str]],
+async def get_llm_response_async(
+    prompt: str | list[dict[str, str]],
     verbose=False,
     model: str | None = None,
+    return_probs_for:list[str] | None=None,
+    max_tokens:int | None=None,
     **kwargs,
-) -> str:
+) -> str | dict[str, float]:
+    """
+    Get LLM response to a prompt.
+    
+    Args:
+        prompt: str | list[dict[str, str]]: Prompt to send to the LLM.
+        verbose: bool: Whether to print the prompt and response.
+        model: str | None: Model to use for the LLM. Defaults to "gpt-4o-2024-05-13".
+        return_probs_for: list[str] | None: List of tokens to return relative probabilities for.
+            If None, simply returns the text response.
+        max_tokens: int | None: Maximum number of tokens to generate.    
+    """
+    
     default_options = {
         "model": "gpt-4o-2024-05-13",
     }
     options = default_options | kwargs
     options["model"] = model or options["model"]
-
+    if isinstance(prompt, str):
+        prompt = prepare_messages(prompt)
+    
     client, client_name = get_client(options["model"], use_async=True)
     call_messages = (
-        _mistral_message_transform(messages) if client_name == "mistral" else messages
+        _mistral_message_transform(prompt) if client_name == "mistral" else prompt
     )
 
     print(
         options,
-        f"Approx num tokens: {len(''.join([m['content'] for m in messages])) // 3}",
+        f"Approx num tokens: {len(''.join([m['content'] for m in prompt])) // 3}",
     )
     if client_name == "mistral" and not os.getenv("USE_OPENROUTER"):
         response = await client.chat(
             messages=call_messages,
+            max_tokens=max_tokens,
             **options,
         )
     else:
         response = await client.chat.completions.create(
             messages=call_messages,
+            max_tokens=max_tokens,
             **options,
         )
 
     text_response = response.choices[0].message.content
 
     if verbose or os.getenv("VERBOSE") == "True":
-        print(f"...\nText: {messages[-1]['content']}\nResponse: {text_response}\n")
+        print(f"...\nText: {prompt[-1]['content']}\nResponse: {text_response}\n")
 
+    if return_probs_for:
+        all_logprobs = response.choices[0].logprobs.content[0].top_logprobs
+        all_logprobs_dict = {x.token: x.logprob for x in all_logprobs}
+        probs = {token: 0 for token in return_probs_for}
+        for token, prob in all_logprobs_dict.items():
+            if token in probs:
+                probs[token] = math.exp(prob)
+        total_prob = sum(probs.values())
+        probs_relative = {token: prob / total_prob for token, prob in probs.items()}
+        return probs_relative
+    
     return text_response
 
-async def query_api_chat(
-    messages: list[dict[str, str]],
+def get_llm_response(
+    prompt: str | list[dict[str, str]],
     verbose=False,
     model: str | None = None,
+    return_probs_for:list[str] | None=None,
+    max_tokens:int | None=None,
     **kwargs,
 ) -> str:
     default_options = {
@@ -211,29 +248,45 @@ async def query_api_chat(
     options = default_options | kwargs
     options["model"] = model or options["model"]
 
-    client, client_name = get_client(options["model"], use_async=True)
+    if isinstance(prompt, str):
+        prompt = prepare_messages(prompt)
+
+    client, client_name = get_client(options["model"], use_async=False)
     call_messages = (
-        _mistral_message_transform(messages) if client_name == "mistral" else messages
+        _mistral_message_transform(prompt) if client_name == "mistral" else prompt
     )
 
     print(
         options,
-        f"Approx num tokens: {len(''.join([m['content'] for m in messages])) // 3}",
+        f"Approx num tokens: {len(''.join([m['content'] for m in prompt])) // 3}",
     )
     if client_name == "mistral" and not os.getenv("USE_OPENROUTER"):
-        response = await client.chat(
+        response = client.chat(
             messages=call_messages,
+            max_tokens=max_tokens,
             **options,
         )
     else:
-        response = await client.chat.completions.create(
+        response = client.chat.completions.create(
             messages=call_messages,
+            max_tokens=max_tokens,
             **options,
         )
 
     text_response = response.choices[0].message.content
 
     if verbose or os.getenv("VERBOSE") == "True":
-        print(f"...\nText: {messages[-1]['content']}\nResponse: {text_response}\n")
+        print(f"...\nText: {prompt[-1]['content']}\nResponse: {text_response}\n")
 
+    if return_probs_for:
+        all_logprobs = response.choices[0].logprobs.content[0].top_logprobs
+        all_logprobs_dict = {x.token: x.logprob for x in all_logprobs}
+        probs = {token: 0 for token in return_probs_for}
+        for token, prob in all_logprobs_dict.items():
+            if token in probs:
+                probs[token] = math.exp(prob)
+        total_prob = sum(probs.values())
+        probs_relative = {token: prob / total_prob for token, prob in probs.items()}
+        return probs_relative
+    
     return text_response
