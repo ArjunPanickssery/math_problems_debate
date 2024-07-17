@@ -2,6 +2,7 @@ from typing import Self, Any
 from dataclasses import dataclass
 from random import random
 import numpy as np
+from llm_utils import get_llm_response
 
 
 class Transcript:
@@ -9,10 +10,10 @@ class Transcript:
     like debate, consulting or (the degenerate case of) a blind judge. Designed
     for question-answering tasks, but could potentially be extended."""
 
-    def __init__(self, question: str, possible_answers: list = None):
+    def __init__(self, question: str, possible_answers: list[str] = None):
         self.question = question
         if possible_answers is None:
-            possible_answers = [True, False]
+            possible_answers = ['True', 'False']
         self.possible_answers = possible_answers
         self.judgement = None
         self.transcript = []
@@ -73,10 +74,14 @@ class Debater:
             return f"### ARGUMENT FOR {self.answer}:\n{self.argument}"
 
     def __call__(self, answer: bool, transcript: Transcript) -> "Self.TranscriptItem":
-        """Subclasses should implement this."""
-        raise NotImplementedError
+        """Subclasses should customize this."""
+        return get_llm_response(
+            prompt=self.PROMPT.format(answer=answer, transcript=transcript),
+            model=self.MODEL,
+            max_tokens = self.MAX_WORDCELING,
+        )
 
-    # some helpful default constants and methods that can be used in subclasses
+    # some helpful default constants and methods that can be customized in subclasses
 
     # default debate prompt
     PROMPT = (
@@ -91,6 +96,8 @@ class Debater:
         "ANSWER YOU ARE ARGUING FOR: {answer}\n\n"
     )
 
+    MODEL = "gpt-4o-2024-05-13"
+    MAX_WORDCELING = 2048
 
 class Judge:
 
@@ -102,18 +109,26 @@ class Judge:
             return f"## JUDGE PROBABILITY ESTIMATES:\n{self.probabilities}"
 
     def __call__(self, transcript: Transcript) -> "Self.TranscriptItem":
-        raise NotImplementedError
+        return get_llm_response(
+            prompt=self.PROMPT.format(transcript=transcript),
+            model=self.MODEL,
+            return_probs_for=transcript.possible_answers,
+            max_tokens=max(len(answer) for answer in transcript.possible_answers),
+        )
 
-    # some helpful default constants and methods that can be used in subclasses
+    # some helpful default constants and methods that can be customized in subclasses
 
     # default judge prompt
     PROMPT = (
         "I will give you a question to answer, and a list of possible "
         "answers. I want you to give me your most informed judgment on which "
         "answer is correct, based on any information I provide. Your response "
-        "should simply be one of the items from POSSIBLE ANSWERS.\n\n"
+        "should simply be one of the items from POSSIBLE ANSWERS, and nothing "
+        "else.\n\n"
         "{transcript}\n\n"
     )
+
+    MODEL = "gpt-4o-2024-05-13"
 
 
 class Consultant:
@@ -130,9 +145,14 @@ class Consultant:
             )
 
     def __call__(self, answer: bool, transcript: Transcript) -> "Self.TranscriptItem":
-        raise NotImplementedError
+        """Subclasses should customize this."""
+        return get_llm_response(
+            prompt=self.PROMPT.format(answer=answer, transcript=transcript),
+            model=self.MODEL,
+            max_tokens = self.MAX_WORDCELING,
+        )
 
-    # some helpful default constants and methods that can be used in subclasses
+    # some helpful default constants and methods that can be customized in subclasses
 
     # default consultancy prompt
     PROMPT = (
@@ -146,6 +166,10 @@ class Consultant:
         "{transcript}\n\n"
         "---\n\n"
     )
+    
+    MODEL = "gpt-4o-2024-05-13"
+    
+    MAX_WORDCELING = 2048
 
 
 class Client:
@@ -158,9 +182,14 @@ class Client:
             return f"### JUDGE QUESTION: \n{self.response}"
 
     def __call__(self, transcript: Transcript) -> "Self.TranscriptItem":
-        raise NotImplementedError
+        """Subclasses should customize this."""
+        return get_llm_response(
+            prompt=self.PROMPT.format(transcript=transcript),
+            model=self.MODEL,
+            max_tokens = self.MAX_WORDCELING,
+        )
 
-    # some helpful default constants and methods that can be used in subclasses
+    # some helpful default constants and methods that can be customized in subclasses
 
     # default client prompt
     PROMPT = (
@@ -172,6 +201,10 @@ class Client:
         "regardless, make your best of the situation.\n\n"
         "{transcript}\n\n"
     )
+    
+    MODEL = "gpt-4o-2024-05-13"
+    
+    MAX_WORDCELING = 2048
 
 
 class EndowedJudge:
@@ -182,15 +215,15 @@ class EndowedJudge:
     def __init__(self, judge: Judge):
         raise NotImplementedError
 
-    def run(self, question: str, possible_answers: list) -> Transcript:
+    def run(self, question: str, possible_answers: list[str]) -> Transcript:
         raise NotImplementedError
 
-    def __call__(self, question: str, possible_answers: list) -> dict[str, float]:
+    def __call__(self, question: str, possible_answers: list[str]) -> dict[str, float]:
         transcript = self.run(question, possible_answers)
         return transcript.judgement.probabilities
 
     def score(
-        self, question: str, possible_answers: list, correct_answer: ...
+        self, question: str, possible_answers: list[str], correct_answer: ...
     ) -> float:
         return np.log(
             self(question, possible_answers)[possible_answers.index(correct_answer)]
@@ -199,7 +232,7 @@ class EndowedJudge:
 
 class Debate(EndowedJudge):
     """Debate protocol:
-    - Each debater assigned one of the answers with 50\% chance (they both have to learn 
+    - Each debater assigned one of the answers with 50\% chance (they both have to learn
     to argue for both truth and falsehood, can't specialize in one).
     - Finite number of num_turns, default 1. Each debater gets to make num_turns arguments.
     """
@@ -211,12 +244,23 @@ class Debate(EndowedJudge):
         debater_2: Debater,
         **kwargs,
     ):
+        """Initialize Debate protocol with judge and debaters.
+        
+        Args:
+            judge (Judge): judge model
+            debater_1 (Debater): debater model
+            debater_2 (Debater): debater model
+        
+        Keyword Args:
+            num_turns (int): number of turns each debater gets to make an argument
+        """
+    
         self.judge = judge
         self.debater_1 = debater_1
         self.debater_2 = debater_2
         self.num_turns = kwargs.get("num_turns", 1)
 
-    def run(self, question: str, possible_answers: list) -> Transcript:
+    def run(self, question: str, possible_answers: list[str]) -> Transcript:
         transcript = Transcript(question, possible_answers)
         debater_1_answer, debater_2_answer = self.possible_answers[:2]
         if random() > 0.5:  # randomize which debater argues for which answer
@@ -259,13 +303,24 @@ class Consultancy(EndowedJudge):
         client: Client,
         **kwargs,
     ):
+        """Initialize Consultancy protocol with judge, consultant and client.
+        
+        Args:
+            judge (Judge): judge model
+            consultant (Consultant): consultant model
+            client (Client): client model
+        
+        Keyword Args:
+            num_turns (int): number of turns the consultant gets to make an argument
+            consultant_goes_first (bool): whether the consultant makes the first argument
+        """
         self.judge = judge
         self.consultant = consultant
         self.client = client
         self.num_turns = kwargs.get("num_turns", 2)
         self.consultant_goes_first = kwargs.get("consultant_goes_first", True)
 
-    def run(self, question: str, possible_answers: list) -> Transcript:
+    def run(self, question: str, possible_answers: list[str]) -> Transcript:
         transcript = Transcript(question, possible_answers)
         answer = possible_answers[0] if random() > 0.5 else possible_answers[1]
         if self.consultant_goes_first:
@@ -279,15 +334,18 @@ class Consultancy(EndowedJudge):
         judge_item = self.judge(transcript)
         transcript.append(judge_item)
         return transcript
-    
+
     def end_communication(self, transcript: Transcript) -> bool:
         """Default end_communication method: return True when Consultant has made
         self.num_turns arguments. Override in subclass."""
-        return sum(
-            isinstance(item, Consultant.TranscriptItem) for
-            item in transcript.consultancy_arguments
-        ) >= self.num_turns
-        
+        return (
+            sum(
+                isinstance(item, Consultant.TranscriptItem)
+                for item in transcript.consultancy_arguments
+            )
+            >= self.num_turns
+        )
+
 
 class BlindJudge(EndowedJudge):
     """General class for BlindJudge.
@@ -301,7 +359,7 @@ class BlindJudge(EndowedJudge):
     ):
         self.judge = judge
 
-    def run(self, question: str, possible_answers: list) -> Transcript:
+    def run(self, question: str, possible_answers: list[str]) -> Transcript:
         transcript = Transcript(question, possible_answers)
         judge_item = self.judge(transcript)
         transcript.append(judge_item)
