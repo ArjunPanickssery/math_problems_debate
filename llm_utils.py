@@ -245,7 +245,7 @@ def get_llm_response(
     return_probs_for:list[str] | None=None,
     max_tokens:int | None=None,
     **kwargs,
-) -> str:
+) -> str | dict[str, float]:
     default_options = {
         "model": "gpt-4o-2024-05-13",
     }

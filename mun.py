@@ -48,7 +48,7 @@ class Transcript:
         self.transcript_types_info = {
             "debate": {
                 "transcript_item_class": [Debater.TranscriptItem],
-                "heading": "## ARGUMENTS MADE SO FAR:\n",
+                "heading": "\n## ARGUMENTS MADE SO FAR:\n",
             },
             "consultancy": {
                 "transcript_item_class": [
@@ -56,7 +56,7 @@ class Transcript:
                     Client.TranscriptItem,
                 ],
                 "heading": (
-                    "## CONSULTANCY TRANSCRIPT:\n"
+                    "\n## CONSULTANCY TRANSCRIPT:\n"
                     "Note: the consultant may or may not be arguing for the true answer. "
                     "Just consider the information they provide, do not necessarily trust them.\n"
                 ),
@@ -103,15 +103,16 @@ class Debater:
         argument: str
 
         def __str__(self):
-            return f"### ARGUMENT FOR {self.answer.symbol}:\n{self.argument}"
+            return f"\n### ARGUMENT FOR {self.answer.symbol}:\n{self.argument}"
 
     def __call__(self, answer: Answer, transcript: Transcript) -> "Self.TranscriptItem":
         """Subclasses should customize this."""
-        return get_llm_response(
+        argument = get_llm_response(
             prompt=self.PROMPT.format(answer=answer.symbol, transcript=transcript),
             model=self.MODEL,
             max_tokens=self.MAX_WORDCELING,
         )
+        return self.TranscriptItem(answer=answer, argument=argument)
 
     # some helpful default constants and methods that can be customized in subclasses
 
@@ -139,10 +140,10 @@ class Judge:
         probabilities: dict[str, float]
 
         def __str__(self):
-            return f"## JUDGE PROBABILITY ESTIMATES:\n{self.probabilities}"
+            return f"\n## JUDGE PROBABILITY ESTIMATES:\n{self.probabilities}"
 
     def __call__(self, transcript: Transcript) -> "Self.TranscriptItem":
-        return get_llm_response(
+        probabilities = get_llm_response(
             prompt=self.PROMPT.format(transcript=transcript),
             model=self.MODEL,
             return_probs_for=transcript.question.possible_answer_symbols,
@@ -151,6 +152,7 @@ class Judge:
                 for answer_symbol in transcript.question.possible_answer_symbols
             ),
         )
+        return self.TranscriptItem(probabilities=probabilities)
 
     # some helpful default constants and methods that can be customized in subclasses
 
@@ -171,22 +173,23 @@ class Consultant:
 
     @dataclass
     class TranscriptItem:
-        answer: ...
+        answer: Answer
         response: str
 
         def __str__(self):
             return (
-                f"### (Consultant arguing for {self.answer})\n"
+                f"\n### (Consultant arguing for {self.answer})\n"
                 f"RESPONSE: \n{self.response}"
             )
 
     def __call__(self, answer: Answer, transcript: Transcript) -> "Self.TranscriptItem":
         """Subclasses should customize this."""
-        return get_llm_response(
+        response = get_llm_response(
             prompt=self.PROMPT.format(answer=answer.symbol, transcript=transcript),
             model=self.MODEL,
             max_tokens=self.MAX_WORDCELING,
         )
+        return self.TranscriptItem(answer=answer, response=response)
 
     # some helpful default constants and methods that can be customized in subclasses
 
@@ -215,15 +218,16 @@ class Client:
         response: str
 
         def __str__(self):
-            return f"### ENQUIRY FROM JUDGE: \n{self.response}"
+            return f"\n### ENQUIRY FROM JUDGE: \n{self.response}"
 
     def __call__(self, transcript: Transcript) -> "Self.TranscriptItem":
         """Subclasses should customize this."""
-        return get_llm_response(
+        response = get_llm_response(
             prompt=self.PROMPT.format(transcript=transcript),
             model=self.MODEL,
             max_tokens=self.MAX_WORDCELING,
         )
+        return self.TranscriptItem(response=response)
 
     # some helpful default constants and methods that can be customized in subclasses
 
