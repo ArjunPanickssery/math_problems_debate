@@ -207,7 +207,7 @@ async def get_llm_response_async(
         response = await client.chat(
             messages=call_messages,
             max_tokens=max_tokens,
-            log_probs=bool(return_probs_for),
+            logprobs=bool(return_probs_for),
             top_logprobs=(5 if return_probs_for else None),
             **options,
         )
@@ -215,7 +215,7 @@ async def get_llm_response_async(
         response = await client.chat.completions.create(
             messages=call_messages,
             max_tokens=max_tokens,
-            log_probs=bool(return_probs_for),
+            logprobs=bool(return_probs_for),
             top_logprobs=(5 if return_probs_for else None),
             **options,
         )
@@ -268,7 +268,7 @@ def get_llm_response(
         response = client.chat(
             messages=call_messages,
             max_tokens=max_tokens,
-            log_probs=bool(return_probs_for),
+            logprobs=bool(return_probs_for),
             top_logprobs=(5 if return_probs_for else None),
             **options,
         )
@@ -276,7 +276,7 @@ def get_llm_response(
         response = client.chat.completions.create(
             messages=call_messages,
             max_tokens=max_tokens,
-            log_probs=bool(return_probs_for),
+            logprobs=bool(return_probs_for),
             top_logprobs=(5 if return_probs_for else None),
             **options,
         )
