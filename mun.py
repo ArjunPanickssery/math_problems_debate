@@ -13,10 +13,31 @@ class Transcript:
     def __init__(self, question: str, possible_answers: list[str] = None):
         self.question = question
         if possible_answers is None:
-            possible_answers = ['True', 'False']
+            possible_answers = ['A', 'B']
         self.possible_answers = possible_answers
         self.judgement = None
         self.transcript = []
+        
+        # this kind of thing should ideally go in the xxx.TranscriptItem classes,
+        # but we can't do that because `transcript_item_class` can be a list of
+        # multiple TranscriptItem classes.
+        self.transcript_types_info = {
+                "debate": {
+                    "transcript_item_class": [Debater.TranscriptItem],
+                    "heading": "## ARGUMENTS MADE SO FAR:\n",
+                },
+                "consultancy": {
+                    "transcript_item_class": [
+                        Consultant.TranscriptItem,
+                        Client.TranscriptItem,
+                    ],
+                    "heading": (
+                        "## CONSULTANCY TRANSCRIPT:\n"
+                        "Note: the consultant may or may not be arguing for the true answer. "
+                        "Just consider the information they provide, do not necessarily trust them.\n"
+                    ),
+                },
+            }
 
     def append(self, item: Any):
         if isinstance(item, Judge.TranscriptItem):
@@ -24,31 +45,20 @@ class Transcript:
         else:
             self.transcript.append(item)
 
-    def _str(self, transcript_type: str) -> str:
-        transcript_item_class, heading = {
-            "debate": {
-                "transcript_item_class": [Debater.TranscriptItem],
-                "heading": "## ARGUMENTS MADE SO FAR:\n",
-            },
-            "consultancy": {
-                "transcript_item_class": [
-                    Consultant.TranscriptItem,
-                    Client.TranscriptItem,
-                ],
-                "heading": (
-                    "## CONSULTANCY TRANSCRIPT:\n"
-                    "Note: the consultant may or may not be arguing for the true answer. "
-                    "Just consider the information they provide, do not necessarily trust them.\n"
-                ),
-            },
-        }[transcript_type].values()
+    def subtranscript(self, transcript_type: str) -> list:
+        transcript_item_class = self.transcript_types_info[transcript_type]["transcript_item_class"]
         items = [
             item
             for item in self.transcript
             if any(isinstance(item, cls) for cls in transcript_item_class)
         ]
-        if items:
-            return heading + "\n".join(str(item) for item in items) + "\n\n"
+        return items
+    
+    def _str_subtranscript(self, transcript_type: str) -> str:
+        transcript_items = self.subtranscript(transcript_type)
+        heading = self.transcript_types_info[transcript_type]["heading"]
+        if transcript_items:
+            return heading + "\n".join(str(item) for item in transcript_items) + "\n\n"
         return ""
 
     def __str__(self):
@@ -57,8 +67,8 @@ class Transcript:
                 f"QUESTION: {self.question}\n"
                 f"POSSIBLE ANSWERS: {self.possible_answers}\n\n"
             )
-            + self._str("debate")
-            + self._str("consultancy")
+            + self._str_subtranscript("debate")
+            + self._str_subtranscript("consultancy")
             + (self.judgement if self.judgement is not None else "")
         )
 
@@ -234,7 +244,7 @@ class Debate(EndowedJudge):
     """Debate protocol:
     - Each debater assigned one of the answers with 50\% chance (they both have to learn
     to argue for both truth and falsehood, can't specialize in one).
-    - Finite number of num_turns, default 1. Each debater gets to make num_turns arguments.
+    - Finite number of num_turns, default 1. Total num_turns arguments are made.
     """
 
     def __init__(
@@ -252,13 +262,14 @@ class Debate(EndowedJudge):
             debater_2 (Debater): debater model
         
         Keyword Args:
-            num_turns (int): number of turns each debater gets to make an argument
+            num_turns (int): total number of turns i.e. Sigma_(num_turns).
+                Default 2.
         """
     
         self.judge = judge
         self.debater_1 = debater_1
         self.debater_2 = debater_2
-        self.num_turns = kwargs.get("num_turns", 1)
+        self.num_turns = kwargs.get("num_turns", 2)
 
     def run(self, question: str, possible_answers: list[str]) -> Transcript:
         transcript = Transcript(question, possible_answers)
@@ -278,15 +289,10 @@ class Debate(EndowedJudge):
         return transcript
 
     def end_communication(self, transcript: Transcript) -> bool:
-        """Default end_communication method: return True when each possible answer
-        has been argued for at least self.num_turns times. Override in subclass.
-        Can also be generalized to a host function that e.g. decides which debater
-        goes next etc."""
-        return all(
-            sum(item.answer == answer for item in transcript.debate_arguments)
-            >= self.num_turns
-            for answer in transcript.possible_answers
-        )
+        """Default end_communication method: return True when debate transcript
+        exceeds length num_turns. Can also be generalized to a host function that 
+        e.g. decides which debater goes next etc. Override in subclass."""
+        return len(transcript.subtranscript("debate")) >= self.num_turns
 
 
 class Consultancy(EndowedJudge):
@@ -311,14 +317,17 @@ class Consultancy(EndowedJudge):
             client (Client): client model
         
         Keyword Args:
-            num_turns (int): number of turns the consultant gets to make an argument
-            consultant_goes_first (bool): whether the consultant makes the first argument
+            num_turns (int): total number of messages in communication; should be an odd
+                number if consultant_goes_first is True; even if False, so that consultant
+                has the last word (client's questions are all answered). Default 2.
+            consultant_goes_first (bool): whether the consultant makes the first argument.
+                Default False.
         """
         self.judge = judge
         self.consultant = consultant
         self.client = client
         self.num_turns = kwargs.get("num_turns", 2)
-        self.consultant_goes_first = kwargs.get("consultant_goes_first", True)
+        self.consultant_goes_first = kwargs.get("consultant_goes_first", False)
 
     def run(self, question: str, possible_answers: list[str]) -> Transcript:
         transcript = Transcript(question, possible_answers)
@@ -336,15 +345,9 @@ class Consultancy(EndowedJudge):
         return transcript
 
     def end_communication(self, transcript: Transcript) -> bool:
-        """Default end_communication method: return True when Consultant has made
-        self.num_turns arguments. Override in subclass."""
-        return (
-            sum(
-                isinstance(item, Consultant.TranscriptItem)
-                for item in transcript.consultancy_arguments
-            )
-            >= self.num_turns
-        )
+        """Default end_communication method: return True when consultancy transcript
+        exceeds length num_turns. Override in subclass."""
+        return len(transcript.subtranscript("consultancy")) >= self.num_turns
 
 
 class BlindJudge(EndowedJudge):
