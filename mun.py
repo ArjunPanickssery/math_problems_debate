@@ -2,7 +2,7 @@ from typing import Self, Any
 from dataclasses import dataclass
 from random import random
 import numpy as np
-from llm_utils import get_llm_response
+from llm_utils import get_llm_response_native
 
 
 @dataclass
@@ -107,7 +107,7 @@ class Debater:
 
     def __call__(self, answer: Answer, transcript: Transcript) -> "Self.TranscriptItem":
         """Subclasses should customize this."""
-        argument = get_llm_response(
+        argument = get_llm_response_native(
             prompt=self.prompt.format(answer=answer.symbol, transcript=transcript),
             model=self.model,
             max_tokens=self.max_wordceling,
@@ -163,7 +163,7 @@ class Judge:
             return f"\n## JUDGE PROBABILITY ESTIMATES:\n{self.probabilities}"
 
     def __call__(self, transcript: Transcript) -> "Self.TranscriptItem":
-        probabilities = get_llm_response(
+        probabilities = get_llm_response_native(
             prompt=self.prompt.format(transcript=transcript),
             model=self.model,
             return_probs_for=transcript.question.possible_answer_symbols,
@@ -214,7 +214,7 @@ class Consultant:
 
     def __call__(self, answer: Answer, transcript: Transcript) -> "Self.TranscriptItem":
         """Subclasses should customize this."""
-        response = get_llm_response(
+        response = get_llm_response_native(
             prompt=self.prompt.format(answer=answer.symbol, transcript=transcript),
             model=self.model,
             max_tokens=self.max_wordceling,
@@ -270,7 +270,7 @@ class Client:
 
     def __call__(self, transcript: Transcript) -> "Self.TranscriptItem":
         """Subclasses should customize this."""
-        response = get_llm_response(
+        response = get_llm_response_native(
             prompt=self.prompt.format(transcript=transcript),
             model=self.model,
             max_tokens=self.max_wordceling,
