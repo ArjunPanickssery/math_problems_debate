@@ -5,7 +5,13 @@ from typing import List
 from tqdm import tqdm
 
 from data import DatasetItem, load_data, save_to_json
-from model_wrappers import Llama2Wrapper, Llama3Wrapper, ModelWrapper
+from model_wrappers import (
+    ClaudeWrapper,
+    GPTWrapper,
+    Llama2Wrapper,
+    Llama3Wrapper,
+    ModelWrapper,
+)
 
 LETTERS = ["A", "B"]
 
@@ -95,8 +101,12 @@ def run_debate(
 
 if __name__ == "__main__":
     train_data, test_data = load_data()
-    debater_one = Llama2Wrapper("llama2_7b", "meta-llama/Llama-2-7b-chat-hf")
-    debater_two = judge = Llama3Wrapper(
-        "llama3_8b", "meta-llama/Meta-Llama-3-8B-Instruct"
+    debater_one = debater_two = judge = GPTWrapper("gpt-4o", "gpt-4o-2024-05-13")
+    # judge = Llama3Wrapper("llama3_8b", "meta-llama/Meta-Llama-3-8B-Instruct")
+    run_debate(
+        debater_one,
+        debater_two,
+        judge,
+        train_data,
+        f"results/{debater_one.model_id}-{debater_two.model_id}-{judge.model_id}.json",
     )
-    run_debate(debater_one, debater_two, judge, train_data[:5], "results.json")
