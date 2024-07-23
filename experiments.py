@@ -88,10 +88,11 @@ def run_debate(
         results.append(
             {
                 "item": dataclasses.asdict(dataset_item),
-                "a_debater": debater_a.model_id,
-                "b_debater": debater_b.model_id,
-                debater_a.model_id: response_a,
-                debater_b.model_id: response_b,
+                "correct_letter": "a" if is_answer_a_correct else "b",
+                "debater_a": debater_a.model_id,
+                "debater_b": debater_b.model_id,
+                "response_a": response_a,
+                "response_b": response_b,
                 "blind_judge_confidence": blind_judge_confidence,
                 "judge_confidence": judge_confidence,
             }

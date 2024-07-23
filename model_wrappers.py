@@ -280,7 +280,11 @@ class GPTWrapper(ModelWrapper):
         """Generates token probabilities using OpenAI's API"""
         messages = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
+            {
+                "role": "user",
+                "content": user_prompt
+                + f"\n\nResponse with just {response_tokens[0]} or {response_tokens[1]}, nothing else.",
+            },
         ]
 
         response = self.client.chat.completions.create(
@@ -294,11 +298,9 @@ class GPTWrapper(ModelWrapper):
         )
 
         token_probs = {token: 0 for token in response_tokens}
-        logprobs = response.choices[0].logprobs.top_logprobs[0]
-
-        for token, logprob in logprobs.items():
-            if token in token_probs:
-                token_probs[token] = math.exp(logprob)
+        logprobs = response.choices[0].logprobs.content[0].top_logprobs
+        for item in logprobs:
+            token_probs[item.token] = math.exp(item.logprob)
 
         total_prob = sum(token_probs.values())
         return {k: v / total_prob for k, v in token_probs.items()}
