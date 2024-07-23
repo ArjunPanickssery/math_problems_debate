@@ -314,8 +314,8 @@ def get_hf_response(
     hf_repo = model_name.split("hf:")[1]
     tokenizer, model = get_huggingface_local_client(hf_repo)
     if not isinstance(prompt, str):
-        prompt = tokenizer.apply_chat_template(prompt)
-    input_ids = tokenizer(prompt, return_tensors="pt").input_ids.to(
+        prompt = tokenizer.apply_chat_template(prompt, tokenize=False)
+    input_ids = tokenizer.encode(prompt, return_tensors="pt").to(
         model.device
     )
     if return_probs_for:
