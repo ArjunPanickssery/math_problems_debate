@@ -26,7 +26,7 @@ from mistralai.client import MistralClient
 from mistralai.models.chat_completion import ChatMessage
 from anthropic import AsyncAnthropic, Anthropic
 from huggingface_hub import snapshot_download
-from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
+from transformers import AutoTokenizer, AutoModelForCausalLM  # AutoModelForSeq2SeqLM
 import transformers
 import instructor
 from instructor.client import Instructor
@@ -142,17 +142,21 @@ def get_togetherai_client_native() -> OpenAI:
     return OpenAI(api_key=api_key, base_url=url)
 
 
-def get_huggingface_local_client(hf_repo) -> transformers.pipeline:
-    hf_model_path = os.path.join(os.getenv("HF_MODELS_DIR"), hf_repo)
-    if not os.path.exists(hf_model_path):
-        snapshot_download(hf_repo, local_dir=hf_model_path)
+def get_huggingface_local_client(hf_repo):
+    # hf_model_path = os.path.join(os.getenv("HF_MODELS_DIR"), hf_repo)
+    # if not os.path.exists(hf_model_path):
+    #     snapshot_download(hf_repo, local_dir=hf_model_path)
 
-    tokenizer = AutoTokenizer.from_pretrained(hf_model_path, legacy=False)
-    model = AutoModelForSeq2SeqLM.from_pretrained(hf_model_path)
-    pipeline = transformers.pipeline(
-        "text2text-generation", model=model, tokenizer=tokenizer, max_new_tokens=2048
+    tokenizer = AutoTokenizer.from_pretrained(hf_repo)
+
+    model = AutoModelForCausalLM.from_pretrained(
+        hf_repo, device_map="auto", token=os.getenv("HF_TOKEN")
     )
-    return pipeline
+    # pipeline = transformers.pipeline(
+    #     "text-generation", model=model, tokenizer=tokenizer, max_new_tokens=2048
+    # )
+    # return pipeline
+    return tokenizer, model
 
 
 def is_openai(model: str) -> bool:
@@ -301,6 +305,36 @@ def prepare_messages(prompt: str) -> list[dict[str, str]]:
     ]
 
 
+def get_hf_response(
+    prompt: list[dict[str, str]],
+    model_name: str,
+    max_tokens: int | None = None,
+    return_probs_for: list[str] | None = None,
+) -> str | dict[str, float]:
+    hf_repo = model_name.split("hf:")[1]
+    tokenizer, model = get_huggingface_local_client(hf_repo)
+    if not isinstance(prompt, str):
+        prompt = tokenizer.apply_chat_template(prompt)
+    input_ids = tokenizer(prompt, return_tensors="pt").input_ids.to(
+        model.device
+    )
+    if return_probs_for:
+        output = model(input_ids).logits[0, -1, :]
+        output_probs = output.softmax(dim=0)
+        probs = {token: 0 for token in return_probs_for}
+        for token in probs:
+            token_enc = tokenizer.encode(token)[-1]
+            if token_enc in output_probs:
+                probs[token] = output_probs[token_enc].item()
+        total_prob = sum(probs.values())
+        probs_relative = {token: prob / total_prob for token, prob in probs.items()}
+        return probs_relative
+    else:
+        output = model.generate(input_ids, max_length=max_tokens)
+        decoded = tokenizer.decode(output[0], skip_special_tokens=True)
+        return decoded
+
+
 async def get_llm_response_async(
     prompt: str | list[dict[str, str]],
     model: str | None = None,
@@ -319,7 +353,7 @@ async def get_llm_response_async(
         return_probs_for: list[str] | None: List of tokens to return relative probabilities for.
             If None, simply returns the text response.
         max_tokens: int | None: Maximum number of tokens to generate.
-    
+
     Keyword Args:
         response_model: pydantic.BaseModel: Pydantic model to use for response, if using
             instructor. Defaults to None (in which case instructor is not used).
@@ -345,7 +379,14 @@ async def get_llm_response_async(
         options,
         f"Approx num tokens: {len(''.join([m['content'] for m in prompt])) // 3}",
     )
-    if client_name == "mistral" and not os.getenv("USE_OPENROUTER"):
+    if client_name == "huggingface_local":
+        return get_hf_response(
+            prompt=call_messages,
+            model_name=options["model"],
+            max_tokens=max_tokens,
+            return_probs_for=return_probs_for,
+        )
+    elif client_name == "mistral" and not os.getenv("USE_OPENROUTER"):
         response = await client.chat(
             messages=call_messages,
             max_tokens=max_tokens,
@@ -399,13 +440,13 @@ def get_llm_response(
         return_probs_for: list[str] | None: List of tokens to return relative probabilities for.
             If None, simply returns the text response.
         max_tokens: int | None: Maximum number of tokens to generate.
-    
+
     Keyword Args:
         response_model: pydantic.BaseModel: Pydantic model to use for response, if using
             instructor. Defaults to None (in which case instructor is not used).
         top_logprobs: int: Number of top logprobs to return. Defaults to 5.
     """
-    
+
     default_options = {
         "model": "gpt-4o-2024-05-13",
     }
@@ -426,7 +467,14 @@ def get_llm_response(
         options,
         f"Approx num tokens: {len(''.join([m['content'] for m in prompt])) // 3}",
     )
-    if client_name == "mistral" and not os.getenv("USE_OPENROUTER"):
+    if client_name == "huggingface_local":
+        return get_hf_response(
+            prompt=call_messages,
+            model_name=options["model"],
+            max_tokens=max_tokens,
+            return_probs_for=return_probs_for,
+        )
+    elif client_name == "mistral" and not os.getenv("USE_OPENROUTER"):
         response = client.chat(
             messages=call_messages,
             max_tokens=max_tokens,
