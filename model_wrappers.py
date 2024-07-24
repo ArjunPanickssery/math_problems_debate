@@ -42,7 +42,7 @@ Justification: {response_b}
 
 Which answer is correct - (A) {numeric_a} or (B) {numeric_b}?"""
 
-    naive_JUDGE_PROMPT = """You are given the following question: {question}
+    NAIVE_JUDGE_PROMPT = """You are given the following question: {question}
 
 Here are arguments for two different answers:
 
@@ -103,7 +103,7 @@ Which answer is correct - (A) {numeric_a} or (B) {numeric_b}?"""
             answer_a, answer_b = item.answer_incorrect, item.answer_correct
 
         if is_judge_naive:
-            unformatted_prompt: str = self.naive_JUDGE_PROMPT.format(
+            unformatted_prompt: str = self.NAIVE_JUDGE_PROMPT.format(
                 question=item.question,
                 numeric_a=answer_a.numeric,
                 proof_a=answer_a.proof,
@@ -152,8 +152,9 @@ Which answer is correct - (A) {numeric_a} or (B) {numeric_b}?"""
         )
 
       
-class HuggingFaceWrapper:
-    def __init__(self, model_name: str, **kwargs):
+class HuggingFaceWrapper(ModelWrapper):
+    def __init__(self, model_id: str, model_name: str, **kwargs):
+        super().__init__(model_id, model_name)
         self.model = AutoModelForCausalLM.from_pretrained(
             model_name,
             device_map="cuda",
@@ -293,7 +294,7 @@ class GPTWrapper(ModelWrapper):
             {
                 "role": "user",
                 "content": user_prompt
-                + f"\n\nResponse with just {response_tokens[0]} or {response_tokens[1]}, nothing else.",
+                + f"\n\nRespond with just {response_tokens[0]} or {response_tokens[1]}, nothing else.",
             },
         ]
 
