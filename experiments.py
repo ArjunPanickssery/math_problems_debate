@@ -67,7 +67,7 @@ def run_debate(
             proof_b,
         )
 
-        # Get judge confidence & blind-judge confidence
+        # Get judge confidence & naive-judge confidence
         judge_confidence = judge.get_judge_confidence(
             dataset_item,
             response_a,
@@ -76,13 +76,13 @@ def run_debate(
             [correct_letter, incorrect_letter],
         )
 
-        blind_judge_confidence = judge.get_judge_confidence(
+        naive_judge_confidence = judge.get_judge_confidence(
             dataset_item,
             None,
             None,
             is_answer_a_correct,
             [correct_letter, incorrect_letter],
-            is_judge_blind=True,
+            is_judge_naive=True,
         )
 
         results.append(
@@ -93,7 +93,7 @@ def run_debate(
                 "debater_b": debater_b.model_id,
                 "response_a": response_a,
                 "response_b": response_b,
-                "blind_judge_confidence": blind_judge_confidence,
+                "naive_judge_confidence": naive_judge_confidence,
                 "judge_confidence": judge_confidence,
             }
         )
