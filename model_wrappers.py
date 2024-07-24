@@ -1,11 +1,13 @@
 import math
 import os
-from typing import Dict, List
+import math
+from typing import Dict, List, Union
 
 import anthropic
 from dotenv import load_dotenv
 from openai import OpenAI
 from transformers import AutoModelForCausalLM, AutoTokenizer
+import torch
 
 from data import DatasetItem
 
@@ -40,7 +42,7 @@ Justification: {response_b}
 
 Which answer is correct - (A) {numeric_a} or (B) {numeric_b}?"""
 
-    naive_JUDGE_PROMPT = """You are given the following question: {question}
+    NAIVE_JUDGE_PROMPT = """You are given the following question: {question}
 
 Here are arguments for two different answers:
 
@@ -101,7 +103,7 @@ Which answer is correct - (A) {numeric_a} or (B) {numeric_b}?"""
             answer_a, answer_b = item.answer_incorrect, item.answer_correct
 
         if is_judge_naive:
-            unformatted_prompt: str = self.naive_JUDGE_PROMPT.format(
+            unformatted_prompt: str = self.NAIVE_JUDGE_PROMPT.format(
                 question=item.question,
                 numeric_a=answer_a.numeric,
                 proof_a=answer_a.proof,
@@ -118,6 +120,7 @@ Which answer is correct - (A) {numeric_a} or (B) {numeric_b}?"""
                 proof_b=answer_b.proof,
                 response_b=response_b,
             )
+
         token_probs = self._get_token_probs(
             judge_response_tokens,
             self.JUDGE_SYSTEM_PROMPT,
@@ -148,18 +151,22 @@ Which answer is correct - (A) {numeric_a} or (B) {numeric_b}?"""
             self.DEBATER_SYSTEM_PROMPT, unformatted_prompt, self.DEBATER_WORDS_IN_MOUTH
         )
 
-
+      
 class HuggingFaceWrapper(ModelWrapper):
-    def __init__(self, model_id: str, model_name: str):
+    def __init__(self, model_id: str, model_name: str, **kwargs):
         super().__init__(model_id, model_name)
         self.model = AutoModelForCausalLM.from_pretrained(
             model_name,
-            device_map="auto",
+            device_map="cuda",
             token=HF_TOKEN,
-            # torch_dtype=torch.bfloat16
+            # torch_dtype=torch.bfloat16,
+            **kwargs,
         )
+        # self.model.generation_config.cache_implementation = 'static'
+        self.model = torch.compile(self.model, mode='reduce-overhead', fullgraph=True)
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.model.eval()
+
 
     def _format_prompt(
         self, system_prompt: str, user_prompt: str, words_in_mouth=""
@@ -225,6 +232,7 @@ class Llama2Wrapper(HuggingFaceWrapper):
 
 
 # meta-llama/Meta-Llama-3-8B-Instruct, etc
+
 class Llama3Wrapper(HuggingFaceWrapper):
     DEBATER_WORDS_IN_MOUTH = (
         "Sure, here's my response:\n\n"  # Start with a leading space
@@ -286,7 +294,7 @@ class GPTWrapper(ModelWrapper):
             {
                 "role": "user",
                 "content": user_prompt
-                + f"\n\nResponse with just {response_tokens[0]} or {response_tokens[1]}, nothing else.",
+                + f"\n\nRespond with just {response_tokens[0]} or {response_tokens[1]}, nothing else.",
             },
         ]
 
