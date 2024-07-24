@@ -47,7 +47,7 @@ function setArgumentDetails(column, answerDetails, debater, response, isCorrect)
     document.getElementById(`proof-${column}`).innerText = answerDetails.proof;
     document.getElementById(`numeric-${column}`).innerText = answerDetails.numeric;
     document.getElementById(`debater-${column}`).innerText = debater;
-    document.getElementById(`response-${column}`).innerText = response;
+    document.getElementById(`response-${column}`).innerHTML = marked.parse(response);
 
     const argumentElement = document.getElementById(`argument-${column}`);
     argumentElement.classList.remove('correct', 'incorrect');
