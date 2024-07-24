@@ -5,7 +5,13 @@ from typing import List
 from tqdm import tqdm
 
 from data import DatasetItem, load_data, save_to_json
-from model_wrappers import Llama2Wrapper, Llama3Wrapper, ModelWrapper
+from model_wrappers import (
+    ClaudeWrapper,
+    GPTWrapper,
+    Llama2Wrapper,
+    Llama3Wrapper,
+    ModelWrapper,
+)
 
 LETTERS = ["A", "B"]
 
@@ -62,7 +68,7 @@ def run_debate(
             proof_b,
         )
 
-        # Get judge confidence & blind-judge confidence
+        # Get judge confidence & naive-judge confidence
         judge_confidence = judge.get_judge_confidence(
             dataset_item,
             response_a,
@@ -71,33 +77,43 @@ def run_debate(
             [correct_letter, incorrect_letter],
         )
 
-        blind_judge_confidence = judge.get_judge_confidence(
+        naive_judge_confidence = judge.get_judge_confidence(
             dataset_item,
             None,
             None,
             is_answer_a_correct,
             [correct_letter, incorrect_letter],
-            is_judge_blind=True,
+            is_judge_naive=True,
         )
 
         results.append(
             {
                 "item": dataclasses.asdict(dataset_item),
-                "a_debater": debater_a.model_id,
-                "b_debater": debater_b.model_id,
-                debater_a.model_id: response_a,
-                debater_b.model_id: response_b,
-                "blind_judge_confidence": blind_judge_confidence,
+                "correct_letter": "a" if is_answer_a_correct else "b",
+                "debater_a": debater_a.model_id,
+                "debater_b": debater_b.model_id,
+                "response_a": response_a,
+                "response_b": response_b,
+                "naive_judge_confidence": naive_judge_confidence,
                 "judge_confidence": judge_confidence,
             }
         )
         save_to_json(results, output_path)
 
 
+"""
 if __name__ == "__main__":
     train_data, test_data = load_data()
-    debater_one = Llama2Wrapper("llama2_7b", "meta-llama/Llama-2-7b-chat-hf")
-    debater_two = judge = Llama3Wrapper(
-        "llama3_8b", "meta-llama/Meta-Llama-3-8B-Instruct"
+    debater_one = debater_two = ClaudeWrapper(
+        "claude3_sonnet", "claude-3-sonnet-20240229"
     )
-    run_debate(debater_one, debater_two, judge, train_data[:5], "results.json")
+    judge = GPTWrapper("gpt35_turbo", "gpt-3.5-turbo-0125")
+    # judge = Llama3Wrapper("llama3_8b", "meta-llama/Meta-Llama-3-8B-Instruct")
+    run_debate(
+        debater_one,
+        debater_two,
+        judge,
+        train_data,
+        f"results/{debater_one.model_id}-{debater_two.model_id}-{judge.model_id}.json",
+    )
+"""
