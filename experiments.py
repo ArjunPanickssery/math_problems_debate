@@ -102,7 +102,9 @@ def run_debate(
 
 if __name__ == "__main__":
     train_data, test_data = load_data()
-    debater_one = debater_two = judge = GPTWrapper("gpt-4o", "gpt-4o-2024-05-13")
+    # debater_one = debater_two = judge = GPTWrapper("gpt-4o", "gpt-4o-2024-05-13")
+    # debater_one = debater_two = judge = Llama3Wrapper("llama3_8b", "meta-llama/Meta-Llama-3-8B-Instruct")
+    debater_one = debater_two = judge = Llama2Wrapper('llama2_13b', 'meta-llama/Llama-2-13b-chat-hf')
     # judge = Llama3Wrapper("llama3_8b", "meta-llama/Meta-Llama-3-8B-Instruct")
     run_debate(
         debater_one,
