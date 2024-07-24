@@ -124,7 +124,9 @@ Which answer is correct - (A) {numeric_a} or (B) {numeric_b}?"""
             unformatted_prompt,
             self.JUDGE_WORDS_IN_MOUTH,
         )
-        return token_probs[judge_response_tokens[0]] / sum(token_probs.values())
+        return token_probs[judge_response_tokens[0]] / sum(
+            token_probs.values()
+        )  # relative probability of the correct response_token
 
     # For debaters
     def get_debater_argument(
@@ -300,7 +302,8 @@ class GPTWrapper(ModelWrapper):
         token_probs = {token: 0 for token in response_tokens}
         logprobs = response.choices[0].logprobs.content[0].top_logprobs
         for item in logprobs:
-            token_probs[item.token] = math.exp(item.logprob)
+            if item.token in token_probs:
+                token_probs[item.token] = math.exp(item.logprob)
 
         total_prob = sum(token_probs.values())
         return {k: v / total_prob for k, v in token_probs.items()}

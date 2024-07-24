@@ -100,9 +100,13 @@ def run_debate(
         save_to_json(results, output_path)
 
 
+"""
 if __name__ == "__main__":
     train_data, test_data = load_data()
-    debater_one = debater_two = judge = GPTWrapper("gpt-4o", "gpt-4o-2024-05-13")
+    debater_one = debater_two = ClaudeWrapper(
+        "claude3_sonnet", "claude-3-sonnet-20240229"
+    )
+    judge = GPTWrapper("gpt35_turbo", "gpt-3.5-turbo-0125")
     # judge = Llama3Wrapper("llama3_8b", "meta-llama/Meta-Llama-3-8B-Instruct")
     run_debate(
         debater_one,
@@ -111,3 +115,4 @@ if __name__ == "__main__":
         train_data,
         f"results/{debater_one.model_id}-{debater_two.model_id}-{judge.model_id}.json",
     )
+"""
