@@ -311,6 +311,8 @@ def get_hf_response(
     max_tokens: int | None = None,
     return_probs_for: list[str] | None = None,
 ) -> str | dict[str, float]:
+    if max_tokens is None:
+        max_tokens = 2048
     hf_repo = model_name.split("hf:")[1]
     tokenizer, model = get_huggingface_local_client(hf_repo)
     if not isinstance(prompt, str):
