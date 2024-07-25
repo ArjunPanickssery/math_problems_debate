@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debate Transcript Visualizer</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify/dist/purify.min.js"></script>
+<body>
+    <div class="container">
+        <input type="file" id="file-input" accept=".json" hidden>
+        <div class="file-input-container">
+            <button id="file-button">Browse</button>
+            <span id="file-name">No file selected</span>
+        </div>
+        <div id="question-counter">Question: 0/0</div>
+        <div class="question" id="question">Please select a file to load...</div>
+        <div class="judge-info">
+            <div>Judge: <span id="judge">Loading...</span></div>
+            <div>Judge Confidence: <span id="judge-confidence">Loading...</span></div>
+            <div class="confidence-bar">
+                <div class="filled-bar" id="judge-bar"></div>
+            </div>
+            <div>Naive Judge Confidence: <span id="naive-judge-confidence">Loading...</span></div>
+            <div class="confidence-bar">
+                <div class="filled-bar" id="naive-judge-bar"></div>
+            </div>
+        </div>
+        <div class="arguments">
+            <div class="argument" id="argument-a">
+                <div class="proof">
+                    <div class="label">Proof A:</div>
+                    <div id="proof-a">Loading...</div>
+                </div>
+                <hr>
+                <div class="numeric">
+                    <div class="label">Numeric Answer:</div>
+                    <div id="numeric-a">Loading...</div>
+                </div>
+                <hr>
+                <div class="debater">
+                    <div class="label">Debater Name:</div>
+                    <div id="debater-a">Loading...</div>
+                </div>
+                <hr>
+                <div class="response">
+                    <div class="label">Argument:</div>
+                    <div id="response-a">Loading...</div>
+                </div>
+            </div>
+            <div class="argument" id="argument-b">
+                <div class="proof">
+                    <div class="label">Proof B:</div>
+                    <div id="proof-b">Loading...</div>
+                </div>
+                <hr>
+                <div class="numeric">
+                    <div class="label">Numeric Answer:</div>
+                    <div id="numeric-b">Loading...</div>
+                </div>
+                <hr>
+                <div class="debater">
+                    <div class="label">Debater Name:</div>
+                    <div id="debater-b">Loading...</div>
+                </div>
+                <hr>
+                <div class="response">
+                    <div class="label">Argument:</div>
+                    <div id="response-b">Loading...</div>
+                </div>
+            </div>
+        </div>
+        <div class="navigation">
+            <button onclick="previousEntry()">Previous</button>
+            <button onclick="nextEntry()">Next</button>
+        </div>
+
+        <script src="scripts.js"></script>
+    </div>
+</body>
+</html>
