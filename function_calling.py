@@ -7,9 +7,11 @@ import ast, operator
 import json
 from langchain.tools import tool
 from langchain_core.tools import render_text_description
+from decorator import decorator
 
-    
-# @tool
+from model_wrappers import HuggingFaceWrapper, ModelWrapper
+
+
 def math_eval(expr: str) -> Union[str, float]:
     """
     Evaluate a simple mathematical expression. The supported operators are * (multiply), - (subtract), 
@@ -64,33 +66,38 @@ Return your response as a JSON blob with 'name' and 'arguments' keys.
 
 The `arguments` should be a dictionary, with keys corresponding 
 to the argument names and the values corresponding to the requested values."""
-    def __init__(self, model_name, **kwargs):
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        self.model = AutoModelForCausalLM.from_pretrained(model_name, **kwargs)
+    def __init__(self, model: HuggingFaceWrapper, tools: List[Callable]):
+        self.model = model
+        self.tools = tools
         self.tool_pattern = re.compile(r'<tool_call>(.*?)</tool_call>', re.DOTALL)
-        
-    
-    def generate(self, messages: List[Dict], tools: List[Callable]=None, max_new_tokens=100):
-        tool_map = {tool.__name__: tool for tool in tools}
-        if 'tool_use' in self.tokenizer.chat_template:
-            input_ids = self.tokenizer.apply_chat_template(messages,
+        self.tool_map = {tool.__name__: tool for tool in tools}
+
+    def supports_tools(self) -> bool:
+        return 'tool_use' in self.model.tokenizer.chat_template
+
+
+    def _response(self, system_prompt: str, user_prompt: str, words_in_mouth="") -> str:
+        tool_pattern = re.compile(r'<tool_call>(.*?)</tool_call>', re.DOTALL)
+        messages = [{'role': 'system', 'content': system_prompt},
+                    {'role': 'user', 'content': user_prompt}]
+        if self.supports_tools():
+            input_ids = self.model.tokenizer.apply_chat_template(messages,
                                                          return_tensors="pt",
                                                          add_generation_prompt=False, 
                                                          chat_template='tool_use',
-                                                         tools=tools).to('cuda')
+                                                         tools=self.tools).to('cuda')
         else:
             messages.insert(0, {'role': 'system', 
-                                'content': self.TOOLS_PROMPT.format(rendered_tools=render_text_description(tools))})
+                                'content': self.TOOLS_PROMPT.format(
+                                    rendered_tools=render_text_description(self.tools)
+                                    )})
             input_ids = self.tokenizer.apply_chat_template(messages,
                                                        return_tensors="pt",
                                                        add_generation_prompt=True).to('cuda')
-        start_size = input_ids.shape[1]
-
         output = input_ids
-        while output.shape[1] < start_size + max_new_tokens:
+        while True:
             output = self.model.generate(
                 input_ids, 
-                max_length=start_size + max_new_tokens, 
             )
 
             # check if there are any <tool_call> tags. If no, then assume the argument is finished. Otherwise,
@@ -100,7 +107,7 @@ to the argument names and the values corresponding to the requested values."""
             assistant_text = self.tokenizer.decode(assistant_toks)
             # print("Response finished, assistant text:", assistant_text)
             # maybe this should be a findall
-            func_match = self.tool_pattern.search(assistant_text)#.group(1)
+            func_match = tool_pattern.search(assistant_text)#.group(1)
             if func_match is None:   # no tool call found, so we are done
                 # print('no match found, done')
                 break
@@ -110,7 +117,7 @@ to the argument names and the values corresponding to the requested values."""
                 func_name = func_info['name']
                 args = func_info['arguments']
                 # should add handling here to turn the args into the right types
-                result = {'value': tool_map[func_name](**args),
+                result = {'value': self.tool_map[func_name](**args),
                             'func_name': func_name, 
                             'args': args}
             except KeyError:
