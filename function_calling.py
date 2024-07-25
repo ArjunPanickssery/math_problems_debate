@@ -80,7 +80,7 @@ to the argument names and the values corresponding to the requested values."""
         tool_pattern = re.compile(r'<tool_call>(.*?)</tool_call>', re.DOTALL)
         messages = [{'role': 'system', 'content': system_prompt},
                     {'role': 'user', 'content': user_prompt}]
-        if self.supports_tools():
+        if self.supports_tools():   # add switches for OpenAI vs. CLaude, vs HuggingFaceWrappers
             input_ids = self.model.tokenizer.apply_chat_template(messages,
                                                          return_tensors="pt",
                                                          add_generation_prompt=False, 
@@ -91,12 +91,12 @@ to the argument names and the values corresponding to the requested values."""
                                 'content': self.TOOLS_PROMPT.format(
                                     rendered_tools=render_text_description(self.tools)
                                     )})
-            input_ids = self.tokenizer.apply_chat_template(messages,
+            input_ids = self.model.tokenizer.apply_chat_template(messages,
                                                        return_tensors="pt",
                                                        add_generation_prompt=True).to('cuda')
         output = input_ids
         while True:
-            output = self.model.generate(
+            output = self.model.generate(   # need to implement .generate(messages) -> str for underlying classes
                 input_ids, 
             )
 
