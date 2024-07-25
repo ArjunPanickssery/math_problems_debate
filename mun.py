@@ -107,10 +107,15 @@ class Debater:
 
     def __call__(self, answer: Answer, transcript: Transcript) -> "Self.TranscriptItem":
         """Subclasses should customize this."""
+        if self.model.startswith("hf:"):
+            words_in_mouth = " Sure, here's my response:\n\n"
+        else:
+            words_in_mouth = None
         argument = get_llm_response(
             prompt=self.prompt.format(answer=answer.symbol, transcript=transcript),
             model=self.model,
             max_tokens=self.max_wordceling,
+            words_in_mouth=words_in_mouth,
         )
         return self.TranscriptItem(answer=answer, argument=argument)
 
@@ -163,6 +168,10 @@ class Judge:
             return f"\n## JUDGE PROBABILITY ESTIMATES:\n{self.probabilities}"
 
     def __call__(self, transcript: Transcript) -> "Self.TranscriptItem":
+        if self.model.startswith("hf:"):
+            words_in_mouth = " I judge that the answer is:\n\n("
+        else:
+            words_in_mouth = None
         probabilities = get_llm_response(
             prompt=self.prompt.format(transcript=transcript),
             model=self.model,
@@ -171,6 +180,7 @@ class Judge:
                 len(answer_symbol)
                 for answer_symbol in transcript.question.possible_answer_symbols
             ),
+            words_in_mouth=words_in_mouth,
         )
         return self.TranscriptItem(probabilities=probabilities)
 
@@ -214,10 +224,15 @@ class Consultant:
 
     def __call__(self, answer: Answer, transcript: Transcript) -> "Self.TranscriptItem":
         """Subclasses should customize this."""
+        if self.model.startswith("hf:"):
+            words_in_mouth = " Sure, here's my response:\n\n"
+        else:
+            words_in_mouth = None
         response = get_llm_response(
             prompt=self.prompt.format(answer=answer.symbol, transcript=transcript),
             model=self.model,
             max_tokens=self.max_wordceling,
+            words_in_mouth= words_in_mouth,
         )
         return self.TranscriptItem(answer=answer, response=response)
 
@@ -270,10 +285,15 @@ class Client:
 
     def __call__(self, transcript: Transcript) -> "Self.TranscriptItem":
         """Subclasses should customize this."""
+        if self.model.startswith("hf:"):
+            words_in_mouth = " Here's my question:\n\n"
+        else:
+            words_in_mouth = None
         response = get_llm_response(
             prompt=self.prompt.format(transcript=transcript),
             model=self.model,
             max_tokens=self.max_wordceling,
+            words_in_mouth=words_in_mouth,
         )
         return self.TranscriptItem(response=response)
 
