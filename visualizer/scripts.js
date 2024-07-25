@@ -1,12 +1,16 @@
 let currentEntryIndex = 0;
 let entries = [];
 
-document.getElementById('file-input').addEventListener('change', loadFile);
 document.addEventListener('keydown', handleKeydown);
+document.getElementById('file-button').addEventListener('click', function() {
+    document.getElementById('file-input').click();
+});
+document.getElementById('file-input').addEventListener('change', loadFile);
 
 function loadFile(event) {
     const file = event.target.files[0];
     if (file) {
+        document.getElementById('file-name').innerText = file.name;
         const reader = new FileReader();
         reader.onload = function(e) {
             entries = JSON.parse(e.target.result);
