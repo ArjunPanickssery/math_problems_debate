@@ -5,6 +5,7 @@ from typing import List
 from tqdm import tqdm
 
 from data import DatasetItem, load_data, save_to_json
+from function_calling import FunctionCallingLLM
 from model_wrappers import (
     ClaudeWrapper,
     GPTWrapper,
@@ -22,8 +23,14 @@ def run_debate(
     judge: ModelWrapper,
     dataset: List[DatasetItem],
     output_path: str,
+    tools=None
 ):
     results = []
+    # if tools is None, this does nothing
+    # this is a wrapper class that mostly just overwrites the _response method
+    debater_one = FunctionCallingLLM(debater_one, tools)
+    debater_two = FunctionCallingLLM(debater_two, tools)
+
     for dataset_item in tqdm(dataset):
         # Randomize the a/b order of the proofs so that the judge doesn't learn to always pick the first one
         proof_a, proof_b = (
