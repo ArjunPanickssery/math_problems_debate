@@ -7,7 +7,6 @@ import ast, operator
 import json
 from langchain.tools import tool
 from langchain_core.tools import render_text_description
-from decorator import decorator
 
 from model_wrappers import HuggingFaceWrapper, ModelWrapper
 
@@ -52,9 +51,13 @@ def math_eval(expr: str) -> Union[str, float]:
         return eval_node(node)
     except ValueError as e:
         return "Invalid expression"
+    
+
+def supports_tools(model: HuggingFaceWrapper) -> bool:
+    return 'tool_use' in model.tokenizer.chat_template
 
 
-class FunctionCallingLLM:
+class FunctionCallingLLM(ModelWrapper):
     TOOLS_PROMPT = """
 You are an assistant that has access to the following set of tools. 
 Here are the names and descriptions for each tool:
@@ -66,37 +69,36 @@ Return your response as a JSON blob with 'name' and 'arguments' keys.
 
 The `arguments` should be a dictionary, with keys corresponding 
 to the argument names and the values corresponding to the requested values."""
-    def __init__(self, model: HuggingFaceWrapper, tools: List[Callable]):
+    def __init__(self, model, tools=None):
         self.model = model
+        if tools is None:
+            return model
+    
         self.tools = tools
         self.tool_pattern = re.compile(r'<tool_call>(.*?)</tool_call>', re.DOTALL)
         self.tool_map = {tool.__name__: tool for tool in tools}
 
-    def supports_tools(self) -> bool:
-        return 'tool_use' in self.model.tokenizer.chat_template
-
 
     def _response(self, system_prompt: str, user_prompt: str, words_in_mouth="") -> str:
-        tool_pattern = re.compile(r'<tool_call>(.*?)</tool_call>', re.DOTALL)
         messages = [{'role': 'system', 'content': system_prompt},
                     {'role': 'user', 'content': user_prompt}]
-        if self.supports_tools():   # add switches for OpenAI vs. CLaude, vs HuggingFaceWrappers
-            input_ids = self.model.tokenizer.apply_chat_template(messages,
-                                                         return_tensors="pt",
-                                                         add_generation_prompt=False, 
-                                                         chat_template='tool_use',
-                                                         tools=self.tools).to('cuda')
+        if supports_tools(self):   # add switches for OpenAI vs. CLaude, vs HuggingFaceWrappers
+            input_ids = self.tokenizer.apply_chat_template(messages,
+                                                return_tensors="pt",
+                                                add_generation_prompt=False, 
+                                                chat_template='tool_use',
+                                                tools=self.tools).to('cuda')
         else:
             messages.insert(0, {'role': 'system', 
                                 'content': self.TOOLS_PROMPT.format(
                                     rendered_tools=render_text_description(self.tools)
                                     )})
-            input_ids = self.model.tokenizer.apply_chat_template(messages,
-                                                       return_tensors="pt",
-                                                       add_generation_prompt=True).to('cuda')
+            input_ids = self.tokenizer.apply_chat_template(messages,
+                                                    return_tensors="pt",
+                                                    add_generation_prompt=True).to('cuda')
         output = input_ids
         while True:
-            output = self.model.generate(   # need to implement .generate(messages) -> str for underlying classes
+            output = self.model.model.generate(   # need to implement .generate(messages) -> str for underlying classes
                 input_ids, 
             )
 
@@ -107,7 +109,7 @@ to the argument names and the values corresponding to the requested values."""
             assistant_text = self.tokenizer.decode(assistant_toks)
             # print("Response finished, assistant text:", assistant_text)
             # maybe this should be a findall
-            func_match = tool_pattern.search(assistant_text)#.group(1)
+            func_match = self.tool_pattern.search(assistant_text)#.group(1)
             if func_match is None:   # no tool call found, so we are done
                 # print('no match found, done')
                 break
@@ -128,12 +130,10 @@ to the argument names and the values corresponding to the requested values."""
             input_ids = self.tokenizer.apply_chat_template(messages,
                                                             return_tensors="pt").to('cuda')
         return self.tokenizer.decode(output[0])
+    
 
-# Usage
-# llm = FunctionCallingLLM("meta-llama/Meta-Llama-3-8B-Instruct")  # Replace with your preferred model
-# prompt = """If John has 5939 apple boxes and each apple box contains 3481 apples, how many apples does John have in total?
-# To aid in your calculation, you can put arbitrary math expressions inside of <math> and </math> tags, and the output
-# will be automatically provided in a <math_result> tag. For example, <math>3 * 8 + 1</math> will output <math_result>25</math_result>."""
-
-# generated_text = llm.generate()
-# print(generated_text)
+    def __getattr__(self, name: str):
+        if hasattr(self, name):
+            return getattr(self, name)
+        else:
+            return getattr(self.model, name)
