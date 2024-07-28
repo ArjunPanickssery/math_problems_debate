@@ -146,7 +146,7 @@ Which answer is correct - (A) {numeric_a} or (B) {numeric_b}?"""
         )
         return self._response(
             self.DEBATER_SYSTEM_PROMPT, unformatted_prompt, self.DEBATER_WORDS_IN_MOUTH
-        )
+        ).strip()
 
 
 class HuggingFaceWrapper(ModelWrapper):
