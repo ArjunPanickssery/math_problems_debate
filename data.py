@@ -1,3 +1,4 @@
+from collections import defaultdict
 import dataclasses
 import json
 import os
@@ -16,7 +17,6 @@ class DatasetItem:
     question: str
     answer_correct: Answer
     answer_incorrect: Answer
-
 
 def save_to_json(dictionary, file_name):
     # Create directory if not present
@@ -58,3 +58,16 @@ def load_data() -> tuple[List[DatasetItem], List[DatasetItem]]:
     train_data = transform_to_dataset_item(train_data_raw)
     test_data = transform_to_dataset_item(test_data_raw)
     return train_data, test_data
+
+def load_cache(cache_path: str):
+    with open(cache_path, 'r') as f:
+        cache = json.load(f)
+    # Convert nested dictionaries to defaultdict
+    return defaultdict(lambda: defaultdict(dict), {
+        k: defaultdict(dict, v) for k, v in cache.items()
+    })
+
+def save_cache(cache, cache_path: str):
+    with open(cache_path, 'w') as f:
+        # Convert defaultdict to regular dict for JSON serialization
+        json.dump({k: dict(v) for k, v in cache.items()}, f, indent=4)
