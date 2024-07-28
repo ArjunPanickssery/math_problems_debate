@@ -120,24 +120,32 @@ def run_debate(
 
 if __name__ == "__main__":
     train_data, test_data = load_data()
-    # debater_one = Llama3Wrapper("llama3_8b", "meta-llama/Meta-Llama-3-8B-Instruct")
-    debater_one = Llama2Wrapper("llama2_7b", "meta-llama/Llama-2-7b-chat-hf")
-    # debater_one = Llama2Wrapper("llama2_13b", "meta-llama/Llama-2-13b-chat-hf")
-    # debater_two = ClaudeWrapper("claude3_sonnet", "claude-3-sonnet-20240229")
-    # debater_two = ClaudeWrapper("claude35_sonnet", "claude-3-5-sonnet-20240620")
-    debater_two = GPTWrapper("gpt_4o", "gpt-4o-2024-05-13")
-    # debater_two = GPTWrapper('gpt_35_turbo', 'gpt-3.5-turbo-0125')
+    llama3_8b = Llama3Wrapper("llama3_8b", "meta-llama/Meta-Llama-3-8B-Instruct")
+    # llama2_7b = Llama2Wrapper("llama2_7b", "meta-llama/Llama-2-7b-chat-hf")
+    llama2_13b = Llama2Wrapper("llama2_13b", "meta-llama/Llama-2-13b-chat-hf")
+    claude3_sonnet = ClaudeWrapper("claude3_sonnet", "claude-3-sonnet-20240229")
+    claude35_sonnet = ClaudeWrapper("claude35_sonnet", "claude-3-5-sonnet-20240620")
+    gpt_4o = GPTWrapper("gpt4o", "gpt-4o-2024-05-13")
+    gpt_35_turbo = GPTWrapper("gpt35_turbo", "gpt-3.5-turbo-0125")
     judge = GPTWrapper("gpt35_turbo", "gpt-3.5-turbo-0125")
     # judge = Llama3Wrapper("llama3_8b", "meta-llama/Meta-Llama-3-8B-Instruct")
 
-    print(
-        f"Running debate between {debater_one.model_id} and {debater_two.model_id}\nJudge: {judge.model_id}"
-    )
-    run_debate(
-        debater_one,
-        debater_two,
-        judge,
-        train_data,
-        f"results/{debater_one.model_id}-{debater_two.model_id}-{judge.model_id}.json",
-        cache_path=f"cache.json",
-    )
+    def run(debater_one, debater_two):
+        if debater_two.model_id < debater_one.model_id:
+            debater_one, debater_two = debater_two, debater_one
+        print(
+            f"Running debate between {debater_one.model_id} and {debater_two.model_id}\nJudge: {judge.model_id}"
+        )
+        run_debate(
+            debater_one,
+            debater_two,
+            judge,
+            train_data,
+            f"results/{debater_one.model_id}-{debater_two.model_id}-{judge.model_id}.json",
+            cache_path=f"cache.json",
+        )
+
+    # run(llama2_7b, claude35_sonnet)
+    # run(llama2_13b, llama2_13b)
+    # run(llama2_13b, llama3_8b)
+    run(llama3_8b, llama2_13b)
