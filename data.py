@@ -1,7 +1,7 @@
-from collections import defaultdict
 import dataclasses
 import json
 import os
+from collections import defaultdict
 from dataclasses import dataclass
 from typing import List, TypedDict
 
@@ -17,6 +17,7 @@ class DatasetItem:
     question: str
     answer_correct: Answer
     answer_incorrect: Answer
+
 
 def save_to_json(dictionary, file_name):
     # Create directory if not present
@@ -59,15 +60,29 @@ def load_data() -> tuple[List[DatasetItem], List[DatasetItem]]:
     test_data = transform_to_dataset_item(test_data_raw)
     return train_data, test_data
 
-def load_cache(cache_path: str):
-    with open(cache_path, 'r') as f:
+
+def load_argument_cache(cache_path: str):
+    with open(cache_path, "r") as f:
         cache = json.load(f)
     # Convert nested dictionaries to defaultdict
-    return defaultdict(lambda: defaultdict(dict), {
-        k: defaultdict(dict, v) for k, v in cache.items()
-    })
+    return defaultdict(
+        lambda: defaultdict(dict), {k: defaultdict(dict, v) for k, v in cache.items()}
+    )
 
-def save_cache(cache, cache_path: str):
-    with open(cache_path, 'w') as f:
+
+def save_argument_cache(cache, cache_path: str):
+    with open(cache_path, "w") as f:
         # Convert defaultdict to regular dict for JSON serialization
         json.dump({k: dict(v) for k, v in cache.items()}, f, indent=4)
+
+
+def load_naive_judge_cache(cache_path: str):
+    with open(cache_path, "r") as f:
+        cache = json.load(f)
+
+    return defaultdict(dict, cache)
+
+
+def save_naive_judge_cache(cache, cache_path: str):
+    with open(cache_path, "w") as f:
+        json.dump(dict(cache), f, indent=4)  # convert defaultdict -> dict
