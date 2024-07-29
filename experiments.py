@@ -260,17 +260,15 @@ def run_debate(
 
 def debate_script():
     train_data, test_data = load_data()
-    llama3_8b = Llama3Wrapper("llama3_8b", "meta-llama/Meta-Llama-3-8B-Instruct")
+    # llama3_8b = Llama3Wrapper("llama3_8b", "meta-llama/Meta-Llama-3-8B-Instruct")
     # llama2_7b = Llama2Wrapper("llama2_7b", "meta-llama/Llama-2-7b-chat-hf")
-    llama2_13b = Llama2Wrapper("llama2_13b", "meta-llama/Llama-2-13b-chat-hf")
+    # llama2_13b = Llama2Wrapper("llama2_13b", "meta-llama/Llama-2-13b-chat-hf")
     claude3_sonnet = ClaudeWrapper("claude3_sonnet", "claude-3-sonnet-20240229")
     claude35_sonnet = ClaudeWrapper("claude35_sonnet", "claude-3-5-sonnet-20240620")
-    gpt_4o = GPTWrapper("gpt4o", "gpt-4o-2024-05-13")
-    gpt_35_turbo = GPTWrapper("gpt35_turbo", "gpt-3.5-turbo-0125")
-    judge = GPTWrapper("gpt35_turbo", "gpt-3.5-turbo-0125")
-    # judge = Llama3Wrapper("llama3_8b", "meta-llama/Meta-Llama-3-8B-Instruct")
+    gpt4o = GPTWrapper("gpt4o", "gpt-4o-2024-05-13")
+    gpt35_turbo = GPTWrapper("gpt35_turbo", "gpt-3.5-turbo-0125")
 
-    def run(debater_one, debater_two):
+    def run(debater_one, debater_two, judge):
         if debater_two.model_id < debater_one.model_id:
             debater_one, debater_two = debater_two, debater_one
         print(
@@ -281,24 +279,38 @@ def debate_script():
             debater_two,
             judge,
             train_data,
-            f"results/{debater_one.model_id}-{debater_two.model_id}-{judge.model_id}.json",
+            f"results_debate/{debater_one.model_id}-{debater_two.model_id}-{judge.model_id}.json",
             argument_cache_path=f"argument_cache.json",
             naive_judge_cache_path=f"naive_judge_cache.json",
         )
 
-    # run(llama2_7b, claude35_sonnet)
-    # run(llama2_13b, llama2_13b)
-    # run(llama2_13b, llama3_8b)
-    run(llama3_8b, llama2_13b)
+    fake_llama3_8b = GPTWrapper("llama3_8b", "fake")
+    fake_llama2_7b = GPTWrapper("llama2_7b", "fake")
+    fake_llama2_13b = GPTWrapper("llama2_13b", "fake")
+
+    models = [
+        claude35_sonnet,
+        claude3_sonnet,
+        gpt4o,
+        gpt35_turbo,
+        fake_llama3_8b,
+        fake_llama2_7b,
+        fake_llama2_13b,
+    ]
+    judge = gpt4o
+    for i in range(7):
+        debater = models[i]
+        for opponent in models[i + 1 :]:
+            run(debater, opponent, judge)
 
 
-if __name__ == "__main__":
+def consultancy_script():
     train_data, test_data = load_data()
     claude3_sonnet = ClaudeWrapper("claude3_sonnet", "claude-3-sonnet-20240229")
     claude35_sonnet = ClaudeWrapper("claude35_sonnet", "claude-3-5-sonnet-20240620")
     gpt_4o = GPTWrapper("gpt4o", "gpt-4o-2024-05-13")
     gpt_35_turbo = GPTWrapper("gpt35_turbo", "gpt-3.5-turbo-0125")
-    judge = GPTWrapper("gpt35_turbo", "gpt-3.5-turbo-0125")
+    # judge = GPTWrapper("gpt35_turbo", "gpt-3.5-turbo-0125")
 
     def run(consultant, judge):
         print(f"Running consultancy with {consultant.model_id} and {judge.model_id}")
@@ -311,8 +323,12 @@ if __name__ == "__main__":
             naive_judge_cache_path=f"naive_judge_cache.json",
         )
 
-    # run(claude3_sonnet, judge)
-    # run(claude35_sonnet, judge)
-    # run(gpt_35_turbo, judge)
     llama3_8b = Llama3Wrapper("llama3_8b", "meta-llama/Meta-Llama-3-8B-Instruct")
-    run(llama3_8b, judge)
+    # llama2_7b = Llama2Wrapper("llama2_7b", "meta-llama/Llama-2-7b-chat-hf")
+    # llama2_13b = Llama2Wrapper("llama2_13b", "meta-llama/Llama-2-13b-chat-hf")
+    fake_llama = GPTWrapper("llama2_13b", "fake")
+    run(fake_llama, llama3_8b)
+
+
+if __name__ == "__main__":
+    debate_script()
