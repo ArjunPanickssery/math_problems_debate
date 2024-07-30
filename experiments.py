@@ -74,12 +74,18 @@ def run_consultancy(
                 else dataset_item.answer_correct.numeric
             )
 
+        if consultant_letter.lower() == "a":
+            cache_key = "a_correct" if is_answer_a_correct else "a_incorrect"
+        else:
+            cache_key = "b_incorrect" if is_answer_a_correct else "b_correct"
         # Get argument
         if (
             argument_cache
-            and "a" in argument_cache[consultant.model_id][dataset_item.question]
+            and cache_key in argument_cache[consultant.model_id][dataset_item.question]
         ):
-            argument = argument_cache[consultant.model_id][dataset_item.question]["a"]
+            argument = argument_cache[consultant.model_id][dataset_item.question][
+                cache_key
+            ]
         else:
             argument = consultant.get_debater_argument(
                 dataset_item.question,
@@ -88,6 +94,9 @@ def run_consultancy(
                 proof_a,
                 proof_b,
             )
+            argument_cache[consultant.model_id][dataset_item.question][
+                cache_key
+            ] = argument
 
         # Get judge confidence & naive-judge confidence
         judge_confidence = judge.get_judge_confidence_for_consultancy(
@@ -177,9 +186,12 @@ def run_debate(
         # Get arguments
         if (
             argument_cache
-            and "a" in argument_cache[debater_a.model_id][dataset_item.question]
+            and ("a_correct" if is_answer_a_correct else "a_incorrect")
+            in argument_cache[debater_a.model_id][dataset_item.question]
         ):
-            response_a = argument_cache[debater_a.model_id][dataset_item.question]["a"]
+            response_a = argument_cache[debater_a.model_id][dataset_item.question][
+                "a_correct" if is_answer_a_correct else "a_incorrect"
+            ]
         else:
             response_a = debater_a.get_debater_argument(
                 dataset_item.question,
@@ -192,12 +204,17 @@ def run_debate(
                 proof_a,
                 proof_b,
             )
-            argument_cache[debater_a.model_id][dataset_item.question]["a"] = response_a
+            argument_cache[debater_a.model_id][dataset_item.question][
+                "a_correct" if is_answer_a_correct else "a_incorrect"
+            ] = response_a
         if (
             argument_cache
-            and "b" in argument_cache[debater_b.model_id][dataset_item.question]
+            and ("b_incorrect" if is_answer_a_correct else "b_correct")
+            in argument_cache[debater_b.model_id][dataset_item.question]
         ):
-            response_b = argument_cache[debater_b.model_id][dataset_item.question]["b"]
+            response_b = argument_cache[debater_b.model_id][dataset_item.question][
+                "b_incorrect" if is_answer_a_correct else "b_correct"
+            ]
         else:
             response_b = debater_b.get_debater_argument(
                 dataset_item.question,
@@ -210,7 +227,9 @@ def run_debate(
                 proof_a,
                 proof_b,
             )
-            argument_cache[debater_b.model_id][dataset_item.question]["b"] = response_b
+            argument_cache[debater_b.model_id][dataset_item.question][
+                "b_incorrect" if is_answer_a_correct else "b_correct"
+            ] = response_b
 
         # Get judge confidence & naive-judge confidence
         judge_confidence = judge.get_judge_confidence_for_debate(
@@ -262,7 +281,7 @@ def debate_script():
     train_data, test_data = load_data()
     # llama3_8b = Llama3Wrapper("llama3_8b", "meta-llama/Meta-Llama-3-8B-Instruct")
     # llama2_7b = Llama2Wrapper("llama2_7b", "meta-llama/Llama-2-7b-chat-hf")
-    llama2_13b = Llama2Wrapper("llama2_13b", "meta-llama/Llama-2-13b-chat-hf")
+    # llama2_13b = Llama2Wrapper("llama2_13b", "meta-llama/Llama-2-13b-chat-hf")
     claude3_sonnet = ClaudeWrapper("claude3_sonnet", "claude-3-sonnet-20240229")
     claude35_sonnet = ClaudeWrapper("claude35_sonnet", "claude-3-5-sonnet-20240620")
     gpt4o = GPTWrapper("gpt4o", "gpt-4o-2024-05-13")
@@ -293,12 +312,12 @@ def debate_script():
         claude3_sonnet,
         gpt4o,
         gpt35_turbo,
-        fake_llama3_8b,
-        fake_llama2_7b,
-        fake_llama2_13b,
+        # fake_llama3_8b,
+        # fake_llama2_7b,
+        # fake_llama2_13b,
     ]
-    judge = llama2_13b
-    for i in range(7):
+    judge = gpt4o
+    for i in range(len(models)):
         debater = models[i]
         for opponent in models[i + 1 :]:
             run(debater, opponent, judge)
@@ -345,4 +364,4 @@ def consultancy_script():
 
 
 if __name__ == "__main__":
-    consultancy_script()
+    debate_script()
