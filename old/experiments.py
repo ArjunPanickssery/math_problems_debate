@@ -4,8 +4,8 @@ from typing import List
 
 from tqdm import tqdm
 
-from data import DatasetItem, load_data, save_to_json
-from model_wrappers import Llama2Wrapper, Llama3Wrapper, ModelWrapper
+from old.data import DatasetItem, load_data, save_to_json
+from old.model_wrappers import Llama2Wrapper, Llama3Wrapper, ModelWrapper
 
 LETTERS = ["A", "B"]
 

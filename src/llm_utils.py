@@ -386,7 +386,7 @@ async def get_llm_response_async(
     Args:
         prompt: str | list[dict[str, str]]: Prompt to send to the LLM.
         verbose: bool: Whether to print the prompt and response.
-        model: str | None: Model to use for the LLM. Defaults to "gpt-4o-2024-05-13".
+        model: str | None: Model to use for the LLM. Defaults to "gpt-4o-mini".
         return_probs_for: list[str] | None: List of tokens to return relative probabilities for.
             If None, simply returns the text response.
         max_tokens: int | None: Maximum number of tokens to generate.
@@ -400,7 +400,7 @@ async def get_llm_response_async(
     """
 
     default_options = {
-        "model": "gpt-4o-2024-05-13",
+        "model": "gpt-4o-mini",
     }
     options = default_options | kwargs
     options["model"] = model or options["model"]

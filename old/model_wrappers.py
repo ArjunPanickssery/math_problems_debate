@@ -4,7 +4,7 @@ from typing import List
 from dotenv import load_dotenv
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from data import DatasetItem
+from old.data import DatasetItem
 
 load_dotenv()
 HF_TOKEN = os.getenv("HF_TOKEN")
