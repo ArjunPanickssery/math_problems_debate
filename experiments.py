@@ -262,7 +262,7 @@ def debate_script():
     train_data, test_data = load_data()
     # llama3_8b = Llama3Wrapper("llama3_8b", "meta-llama/Meta-Llama-3-8B-Instruct")
     # llama2_7b = Llama2Wrapper("llama2_7b", "meta-llama/Llama-2-7b-chat-hf")
-    # llama2_13b = Llama2Wrapper("llama2_13b", "meta-llama/Llama-2-13b-chat-hf")
+    llama2_13b = Llama2Wrapper("llama2_13b", "meta-llama/Llama-2-13b-chat-hf")
     claude3_sonnet = ClaudeWrapper("claude3_sonnet", "claude-3-sonnet-20240229")
     claude35_sonnet = ClaudeWrapper("claude35_sonnet", "claude-3-5-sonnet-20240620")
     gpt4o = GPTWrapper("gpt4o", "gpt-4o-2024-05-13")
@@ -297,7 +297,7 @@ def debate_script():
         fake_llama2_7b,
         fake_llama2_13b,
     ]
-    judge = gpt4o
+    judge = llama2_13b
     for i in range(7):
         debater = models[i]
         for opponent in models[i + 1 :]:
@@ -308,8 +308,8 @@ def consultancy_script():
     train_data, test_data = load_data()
     claude3_sonnet = ClaudeWrapper("claude3_sonnet", "claude-3-sonnet-20240229")
     claude35_sonnet = ClaudeWrapper("claude35_sonnet", "claude-3-5-sonnet-20240620")
-    gpt_4o = GPTWrapper("gpt4o", "gpt-4o-2024-05-13")
-    gpt_35_turbo = GPTWrapper("gpt35_turbo", "gpt-3.5-turbo-0125")
+    gpt4o = GPTWrapper("gpt4o", "gpt-4o-2024-05-13")
+    gpt35_turbo = GPTWrapper("gpt35_turbo", "gpt-3.5-turbo-0125")
     # judge = GPTWrapper("gpt35_turbo", "gpt-3.5-turbo-0125")
 
     def run(consultant, judge):
@@ -323,12 +323,26 @@ def consultancy_script():
             naive_judge_cache_path=f"naive_judge_cache.json",
         )
 
-    llama3_8b = Llama3Wrapper("llama3_8b", "meta-llama/Meta-Llama-3-8B-Instruct")
+    # llama3_8b = Llama3Wrapper("llama3_8b", "meta-llama/Meta-Llama-3-8B-Instruct")
     # llama2_7b = Llama2Wrapper("llama2_7b", "meta-llama/Llama-2-7b-chat-hf")
     # llama2_13b = Llama2Wrapper("llama2_13b", "meta-llama/Llama-2-13b-chat-hf")
-    fake_llama = GPTWrapper("llama2_13b", "fake")
-    run(fake_llama, llama3_8b)
+    fake_llama3_8b = GPTWrapper("llama3_8b", "fake")
+    fake_llama2_7b = GPTWrapper("llama2_7b", "fake")
+    fake_llama2_13b = GPTWrapper("llama2_13b", "fake")
+
+    models = [
+        claude35_sonnet,
+        claude3_sonnet,
+        gpt4o,
+        gpt35_turbo,
+        fake_llama3_8b,
+        fake_llama2_7b,
+        fake_llama2_13b,
+    ]
+    judge = gpt4o
+    for model in models:
+        run(model, judge)
 
 
 if __name__ == "__main__":
-    debate_script()
+    consultancy_script()
