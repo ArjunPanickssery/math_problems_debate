@@ -1,11 +1,8 @@
-from src.solib.common import Transcript, Question, Judge, Protocol
+from src.protocols.common import Transcript, Question, Judge, Protocol
 
 
 class BlindJudge(Protocol):
-    """General class for BlindJudge.
-    - Judge asks questions, debater responds.
-    - Ends when Judge has asked num_turns questions.
-    """
+    """General class for BlindJudge."""
 
     def __init__(
         self,

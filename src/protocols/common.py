@@ -1,6 +1,7 @@
 from typing import Self, Any
 from dataclasses import dataclass
 import numpy as np
+from random import random
 from src.llm_utils import get_llm_response
 
 
@@ -86,16 +87,17 @@ class Judge:
             prompt (str): prompt for the judge. Default None.
             model (str): model for the judge. Default None.
         """
-        if prompt is None:
-            prompt = (
-                "I want you to give me your most informed judgment on which answer "
-                "is correct, based on any information I provide. Your response "
-                "should simply be the option symbol (e.g. A, B) of one of the items "
-                "from POSSIBLE ANSWERS, and nothing else.\n\n"
-                "{transcript}\n\n"
-            )
-        self.prompt = prompt
+        if prompt is not None:
+            self.prompt = prompt
         self.model = model
+
+    prompt = (
+        "I want you to give me your most informed judgment on which answer "
+        "is correct, based on any information I provide. Your response "
+        "should simply be the option symbol (e.g. A, B) of one of the items "
+        "from POSSIBLE ANSWERS, and nothing else.\n\n"
+        "{transcript}\n\n"
+    )
 
 
 # ABC

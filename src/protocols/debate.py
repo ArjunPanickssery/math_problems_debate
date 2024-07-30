@@ -2,7 +2,7 @@ from typing import Self
 from dataclasses import dataclass
 from random import random
 from src.llm_utils import get_llm_response
-from src.solib.common import Transcript, Question, Answer, Judge, Protocol
+from src.protocols.common import Transcript, Question, Answer, Judge, Protocol
 
 
 # ABC
