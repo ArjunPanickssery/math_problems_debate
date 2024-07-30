@@ -52,8 +52,7 @@ class Transcript:
             return str(self.question) + (
                 str(self.judgement) if self.judgement is not None else ""
             )
-        else:
-            return self.protocol.str_transcript(self)
+        return self.protocol.str_transcript(self)
 
 
 # ABC
@@ -121,24 +120,11 @@ class Protocol:
         )
 
     @classmethod
-    def subtranscript(cls, transcript: Transcript) -> str:
-        transcript_item_classes = [
-            participant_class.TranscriptItem
-            for participant_class in cls.participant_classes
-        ]
-        items = [
-            item
-            for item in transcript.transcript
-            if any(isinstance(item, cls) for cls in transcript_item_classes)
-        ]
-        return items
-
-    @classmethod
     def str_transcript(cls, transcript: Transcript) -> str:
         return (
             str(transcript.question)
             + cls.transcript_heading
-            + "".join(str(item) for item in cls.subtranscript(transcript))
+            + "".join(str(item) for item in transcript.transcript)
             + (str(transcript.judgement) if transcript.judgement is not None else "")
         )
 
