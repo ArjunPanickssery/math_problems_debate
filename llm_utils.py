@@ -19,6 +19,7 @@ import os
 import math
 import sys
 import asyncio
+from typing import Literal
 from dotenv import load_dotenv
 from openai import AsyncOpenAI, OpenAI
 from mistralai.async_client import MistralAsyncClient
@@ -306,17 +307,48 @@ def prepare_messages(prompt: str) -> list[dict[str, str]]:
 
 
 def get_hf_response(
-    prompt: list[dict[str, str]],
+    prompt: str | list[dict[str, str]],
     model_name: str,
     max_tokens: int | None = None,
     return_probs_for: list[str] | None = None,
+    prompt_type: Literal["plain", "messages", "formatted"] = "plain",
+    words_in_mouth: str | None = None,
 ) -> str | dict[str, float]:
-    if max_tokens is None:
-        max_tokens = 2048
+    """
+    Get response from Hugging Face model.
+    
+    Args:
+        prompt: str | list[dict[str, str]]: Prompt to send to the LLM.
+        model_name: str: Name of the Hugging Face model to use.
+        max_tokens: int | None: Maximum number of tokens to generate.
+        return_probs_for: list[str] | None: List of tokens to return relative probabilities for.
+            If None, simply returns the text response.
+        prompt_type: Literal["plain", "messages", "formatted"]: Type of prompt.
+            "plain" is a plain question, which needs to be formatted into the HF model's syntax.
+            "messages" means the prompt is a list[dict] as in the ChatCompletions API.
+            "formatted" means the prompt should be sent as-is to the HF model.
+        words_in_mouth: str | None: Words to append to the prompt.
+            E.g. " Sure, here's my response:\n\n"
+    """
     hf_repo = model_name.split("hf:")[1]
     tokenizer, model = get_huggingface_local_client(hf_repo)
-    if not isinstance(prompt, str):
+    if words_in_mouth is None:
+        words_in_mouth = ""
+    if prompt_type == "plain":
+        assert isinstance(prompt, str)
+        prompt = prepare_messages(prompt)
         prompt = tokenizer.apply_chat_template(prompt, tokenize=False)
+    elif prompt_type == "messages":
+        assert isinstance(prompt, list)
+        assert isinstance(prompt[0], dict)
+        prompt = tokenizer.apply_chat_template(prompt, tokenize=False)
+    elif prompt_type == "formatted":
+        assert isinstance(prompt, str)
+        ...
+    prompt += words_in_mouth
+    if max_tokens is None:
+        max_tokens = 2048    
+    
     input_ids = tokenizer.encode(prompt, return_tensors="pt").to(
         model.device
     )
@@ -334,7 +366,9 @@ def get_hf_response(
     else:
         output = model.generate(input_ids, max_length=max_tokens)
         decoded = tokenizer.decode(output[0], skip_special_tokens=True)
-        return decoded
+        prompt_end = prompt[-9:]
+        response = decoded.split(prompt_end)[-1]
+        return response
 
 
 async def get_llm_response_async(
@@ -342,6 +376,7 @@ async def get_llm_response_async(
     model: str | None = None,
     return_probs_for: list[str] | None = None,
     max_tokens: int | None = None,
+    words_in_mouth: str | None = None,
     verbose=False,
     **kwargs,
 ) -> str | dict[str, float]:
@@ -355,6 +390,8 @@ async def get_llm_response_async(
         return_probs_for: list[str] | None: List of tokens to return relative probabilities for.
             If None, simply returns the text response.
         max_tokens: int | None: Maximum number of tokens to generate.
+        words_in_mouth: str | None: Words to append to the prompt, only used for huggingface models.
+            E.g. " Sure, here's my response:\n\n"
 
     Keyword Args:
         response_model: pydantic.BaseModel: Pydantic model to use for response, if using
@@ -387,6 +424,8 @@ async def get_llm_response_async(
             model_name=options["model"],
             max_tokens=max_tokens,
             return_probs_for=return_probs_for,
+            prompt_type="messages",
+            words_in_mouth=words_in_mouth,
         )
     elif client_name == "mistral" and not os.getenv("USE_OPENROUTER"):
         response = await client.chat(
@@ -429,6 +468,7 @@ def get_llm_response(
     model: str | None = None,
     return_probs_for: list[str] | None = None,
     max_tokens: int | None = None,
+    words_in_mouth: str | None = None,
     verbose=False,
     **kwargs,
 ) -> str | dict[str, float]:
@@ -442,6 +482,8 @@ def get_llm_response(
         return_probs_for: list[str] | None: List of tokens to return relative probabilities for.
             If None, simply returns the text response.
         max_tokens: int | None: Maximum number of tokens to generate.
+        words_in_mouth: str | None: Words to append to the prompt, only used for huggingface models.
+            E.g. " Sure, here's my response:\n\n"
 
     Keyword Args:
         response_model: pydantic.BaseModel: Pydantic model to use for response, if using
@@ -475,6 +517,8 @@ def get_llm_response(
             model_name=options["model"],
             max_tokens=max_tokens,
             return_probs_for=return_probs_for,
+            prompt_type="messages",
+            words_in_mouth=words_in_mouth,
         )
     elif client_name == "mistral" and not os.getenv("USE_OPENROUTER"):
         response = client.chat(
