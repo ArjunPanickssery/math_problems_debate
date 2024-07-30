@@ -281,7 +281,7 @@ def debate_script():
     train_data, test_data = load_data()
     # llama3_8b = Llama3Wrapper("llama3_8b", "meta-llama/Meta-Llama-3-8B-Instruct")
     # llama2_7b = Llama2Wrapper("llama2_7b", "meta-llama/Llama-2-7b-chat-hf")
-    # llama2_13b = Llama2Wrapper("llama2_13b", "meta-llama/Llama-2-13b-chat-hf")
+    llama2_13b = Llama2Wrapper("llama2_13b", "meta-llama/Llama-2-13b-chat-hf")
     claude3_sonnet = ClaudeWrapper("claude3_sonnet", "claude-3-sonnet-20240229")
     claude35_sonnet = ClaudeWrapper("claude35_sonnet", "claude-3-5-sonnet-20240620")
     gpt4o = GPTWrapper("gpt4o", "gpt-4o-2024-05-13")
@@ -307,20 +307,30 @@ def debate_script():
     fake_llama2_7b = GPTWrapper("llama2_7b", "fake")
     fake_llama2_13b = GPTWrapper("llama2_13b", "fake")
 
-    models = [
+    api_models = [
         claude35_sonnet,
         claude3_sonnet,
         gpt4o,
         gpt35_turbo,
-        # fake_llama3_8b,
-        # fake_llama2_7b,
-        # fake_llama2_13b,
     ]
-    judge = gpt4o
-    for i in range(len(models)):
-        debater = models[i]
-        for opponent in models[i + 1 :]:
-            run(debater, opponent, judge)
+    for model in api_models:
+        # run(model, llama2_13b, llama3_8b)
+        run(model, llama2_13b, gpt35_turbo)
+        run(model, llama2_13b, gpt4o)
+    # models = [
+    #     claude35_sonnet,
+    #     claude3_sonnet,
+    #     gpt4o,
+    #     gpt35_turbo,
+    #     # fake_llama3_8b,
+    #     # fake_llama2_7b,
+    #     # fake_llama2_13b,
+    # ]
+    # judge = llama3_8b 
+    # for i in range(len(models)):
+    #     debater = models[i]
+    #     for opponent in models[i + 1 :]:
+    #         run(debater, opponent, judge)
 
 
 def consultancy_script():
