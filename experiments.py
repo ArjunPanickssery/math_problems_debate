@@ -5,22 +5,11 @@ from typing import List
 
 from tqdm import tqdm
 
-from data import (
-    DatasetItem,
-    load_argument_cache,
-    load_data,
-    load_naive_judge_cache,
-    save_argument_cache,
-    save_naive_judge_cache,
-    save_to_json,
-)
-from model_wrappers import (
-    ClaudeWrapper,
-    GPTWrapper,
-    Llama2Wrapper,
-    Llama3Wrapper,
-    ModelWrapper,
-)
+from data import (DatasetItem, load_argument_cache, load_data,
+                  load_naive_judge_cache, save_argument_cache,
+                  save_naive_judge_cache, save_to_json)
+from model_wrappers import (ClaudeWrapper, GPTWrapper, Llama2Wrapper,
+                            Llama3Wrapper, ModelWrapper)
 
 LETTERS = ["A", "B"]
 
@@ -366,3 +355,4 @@ def consultancy_script():
 if __name__ == "__main__":
     debate_script()
     # consultancy_script()
+    # TODO: run consultancy for llama2_7b

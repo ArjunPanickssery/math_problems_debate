@@ -276,7 +276,7 @@ class HuggingFaceWrapper(ModelWrapper):
         input_ids = self.tokenizer.encode(formatted_prompt, return_tensors="pt").to(
             self.model.device
         )
-        output = self.model(input_ids).logits[0, -1, :]
+        output = self.model(input_ids).logits[0, -1, :].to("cpu")
         probs = output.softmax(dim=0)
 
         return {
