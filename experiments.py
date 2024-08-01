@@ -5,11 +5,22 @@ from typing import List
 
 from tqdm import tqdm
 
-from data import (DatasetItem, load_argument_cache, load_data,
-                  load_naive_judge_cache, save_argument_cache,
-                  save_naive_judge_cache, save_to_json)
-from model_wrappers import (ClaudeWrapper, GPTWrapper, Llama2Wrapper,
-                            Llama3Wrapper, ModelWrapper)
+from data import (
+    DatasetItem,
+    load_argument_cache,
+    load_data,
+    load_naive_judge_cache,
+    save_argument_cache,
+    save_naive_judge_cache,
+    save_to_json,
+)
+from model_wrappers import (
+    ClaudeWrapper,
+    GPTWrapper,
+    Llama2Wrapper,
+    Llama3Wrapper,
+    ModelWrapper,
+)
 
 LETTERS = ["A", "B"]
 
@@ -331,28 +342,28 @@ def consultancy_script():
         )
 
     llama3_8b = Llama3Wrapper("llama3_8b", "meta-llama/Meta-Llama-3-8B-Instruct")
-    # llama2_7b = Llama2Wrapper("llama2_7b", "meta-llama/Llama-2-7b-chat-hf")
+    llama2_7b = Llama2Wrapper("llama2_7b", "meta-llama/Llama-2-7b-chat-hf")
     # llama2_13b = Llama2Wrapper("llama2_13b", "meta-llama/Llama-2-13b-chat-hf")
     fake_llama3_8b = GPTWrapper("llama3_8b", "fake")
     fake_llama2_7b = GPTWrapper("llama2_7b", "fake")
     fake_llama2_13b = GPTWrapper("llama2_13b", "fake")
 
     models = [
-        # claude35_sonnet,
-        # claude3_sonnet,
-        # gpt4o,
-        # gpt35_turbo,
-        # llama3_8b,
-        # llama2_7b,
+        claude35_sonnet,
+        claude3_sonnet,
+        gpt4o,
+        gpt35_turbo,
+        llama3_8b,
+        llama2_7b,
         fake_llama2_13b,
     ]
     for model in models:
         # run(model, gpt35_turbo)
         # run(model, gpt4o)
-        run(model, llama3_8b)
+        # run(model, llama3_8b)
+        run(model, llama2_7b)
 
 
 if __name__ == "__main__":
-    debate_script()
-    # consultancy_script()
-    # TODO: run consultancy for llama2_7b
+    # debate_script()
+    consultancy_script()
