@@ -332,9 +332,19 @@ class Gemma2Wrapper(HuggingFaceWrapper):
 
 
 class GPTWrapper(ModelWrapper):
+    GPT4O_DEBATER_PROMPT = """Below are two proofs that claim to solve the following question: {question}
+
+Argue that proof ({justify_letter}) for answer {justify_numeric} is correct and the other proof is incorrect. Don't analyze both proofs.
+
+(A) {proof_a}
+
+(B) {proof_b}"""
+
     def __init__(self, model_id: str, model_name: str):
         super().__init__(model_id, model_name)
         self.client = OpenAI()
+        if "gpt-4o" in model_name:
+            self.DEBATER_PROMPT = self.GPT4O_DEBATER_PROMPT
 
     def _response(self, system_prompt: str, user_prompt: str, words_in_mouth="") -> str:
         """Generates model output using OpenAI's API"""
