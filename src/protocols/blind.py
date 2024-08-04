@@ -1,4 +1,5 @@
-from src.protocols.common import Transcript, Question, Judge, Protocol
+from datatypes import Question
+from src.protocols.common import Transcript, Judge, Protocol
 
 
 class BlindJudge(Protocol):

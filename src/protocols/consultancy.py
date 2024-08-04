@@ -2,7 +2,8 @@ from typing import Self
 from dataclasses import dataclass
 from random import random
 from src.llm_utils import get_llm_response
-from src.protocols.common import Transcript, Question, Answer, Judge, Protocol
+from datatypes import Answer, Question
+from src.protocols.common import Transcript, Judge, Protocol
 
 
 # ABC
