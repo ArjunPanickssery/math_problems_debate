@@ -311,15 +311,15 @@ def debate_script():
         claude35_sonnet,
         claude3_sonnet,
         gpt35_turbo,
-        gpt4o,
+        # gpt4o,
         llama3_8b,
         llama2_7b,
         fake_llama2_13b,
     ]
     for i in range(len(models)):
         debater = models[i]
-        for opponent in models[i + 1 :]:
-            run(debater, opponent, llama2_7b)
+        for judge in [gpt35_turbo, gpt4o, llama3_8b, llama2_7b]:
+            run(debater, gpt4o, judge)
 
 
 def consultancy_script():
@@ -348,21 +348,17 @@ def consultancy_script():
     fake_llama2_7b = GPTWrapper("llama2_7b", "fake")
     fake_llama2_13b = GPTWrapper("llama2_13b", "fake")
 
-    models = [
-        claude35_sonnet,
-        claude3_sonnet,
-        gpt4o,
-        gpt35_turbo,
-        llama3_8b,
-        llama2_7b,
-        fake_llama2_13b,
-    ]
-    for model in models:
-        # run(model, gpt35_turbo)
-        # run(model, gpt4o)
-        # run(model, llama3_8b)
-        run(model, llama2_7b)
-
+    # models = [
+    #     claude35_sonnet,
+    #     claude3_sonnet,
+    #     gpt4o,
+    #     gpt35_turbo,
+    #     llama3_8b,
+    #     llama2_7b,
+    #     fake_llama2_13b,
+    # ]
+    for judge in [gpt35_turbo, gpt4o, llama3_8b, llama2_7b]:
+        run(gpt4o, judge)
 
 if __name__ == "__main__":
     # debate_script()
