@@ -62,7 +62,8 @@ class Debate(Protocol):
     """Debate protocol:
     - Each debater assigned one of the answers with 50\% chance (they both have to learn
     to argue for both truth and falsehood, can't specialize in one).
-    - Finite number of num_turns, default 1. Total num_turns arguments are made.
+    - Finite number of num_turns, default 2. Total num_turns arguments are made.
+    - debater_2 gets to see debater_1's argument before making their own.
     """
 
     participant_classes = [Debater]
@@ -73,7 +74,7 @@ class Debate(Protocol):
         judge: Judge,
         debater_1: Debater,
         debater_2: Debater,
-        **kwargs,
+        num_turns = 2,
     ):
         """Initialize Debate protocol with judge and debaters.
 
@@ -81,8 +82,6 @@ class Debate(Protocol):
             judge (Judge): judge model
             debater_1 (Debater): debater model
             debater_2 (Debater): debater model
-
-        Keyword Args:
             num_turns (int): total number of turns i.e. Sigma_(num_turns).
                 Default 2.
         """
@@ -90,7 +89,7 @@ class Debate(Protocol):
         self.judge = judge
         self.debater_1 = debater_1
         self.debater_2 = debater_2
-        self.num_turns = kwargs.get("num_turns", 2)
+        self.num_turns = num_turns
 
     def run(self, question: Question) -> Transcript:
         assert len(question.possible_answers) == 2
