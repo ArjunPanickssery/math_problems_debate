@@ -150,13 +150,17 @@ class Consultancy(Protocol):
         self.num_turns = kwargs.get("num_turns", 2)
         self.consultant_goes_first = kwargs.get("consultant_goes_first", False)
 
-    def run(self, question: Question) -> Transcript:
-        transcript = Transcript(question, protocol=Consultancy)
-        answer = (
+    def choose_answer(self, question: Question) -> Answer:
+        """Choose an answer for the consultant to argue for."""
+        return (
             question.possible_answers[0]
             if random() > 0.5
             else question.possible_answers[1]
         )
+
+    def run(self, question: Question) -> Transcript:
+        transcript = Transcript(question, protocol=Consultancy)
+        answer = self.choose_answer(question)
         if self.consultant_goes_first:
             consultant_item = self.consultant(answer, transcript)
             transcript.append(consultant_item)
@@ -173,5 +177,3 @@ class Consultancy(Protocol):
         """Default end_communication method: return True when consultancy transcript
         exceeds length num_turns. Override in subclass."""
         return len(transcript.transcript) >= self.num_turns
-
-
