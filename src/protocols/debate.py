@@ -90,16 +90,21 @@ class Debate(Protocol):
         self.debater_1 = debater_1
         self.debater_2 = debater_2
         self.num_turns = num_turns
-
-    def run(self, question: Question) -> Transcript:
+        
+    def choose_answers(self, question: Question) -> tuple[Answer, Answer]:
+        """Randomly choose which debater argues for which answer."""
         assert len(question.possible_answers) == 2
-        transcript = Transcript(question, protocol=Debate)
         debater_1_answer, debater_2_answer = question.possible_answers
-        if random() > 0.5:  # randomize which debater argues for which answer
+        if random() > 0.5:
             debater_1_answer, debater_2_answer = (
                 debater_2_answer,
                 debater_1_answer,
             )
+        return debater_1_answer, debater_2_answer
+
+    def run(self, question: Question) -> Transcript:
+        transcript = Transcript(question, protocol=Debate)
+        debater_1_answer, debater_2_answer = self.choose_answers(question)
         while not self.end_communication(transcript):
             debater_1_item = self.debater_1(debater_1_answer, transcript)
             transcript.append(debater_1_item)
