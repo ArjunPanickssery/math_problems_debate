@@ -29,7 +29,4 @@ class Question:
     def possible_answer_symbols(self) -> list[str]:
         return [answer.symbol for answer in self.possible_answers]
 
-def load_data(data_path: Path) -> list[Question]:
-    with open(data_path, "r") as file:
-        data = json.load(file)
     

@@ -1,3 +1,4 @@
+import json
 from typing import Self, Any
 from dataclasses import dataclass
 import numpy as np
@@ -28,6 +29,14 @@ class Transcript:
                 str(self.judgement) if self.judgement is not None else ""
             )
         return self.protocol.str_transcript(self)
+
+    def __dict__(self):
+        return {
+            "question": self.question,
+            "judgement": self.judgement,
+            "transcript": self.transcript,
+            "protocol": self.protocol.__name__,
+        }
 
 
 # ABC
@@ -90,11 +99,39 @@ class Protocol:
         transcript = self.run(question)
         return transcript.judgement.probabilities
 
-    def score(self, question: Question) -> float:
+    def score(self, question: Question, probabilities: list[float] = None) -> float:
+        if probabilities is None:
+            probabilities = self(question)
         return np.log(
-            self(question)[question.possible_answers.index(question.correct_answer)]
+            probabilities[question.possible_answers.index(question.correct_answer)]
         )
 
+    def test(self, questions: list[Question], verbose: bool = False, write: str = None):
+        results = []
+        for question in questions:
+            transcript = self.run(question)
+            probabilities = transcript.judgement.probabilities
+            score = self.score(question, probabilities)
+            result = {
+                "transcript": transcript,
+                "score": score,
+            }
+            if verbose:
+                print(result)
+            results.append(result)
+        scores = [result["score"] for result in results]
+        stats = {
+            "mean_score": np.mean(scores),
+            "std_score": np.std(scores),
+        }
+        if verbose:
+            print(stats)
+        if write:
+            with open(write, "w") as f:
+                json.dump({"test": results, "stats": stats}, f)
+        
+        return results, stats
+        
     @classmethod
     def str_transcript(cls, transcript: Transcript) -> str:
         return (
@@ -103,4 +140,3 @@ class Protocol:
             + "".join(str(item) for item in transcript.transcript)
             + (str(transcript.judgement) if transcript.judgement is not None else "")
         )
-
