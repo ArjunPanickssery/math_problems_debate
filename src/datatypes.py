@@ -28,5 +28,3 @@ class Question:
     @property
     def possible_answer_symbols(self) -> list[str]:
         return [answer.symbol for answer in self.possible_answers]
-
-    

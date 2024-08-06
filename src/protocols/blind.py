@@ -1,4 +1,4 @@
-from datatypes import Question
+from src.datatypes import Question
 from src.protocols.common import Transcript, Judge, Protocol
 
 

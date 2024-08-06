@@ -3,8 +3,9 @@ from typing import Self, Any
 from dataclasses import dataclass
 import numpy as np
 from random import random
+from src.utils import config
 from src.llm_utils import get_llm_response
-from datatypes import Answer, Question
+from src.datatypes import Answer, Question
 
 
 class Transcript:
@@ -128,10 +129,10 @@ class Protocol:
             print(stats)
         if write:
             with open(write, "w") as f:
-                json.dump({"test": results, "stats": stats}, f)
-        
+                json.dump({"results": results, "stats": stats, "config": config(self)}, f)
+
         return results, stats
-        
+
     @classmethod
     def str_transcript(cls, transcript: Transcript) -> str:
         return (
