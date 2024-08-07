@@ -19,5 +19,5 @@ HF_TOKEN=hf_your_hf_key
 ```
 pytest -s
 pytest -s --runmore # mostly just run this if pytest -s fails
-pytest -s --runslow # to run even tests involving hf models
+pytest -s --runredundant # to run even tests involving hf models
 ```

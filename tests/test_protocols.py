@@ -1,25 +1,25 @@
-import sys
+# import sys
 
-sys.path.append("src")
-
+# sys.path.append("src")
 
 import pytest
-from src.utils import *
-from src.llm_utils import *
-from src.datatypes import Answer, Question
-from src.protocols.common import Protocol, Judge
-from src.protocols.debate import Debater, SequentialDebate
-from src.protocols.consultancy import Consultant, Client, Consultancy
-from src.protocols.blind import BlindJudgement
-from src.protocols.variants.common import (
+from copy import deepcopy
+from utils import *
+from llm_utils import *
+from datatypes import Answer, Question
+from protocols.common import Protocol, Judge
+from protocols.debate import Debater, SequentialDebate
+from protocols.consultancy import Consultant, Client, Consultancy
+from protocols.blind import BlindJudgement
+from protocols.variants.common import (
     COTJudge,
     JustAskProbabilityJudge,
     COTJustAskProbabilityJudge,
     RandomJudge,
     HumanJudge,
 )
-from src.protocols.variants.debate import SimultaneousDebate
-from src.protocols.variants.consultancy import OpenConsultancy
+from protocols.variants.debate import SimultaneousDebate
+from protocols.variants.consultancy import OpenConsultancy
 
 judges = [
     RandomJudge(),
@@ -33,16 +33,7 @@ judges = [
     JustAskProbabilityJudge(model="hf:meta-llama/Llama-2-7b-chat-hf"),
     COTJustAskProbabilityJudge(model="hf:meta-llama/Llama-2-7b-chat-hf"),
 ]
-protocols = {
-    "blind": [BlindJudgement],
-    "debate": [SequentialDebate, SimultaneousDebate],
-    "consultancy": [Consultancy, OpenConsultancy],
-}
 debaters = [
-    Debater(model="gpt-4o-mini"),
-    Debater(model="hf:meta-llama/Llama-2-7b-chat-hf"),
-]
-debater_2s = [
     Debater(model="gpt-4o-mini"),
     Debater(model="hf:meta-llama/Llama-2-7b-chat-hf"),
 ]
@@ -54,6 +45,51 @@ clients = [
     Client(model="gpt-4o-mini"),
     Client(model="hf:meta-llama/Llama-2-7b-chat-hf"),
 ]
+sosetups = {
+    "blind": {
+        "protocols": [BlindJudgement],
+        "kwargs": [{"judge": judge} for judge in judges],
+    },
+    "debate": {
+        "protocols": [SequentialDebate, SimultaneousDebate],
+        "kwargs": [
+            {
+                "judge": judge,
+                "debater_1": debater,
+                "debater_2": deepcopy(debater),
+                "num_turns": num_turns,
+            }
+            for judge in judges
+            for debater in debaters
+            for num_turns in [2, 4]
+        ],
+    },
+    "consultancy": {
+        "protocols": [Consultancy, OpenConsultancy],
+        "kwargs": [
+            {
+                "judge": judge,
+                "client": client,
+                "consultant": consultant,
+                "num_turns": num_turns,
+            }
+            for judge in judges
+            for client in clients
+            for consultant in consultants
+            for num_turns in [2, 4]
+        ],
+    },
+}
+
+
+def generate_param_sets(sosetups):
+    for item in sosetups.values():
+        for protocol in item["protocols"]:
+            for kwargs in item["kwargs"]:
+                yield (protocol, kwargs)
+
+
+param_sets = generate_param_sets(sosetups)
 
 ques = Question(
     question="Who will be the 2024 presidential winner?",
@@ -62,37 +98,28 @@ ques = Question(
 )
 
 
-@pytest.mark.parametrize(
-    "protocol,  judge, debater_1, debater_2, num_turns",
-    [
-        (protocol, judge, debater, debater, num_turns)
-        for protocol in protocols["debate"]
-        for judge in judges
-        for debater in debaters
-        for num_turns in [2, 4]
-    ],
-)
-def test_protocols_debate(protocol, judge, debater_1, debater_2, num_turns):
-    if any(
-        model.startswith("hf:")
-        for model in [judge.model, debater_1.model, debater_2.model]
-    ) and not pytest.config.getoption("--runslow"):
+@pytest.mark.parametrize("protocol, kwargs", param_sets)
+def test_protocols(protocol, kwargs):
+    models = [v.model for k, v in kwargs.items() if hasattr(v, "model")]
+    judge = kwargs.get("judge", None)
+    if any(model.startswith("hf:") for model in models) and not pytest.config.getoption(
+        "--runslow"
+    ):
         pytest.skip("skipping test with hf model, add --runslow option to run")
     if any(
-        isinstance(judge, (COTJudge, JustAskProbabilityJudge)) for judge in [judge]
-    ) and not pytest.config.getoption("--runmore"):
+        isinstance(judge, (COTJudge, JustAskProbabilityJudge))
+    ) and not pytest.config.getoption("--runredundant"):
         pytest.skip(
             "skipping redundant test with COTJudge and JustAskProbabilityJudge, "
-            "add --runmore option to run"
+            "add --runredundant option to run"
         )
-
-    sosetup = protocol(
-        judge=judge, debater_1=debater_1, debater_2=debater_2, num_turns=num_turns
-    )
-    transcript = sosetup.run(ques)
+    instance = protocol(**kwargs)
+    assert isinstance(instance, Protocol)
+    transcript = instance.run(ques)
     assert transcript.question == ques
     assert transcript.protocol == protocol
     assert isinstance(transcript.transcript, list)
-    assert len(transcript.transcript) == num_turns
+    num_turns = kwargs.get("num_turns", None)
+    assert num_turns is None or len(transcript.transcript) == num_turns
     assert isinstance(transcript.judgement, judge.TranscriptItem)
     print(transcript)
