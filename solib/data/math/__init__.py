@@ -1,5 +1,5 @@
 import json
-from src.datatypes import Question, Answer
+from solib.datatypes import Question, Answer
 import random
 
 

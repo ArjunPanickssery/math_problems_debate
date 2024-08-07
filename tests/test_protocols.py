@@ -1,25 +1,21 @@
-# import sys
-
-# sys.path.append("src")
-
 import pytest
 from copy import deepcopy
-from utils import *
-from llm_utils import *
-from datatypes import Answer, Question
-from protocols.common import Protocol, Judge
-from protocols.debate import Debater, SequentialDebate
-from protocols.consultancy import Consultant, Client, Consultancy
-from protocols.blind import BlindJudgement
-from protocols.variants.common import (
+from solib.utils import *
+from solib.llm_utils import *
+from solib.datatypes import Answer, Question
+from solib.protocols.common import Protocol, Judge
+from solib.protocols.debate import Debater, SequentialDebate
+from solib.protocols.consultancy import Consultant, Client, Consultancy
+from solib.protocols.blind import BlindJudgement
+from solib.protocols.variants.common import (
     COTJudge,
     JustAskProbabilityJudge,
     COTJustAskProbabilityJudge,
     RandomJudge,
     HumanJudge,
 )
-from protocols.variants.debate import SimultaneousDebate
-from protocols.variants.consultancy import OpenConsultancy
+from solib.protocols.variants.debate import SimultaneousDebate
+from solib.protocols.variants.consultancy import OpenConsultancy
 
 judges = [
     RandomJudge(),

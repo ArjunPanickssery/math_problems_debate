@@ -3,9 +3,9 @@ from typing import Self, Any
 from dataclasses import dataclass
 import numpy as np
 from random import random
-from src.utils import config
-from src.llm_utils import get_llm_response
-from src.datatypes import Answer, Question
+from solib.utils import config
+from solib.llm_utils import get_llm_response
+from solib.datatypes import Answer, Question
 
 
 class Transcript:

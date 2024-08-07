@@ -1,8 +1,5 @@
-# import sys
-# sys.path.append("src")
-
 import pytest
-from llm_utils import get_llm_response, get_llm_response_async
+from solib.llm_utils import get_llm_response, get_llm_response_async
 import asyncio
 
 @pytest.fixture(

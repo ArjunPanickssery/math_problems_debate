@@ -1,6 +1,6 @@
-from src.datatypes import Answer, Question
-from src.protocols.consultancy import Consultant, Client, Consultancy
-from src.protocols.common import Judge, Transcript
+from solib.datatypes import Answer, Question
+from solib.protocols.consultancy import Consultant, Client, Consultancy
+from solib.protocols.common import Judge, Transcript
 
 class OpenConsultancy(Consultancy):
     

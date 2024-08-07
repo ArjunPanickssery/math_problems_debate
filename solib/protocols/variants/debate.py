@@ -2,10 +2,10 @@ from typing import Self
 from dataclasses import dataclass
 from random import random
 import re
-from src.llm_utils import get_llm_response
-from src.datatypes import Answer, Question
-from src.protocols.common import Transcript, Judge
-from src.protocols.debate import SequentialDebate
+from solib.llm_utils import get_llm_response
+from solib.datatypes import Answer, Question
+from solib.protocols.common import Transcript, Judge
+from solib.protocols.debate import SequentialDebate
 
 """
 VARIANT DEBATES
