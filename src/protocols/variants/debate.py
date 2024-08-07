@@ -5,17 +5,17 @@ import re
 from src.llm_utils import get_llm_response
 from src.datatypes import Answer, Question
 from src.protocols.common import Transcript, Judge
-from src.protocols.debate import Debate
+from src.protocols.debate import SequentialDebate
 
 """
 VARIANT DEBATES
 """
 
-class SimultaneousDebate(Debate):
+class SimultaneousDebate(SequentialDebate):
     
     def run(self, question: Question) -> Transcript:
         assert len(question.possible_answers) == 2
-        transcript = Transcript(question, protocol=Debate)
+        transcript = Transcript(question, protocol=SequentialDebate)
         debater_1_answer, debater_2_answer = question.possible_answers
         if random() > 0.5:  # randomize which debater argues for which answer
             debater_1_answer, debater_2_answer = (

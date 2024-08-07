@@ -2,8 +2,8 @@ from src.datatypes import Question
 from src.protocols.common import Transcript, Judge, Protocol
 
 
-class BlindJudge(Protocol):
-    """General class for BlindJudge."""
+class BlindJudgement(Protocol):
+    """General class for BlindJudgement."""
 
     def __init__(
         self,

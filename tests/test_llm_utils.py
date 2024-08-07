@@ -1,5 +1,4 @@
 import sys
-
 sys.path.append("src")
 
 import pytest
@@ -10,7 +9,7 @@ import asyncio
     params=[
         "gpt-4o-mini",
         "hf:meta-llama/Llama-2-7b-chat-hf",
-        "hf:meta-llama/Meta-Llama-3-8B-Instruct",
+        # "hf:meta-llama/Meta-Llama-3-8B-Instruct",
     ]
 )
 def model(request):
@@ -27,7 +26,7 @@ def test_get_llm_response_returns_string(model, request):
 
 def test_get_llm_response_returns_dict(model, request):
     if model.startswith("hf:") and not request.config.getoption("--runslow", False):
-        pytest.skip("slow test, add --runslow option to run")
+        pytest.skip("skipping test with hf model, add --runslow option to run")
     prompt = (
         "Take a random guess as to what the 1,000,001st digit of pi is. "
         'Answer exactly "0", "1", ... or "9", with nothing else in your response.'

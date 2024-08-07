@@ -13,3 +13,11 @@ OPENAI_API_KEY=sk-your-openai-key
 ANTHROPIC_API_KEY=sk-ant-your-anthropic-key
 HF_TOKEN=hf_your_hf_key
 ```
+
+# Pytest
+
+```
+pytest -s
+pytest -s --runmore # mostly just run this if pytest -s fails
+pytest -s --runslow # to run even tests involving hf models
+```

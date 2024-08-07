@@ -58,7 +58,7 @@ class Debater:
         self.max_wordceling = max_wordceling
 
 
-class Debate(Protocol):
+class SequentialDebate(Protocol):
     """Debate protocol:
     - Each debater assigned one of the answers with 50\% chance (they both have to learn
     to argue for both truth and falsehood, can't specialize in one).
@@ -103,7 +103,7 @@ class Debate(Protocol):
         return debater_1_answer, debater_2_answer
 
     def run(self, question: Question) -> Transcript:
-        transcript = Transcript(question, protocol=Debate)
+        transcript = Transcript(question, protocol=SequentialDebate)
         debater_1_answer, debater_2_answer = self.choose_answers(question)
         while not self.end_communication(transcript):
             debater_1_item = self.debater_1(debater_1_answer, transcript)
