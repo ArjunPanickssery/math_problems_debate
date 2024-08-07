@@ -80,10 +80,25 @@ sosetups = {
 
 def generate_param_sets(sosetups):
     params = []
-    for item in sosetups.values():
+    for protocol_type, item in sosetups.items():
+        params_protocol_types = []
         for protocol in item["protocols"]:
+            params_protocol = []
             for kwargs in item["kwargs"]:
-                params.append((protocol, kwargs))
+                params_protocol.append((protocol, kwargs))
+            print(
+                f"\nNumber of parameter sets for {protocol_type} / {protocol}: "
+                f"{len(params_protocol)}"
+            )
+            params_protocol_types.extend(params_protocol)
+        print(
+            f"\nTotal number of parameter sets for {protocol_type}: "
+            f"{len(params_protocol_types)}"
+        )
+        params.extend(params_protocol_types)
+    print(
+        f"\nTotal number of parameter sets: {len(params)}"
+    )
     return params
 
 
@@ -98,11 +113,6 @@ ques = Question(
 
 @pytest.mark.parametrize("protocol, kwargs", param_sets)
 def test_protocols(protocol, kwargs, request):
-    print(
-        "----------\n"
-        f"Total number of parameter sets: {len(param_sets)}"
-        "\n----------"
-    )
     models = [
         v.model
         for k, v in kwargs.items()
