@@ -19,6 +19,8 @@ import os
 import math
 import sys
 import asyncio
+from perscache import Cache
+from perscache.serializers import JSONSerializer
 from typing import Literal
 from dotenv import load_dotenv
 from openai import AsyncOpenAI, OpenAI
@@ -33,6 +35,9 @@ import instructor
 from instructor.client import Instructor
 from instructor.mode import Mode
 
+cache = Cache(
+    serializer=JSONSerializer(),
+)
 
 def get_async_openai_client_pydantic() -> Instructor:
     api_key = os.getenv("OPENAI_API_KEY")
@@ -370,7 +375,7 @@ def get_hf_response(
         response = decoded.split(prompt_end)[-1]
         return response
 
-
+@cache
 async def get_llm_response_async(
     prompt: str | list[dict[str, str]],
     model: str | None = None,
@@ -399,6 +404,8 @@ async def get_llm_response_async(
         top_logprobs: int: Number of top logprobs to return. Defaults to 5.
     """
 
+    print('NOT USING CACHE')
+    
     default_options = {
         "model": "gpt-4o-mini",
     }
@@ -462,7 +469,7 @@ async def get_llm_response_async(
 
     return text_response
 
-
+@cache
 def get_llm_response(
     prompt: str | list[dict[str, str]],
     model: str | None = None,
@@ -490,6 +497,8 @@ def get_llm_response(
             instructor. Defaults to None (in which case instructor is not used).
         top_logprobs: int: Number of top logprobs to return. Defaults to 5.
     """
+    
+    print('NOT USING CACHE')
 
     default_options = {
         "model": "gpt-4o-2024-05-13",

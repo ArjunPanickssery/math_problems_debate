@@ -1,7 +1,8 @@
 from typing import Self
 from dataclasses import dataclass
-from random import random
+import random
 import re
+from solib.utils import seed
 from solib.llm_utils import get_llm_response
 from solib.protocols.common import Transcript, Judge
 
@@ -24,7 +25,7 @@ class JustAskProbabilityJudge(Judge):
         "numerical probability in decimal terms (NOT percentage), nothing else: \n\n"
     )
     
-    def __call__(self, transcript: Transcript) -> "Self.TranscriptItem":
+    def __call__(self, transcript: Transcript, **kwargs) -> "Self.TranscriptItem":
         probabilities = {}
         for answer in transcript.question.possible_answers:
             words_in_mouth = f" The probability that the answer is {answer.symbol} is:\n\n"
@@ -74,7 +75,7 @@ class COTJudge(Judge):
         "Final Answer: "
     )
     
-    def __call__(self, transcript: Transcript) -> "Self.TranscriptItem":
+    def __call__(self, transcript: Transcript, **kwargs) -> "Self.TranscriptItem":
         cot = get_llm_response(
             prompt=self.cot_prompt.format(transcript=transcript),
             model=self.model,
@@ -114,7 +115,7 @@ class COTJustAskProbabilityJudge(COTJudge):
         "Final numerical (NOT percentage) probability for {answer}: "
     )
     
-    def __call__(self, transcript: Transcript) -> "Self.TranscriptItem":
+    def __call__(self, transcript: Transcript, **kwargs) -> "Self.TranscriptItem":
         cot = get_llm_response(
             prompt=self.cot_prompt.format(transcript=transcript),
             model=self.model,
@@ -144,7 +145,7 @@ class HumanJudge(Judge):
     a placeholder for a human judge. It will simply ask the user for probabilities
     for each possible answer."""
     
-    def __call__(self, transcript: Transcript) -> "Self.TranscriptItem":
+    def __call__(self, transcript: Transcript, **kwargs) -> "Self.TranscriptItem":
         probabilities = {}
         print(transcript)
         for answer in transcript.question.possible_answers:
@@ -160,10 +161,11 @@ class RandomJudge(Judge):
     """A random judge that can be used in a protocol. It will randomly assign
     probabilities to each possible answer."""
     
-    def __call__(self, transcript: Transcript) -> "Self.TranscriptItem":
+    def __call__(self, transcript: Transcript, **kwargs) -> "Self.TranscriptItem":
+        seed(transcript, **kwargs)
         probabilities = {}
         for answer in transcript.question.possible_answers:
-            probabilities[answer.symbol] = random()
+            probabilities[answer.symbol] = random.random()
         # normalize probabilities
         total = sum(probabilities.values())
         for answer in probabilities:

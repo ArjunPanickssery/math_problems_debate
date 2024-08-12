@@ -1,6 +1,7 @@
 from typing import Self
 from dataclasses import dataclass
-from random import random
+import random
+from solib.utils import seed
 from solib.llm_utils import get_llm_response
 from solib.datatypes import Answer, Question
 from solib.protocols.common import Transcript, Judge, Protocol
@@ -74,7 +75,7 @@ class SequentialDebate(Protocol):
         judge: Judge,
         debater_1: Debater,
         debater_2: Debater,
-        num_turns = 2,
+        num_turns=2,
     ):
         """Initialize Debate protocol with judge and debaters.
 
@@ -90,31 +91,32 @@ class SequentialDebate(Protocol):
         self.debater_1 = debater_1
         self.debater_2 = debater_2
         self.num_turns = num_turns
-        
-    def choose_answers(self, question: Question) -> tuple[Answer, Answer]:
+
+    def choose_answers(self, question: Question, **kwargs) -> tuple[Answer, Answer]:
         """Randomly choose which debater argues for which answer."""
         assert len(question.possible_answers) == 2
         debater_1_answer, debater_2_answer = question.possible_answers
-        if random() > 0.5:
+        seed(question, **kwargs)
+        if random.random() > 0.5:
             debater_1_answer, debater_2_answer = (
                 debater_2_answer,
                 debater_1_answer,
             )
         return debater_1_answer, debater_2_answer
 
-    def run(self, question: Question) -> Transcript:
+    def run(self, question: Question, **kwargs) -> Transcript:
         transcript = Transcript(question, protocol=SequentialDebate)
-        debater_1_answer, debater_2_answer = self.choose_answers(question)
-        while not self.end_communication(transcript):
-            debater_1_item = self.debater_1(debater_1_answer, transcript)
+        debater_1_answer, debater_2_answer = self.choose_answers(question, **kwargs)
+        while not self.end_communication(transcript, **kwargs):
+            debater_1_item = self.debater_1(debater_1_answer, transcript, **kwargs)
             transcript.append(debater_1_item)
-            debater_2_item = self.debater_2(debater_2_answer, transcript)
+            debater_2_item = self.debater_2(debater_2_answer, transcript, **kwargs)
             transcript.append(debater_2_item)
-        judge_item = self.judge(transcript)
+        judge_item = self.judge(transcript, **kwargs)
         transcript.append(judge_item)
         return transcript
 
-    def end_communication(self, transcript: Transcript) -> bool:
+    def end_communication(self, transcript: Transcript, **kwargs) -> bool:
         """Default end_communication method: return True when debate transcript
         exceeds length num_turns. Can also be generalized to a host function that
         e.g. decides which debater goes next etc. Override in subclass."""

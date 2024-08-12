@@ -4,7 +4,7 @@ from solib.protocols.common import Judge, Transcript
 
 class OpenConsultancy(Consultancy):
     
-    def choose_answer(self, question: Question) -> Answer:
+    def choose_answer(self, question: Question, **kwargs) -> Answer:
         auxillary_judge = Judge(model=self.consultant.model)
         transcript = Transcript(question)
         probabilities = auxillary_judge(transcript).probabilities

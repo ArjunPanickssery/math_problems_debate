@@ -1,7 +1,7 @@
 from typing import Self
 from dataclasses import dataclass
-from random import random
-import re
+import random
+from solib.utils import seed
 from solib.llm_utils import get_llm_response
 from solib.datatypes import Answer, Question
 from solib.protocols.common import Transcript, Judge
@@ -13,11 +13,12 @@ VARIANT DEBATES
 
 class SimultaneousDebate(SequentialDebate):
     
-    def run(self, question: Question) -> Transcript:
+    def run(self, question: Question, **kwargs) -> Transcript:
+        seed(question, **kwargs)
         assert len(question.possible_answers) == 2
         transcript = Transcript(question, protocol=SequentialDebate)
         debater_1_answer, debater_2_answer = question.possible_answers
-        if random() > 0.5:  # randomize which debater argues for which answer
+        if random.random() > 0.5:  # randomize which debater argues for which answer
             debater_1_answer, debater_2_answer = (
                 debater_2_answer,
                 debater_1_answer,

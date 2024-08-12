@@ -2,7 +2,6 @@ import json
 from typing import Self, Any
 from dataclasses import dataclass
 import numpy as np
-from random import random
 from solib.utils import config
 from solib.llm_utils import get_llm_response
 from solib.datatypes import Answer, Question
@@ -50,7 +49,7 @@ class Judge:
         def __str__(self):
             return f"\n## JUDGE PROBABILITY ESTIMATES:\n{self.probabilities}"
 
-    def __call__(self, transcript: Transcript) -> "Self.TranscriptItem":
+    def __call__(self, transcript: Transcript, **kwargs) -> "Self.TranscriptItem":
         words_in_mouth = " I judge that the answer is:\n\n("
         probabilities = get_llm_response(
             prompt=self.prompt.format(transcript=transcript),
@@ -93,26 +92,34 @@ class Protocol:
     def __init__(self, judge: Judge):
         raise NotImplementedError
 
-    def run(self, question: Question) -> Transcript:
+    def run(self, question: Question, **kwargs) -> Transcript:
         raise NotImplementedError
 
-    def __call__(self, question: Question) -> dict[str, float]:
-        transcript = self.run(question)
+    def __call__(self, question: Question, **kwargs) -> dict[str, float]:
+        transcript = self.run(question, **kwargs)
         return transcript.judgement.probabilities
 
-    def score(self, question: Question, probabilities: list[float] = None) -> float:
+    def score(
+        self, question: Question, probabilities: list[float] = None, **kwargs
+    ) -> float:
         if probabilities is None:
-            probabilities = self(question)
+            probabilities = self(question, **kwargs)
         return np.log(
             probabilities[question.possible_answers.index(question.correct_answer)]
         )
 
-    def test(self, questions: list[Question], verbose: bool = False, write: str = None):
+    def test(
+        self,
+        questions: list[Question],
+        verbose: bool = False,
+        write: str = None,
+        **kwargs,
+    ):
         results = []
         for question in questions:
-            transcript = self.run(question)
+            transcript = self.run(question, **kwargs)
             probabilities = transcript.judgement.probabilities
-            score = self.score(question, probabilities)
+            score = self.score(question, probabilities, **kwargs)
             result = {
                 "transcript": transcript,
                 "score": score,
@@ -129,7 +136,9 @@ class Protocol:
             print(stats)
         if write:
             with open(write, "w") as f:
-                json.dump({"results": results, "stats": stats, "config": config(self)}, f)
+                json.dump(
+                    {"results": results, "stats": stats, "config": config(self)}, f
+                )
 
         return results, stats
 

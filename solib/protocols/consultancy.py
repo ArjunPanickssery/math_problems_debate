@@ -1,6 +1,7 @@
 from typing import Self
 from dataclasses import dataclass
-from random import random
+import random
+from solib.utils import seed
 from solib.llm_utils import get_llm_response
 from solib.datatypes import Answer, Question
 from solib.protocols.common import Transcript, Judge, Protocol
@@ -20,7 +21,9 @@ class Consultant:
                 f"RESPONSE: \n{self.response}"
             )
 
-    def __call__(self, answer: Answer, transcript: Transcript) -> "Self.TranscriptItem":
+    def __call__(
+        self, answer: Answer, transcript: Transcript, **kwargs
+    ) -> "Self.TranscriptItem":
         """Subclasses should customize this."""
         words_in_mouth = " Sure, here's my response:\n\n"
         response = get_llm_response(
@@ -71,7 +74,7 @@ class Client:
         def __str__(self):
             return f"\n### ENQUIRY FROM JUDGE: \n{self.response}"
 
-    def __call__(self, transcript: Transcript) -> "Self.TranscriptItem":
+    def __call__(self, transcript: Transcript, **kwargs) -> "Self.TranscriptItem":
         """Subclasses should customize this."""
         words_in_mouth = " Here's my question:\n\n"
         response = get_llm_response(
@@ -150,30 +153,31 @@ class Consultancy(Protocol):
         self.num_turns = kwargs.get("num_turns", 2)
         self.consultant_goes_first = kwargs.get("consultant_goes_first", False)
 
-    def choose_answer(self, question: Question) -> Answer:
+    def choose_answer(self, question: Question, **kwargs) -> Answer:
         """Choose an answer for the consultant to argue for."""
+        seed(question, **kwargs)
         return (
             question.possible_answers[0]
-            if random() > 0.5
+            if random.random() > 0.5
             else question.possible_answers[1]
         )
 
-    def run(self, question: Question) -> Transcript:
+    def run(self, question: Question, user_seed=None, **kwargs) -> Transcript:
         transcript = Transcript(question, protocol=Consultancy)
-        answer = self.choose_answer(question)
+        answer = self.choose_answer(question, **kwargs)
         if self.consultant_goes_first:
-            consultant_item = self.consultant(answer, transcript)
+            consultant_item = self.consultant(answer, transcript, **kwargs)
             transcript.append(consultant_item)
-        while not self.end_communication(transcript):
-            client_item = self.client(transcript)
+        while not self.end_communication(transcript, **kwargs):
+            client_item = self.client(transcript, **kwargs)
             transcript.append(client_item)
-            consultant_item = self.consultant(answer, transcript)
+            consultant_item = self.consultant(answer, transcript, **kwargs)
             transcript.append(consultant_item)
-        judge_item = self.judge(transcript)
+        judge_item = self.judge(transcript, **kwargs)
         transcript.append(judge_item)
         return transcript
 
-    def end_communication(self, transcript: Transcript) -> bool:
+    def end_communication(self, transcript: Transcript, **kwargs) -> bool:
         """Default end_communication method: return True when consultancy transcript
         exceeds length num_turns. Override in subclass."""
         return len(transcript.transcript) >= self.num_turns
