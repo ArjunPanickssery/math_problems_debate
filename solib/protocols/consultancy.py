@@ -1,7 +1,6 @@
 from typing import Self
 from dataclasses import dataclass
-import random
-from solib.utils import seed
+from solib.utils import random
 from solib.llm_utils import get_llm_response
 from solib.datatypes import Answer, Question
 from solib.protocols.common import Transcript, Judge, Protocol
@@ -155,14 +154,13 @@ class Consultancy(Protocol):
 
     def choose_answer(self, question: Question, **kwargs) -> Answer:
         """Choose an answer for the consultant to argue for."""
-        seed(question, **kwargs)
         return (
             question.possible_answers[0]
-            if random.random() > 0.5
+            if random(question, **kwargs) > 0.5
             else question.possible_answers[1]
         )
 
-    def run(self, question: Question, user_seed=None, **kwargs) -> Transcript:
+    def run(self, question: Question, **kwargs) -> Transcript:
         transcript = Transcript(question, protocol=Consultancy)
         answer = self.choose_answer(question, **kwargs)
         if self.consultant_goes_first:

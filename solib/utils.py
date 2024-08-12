@@ -22,3 +22,7 @@ def seed(*args, **kwargs):
     hash_object = hashlib.md5(input_str.encode())
     seed = int(hash_object.hexdigest(), 16) % 2**32
     random.seed(seed + user_seed)
+    
+def random(*args, **kwargs):
+    seed(*args, **kwargs)
+    return random.random()

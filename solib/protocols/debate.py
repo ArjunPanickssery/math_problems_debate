@@ -1,7 +1,6 @@
 from typing import Self
 from dataclasses import dataclass
-import random
-from solib.utils import seed
+from solib.utils import random
 from solib.llm_utils import get_llm_response
 from solib.datatypes import Answer, Question
 from solib.protocols.common import Transcript, Judge, Protocol
@@ -96,8 +95,7 @@ class SequentialDebate(Protocol):
         """Randomly choose which debater argues for which answer."""
         assert len(question.possible_answers) == 2
         debater_1_answer, debater_2_answer = question.possible_answers
-        seed(question, **kwargs)
-        if random.random() > 0.5:
+        if random(question, **kwargs) > 0.5:
             debater_1_answer, debater_2_answer = (
                 debater_2_answer,
                 debater_1_answer,

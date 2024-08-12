@@ -1,8 +1,7 @@
 from typing import Self
 from dataclasses import dataclass
-import random
 import re
-from solib.utils import seed
+from solib.utils import random
 from solib.llm_utils import get_llm_response
 from solib.protocols.common import Transcript, Judge
 
@@ -162,10 +161,9 @@ class RandomJudge(Judge):
     probabilities to each possible answer."""
     
     def __call__(self, transcript: Transcript, **kwargs) -> "Self.TranscriptItem":
-        seed(transcript, **kwargs)
         probabilities = {}
         for answer in transcript.question.possible_answers:
-            probabilities[answer.symbol] = random.random()
+            probabilities[answer.symbol] = random(transcript, **kwargs)
         # normalize probabilities
         total = sum(probabilities.values())
         for answer in probabilities:
