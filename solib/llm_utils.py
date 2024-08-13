@@ -546,7 +546,7 @@ async def get_llm_response_async(
         with cost_estimator.add_api_item(
             model=options["model"],
             input_tokens=len("".join([m["content"] for m in prompt])) // 3,
-            output_tokens=[1, max_tokens],
+            output_tokens=[1, (max_tokens or 2048)],
         ):
             if return_probs_for:
                 return {token: 0 for token in return_probs_for}
