@@ -19,8 +19,10 @@ import os
 import math
 import sys
 import asyncio
+from dataclasses import dataclass
 from perscache import Cache
 from perscache.serializers import JSONSerializer
+from contextlib import contextmanager
 from typing import Literal
 from dotenv import load_dotenv
 from openai import AsyncOpenAI, OpenAI
@@ -38,6 +40,120 @@ from instructor.mode import Mode
 cache = Cache(
     serializer=JSONSerializer(),
 )
+
+
+class CostEstimator:
+
+    class APIItem:
+
+        # input_tokens: dollar per input token
+        # output_tokens: dollar per output token
+        # time: seconds per output token
+        prices = {
+            "gpt-4o": {
+                "input_tokens": 5.0e-6,
+                "output_tokens": 15.0e-6,
+                "time": 18e-3,
+            },
+            "gpt-4o-mini": {
+                "input_tokens": 0.15e-6,
+                "output_tokens": 0.6e-6,
+                "time": 9e-3,
+            },
+        }
+
+        def __init__(
+            self,
+            model: str,
+            input_tokens: int,
+            output_tokens: list[int],
+            description: str = "",
+        ):
+            self.model = model
+            self.input_tokens = input_tokens
+            self.output_tokens = output_tokens
+            self.description = description
+
+        @property
+        def cost(self) -> list[float]:
+            return [
+                self.input_tokens * self.prices[self.model]["input_tokens"]
+                + output_tokens_bound * self.prices[self.model]["output_tokens"]
+                for output_tokens_bound in self.output_tokens
+            ]
+
+        @property
+        def time(self) -> list[float]:
+            return [
+                output_tokens_bound * self.prices[self.model]["time"]
+                for output_tokens_bound in self.output_tokens
+            ]
+
+    class ManualItem:
+
+        def __init__(self, cost: list[float], time: list[float], description: str = ""):
+            self.cost = cost
+            self.time = time
+            self.description = description
+
+    def __init__(self):
+        self.log = []
+        self.calls = 0
+        self.cost = [0.0, 0.0]
+        self.time = [0.0, 0.0]
+
+    @contextmanager
+    def add_api_item(
+        self, model: str, input_tokens: int, output_tokens: list[int], description: str = ""
+    ):
+        item = self.APIItem(
+            model=model,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            description=description,
+        )
+        self.log.append(item)
+        self.calls += 1
+        self.cost[0] += item.cost[0]
+        self.cost[1] += item.cost[1]
+        self.time[0] += item.time[0]
+        self.time[1] += item.time[1]
+        yield
+
+    @contextmanager
+    def add_manual_item(self, cost: list[float], time: list[float], description: str = ""):
+        item = self.ManualItem(cost=cost, time=time, description=description)
+        self.log.append(item)
+        self.cost[0] += item.cost[0]
+        self.cost[1] += item.cost[1]
+        self.time[0] += item.time[0]
+        self.time[1] += item.time[1]
+        yield
+        
+
+    def report(self):
+        print(f"Total cost in range: {self.cost[0]:.2f} - {self.cost[1]:.2f} USD")
+        print(f"Total time in range: {self.time[0]:.2f} - {self.time[1]:.2f} sec")
+        print(f"Total calls: {self.calls}")
+        print("Breakdown:")
+        for item in self.log:
+            if isinstance(item, self.APIItem):
+                print(
+                    f"API call to {item.model}:\n"
+                    f"Input tokens: {item.input_tokens}, "
+                    f"Output tokens in range: {item.output_tokens}\n"
+                    f"Cost in range: {item.cost[0]:.2f} - {item.cost[1]:.2f} USD, "
+                    f"Time in range: {self.time[0]:.2f} - {self.time[1]:.2f} sec\n"
+                    f"Description: {item.description}\n"
+                )
+            else:
+                print(
+                    f"Manual item:\n"
+                    f"Cost in range: {item.cost[0]:.2f} - {item.cost[1]:.2f} USD\n"
+                    f"Time in range: {item.time[0]:.2f} - {item.time[1]:.2f} USD\n"
+                    f"Description: {item.description}\n"
+                )
+
 
 def get_async_openai_client_pydantic() -> Instructor:
     api_key = os.getenv("OPENAI_API_KEY")
@@ -321,7 +437,7 @@ def get_hf_response(
 ) -> str | dict[str, float]:
     """
     Get response from Hugging Face model.
-    
+
     Args:
         prompt: str | list[dict[str, str]]: Prompt to send to the LLM.
         model_name: str: Name of the Hugging Face model to use.
@@ -352,11 +468,9 @@ def get_hf_response(
         ...
     prompt += words_in_mouth
     if max_tokens is None:
-        max_tokens = 2048    
-    
-    input_ids = tokenizer.encode(prompt, return_tensors="pt").to(
-        model.device
-    )
+        max_tokens = 2048
+
+    input_ids = tokenizer.encode(prompt, return_tensors="pt").to(model.device)
     if return_probs_for:
         output = model(input_ids).logits[0, -1, :]
         output_probs = output.softmax(dim=0)
@@ -375,6 +489,7 @@ def get_hf_response(
         response = decoded.split(prompt_end)[-1]
         return response
 
+
 @cache
 async def get_llm_response_async(
     prompt: str | list[dict[str, str]],
@@ -382,7 +497,9 @@ async def get_llm_response_async(
     return_probs_for: list[str] | None = None,
     max_tokens: int | None = None,
     words_in_mouth: str | None = None,
-    verbose=False,
+    verbose:bool=False,
+    simulate:bool|int=False,
+    cost_estimator:CostEstimator=None,
     **kwargs,
 ) -> str | dict[str, float]:
     """
@@ -397,6 +514,10 @@ async def get_llm_response_async(
         max_tokens: int | None: Maximum number of tokens to generate.
         words_in_mouth: str | None: Words to append to the prompt, only used for huggingface models.
             E.g. " Sure, here's my response:\n\n"
+        verbose: bool: Whether to print the prompt and response.
+        simulate: bool | int: Whether to simulate the response. If int, number of tokens to return
+            in output. Defaults to False.
+        cost_estimator: CostEstimator: CostEstimator object to use for cost estimation.
 
     Keyword Args:
         response_model: pydantic.BaseModel: Pydantic model to use for response, if using
@@ -404,8 +525,8 @@ async def get_llm_response_async(
         top_logprobs: int: Number of top logprobs to return. Defaults to 5.
     """
 
-    print('NOT USING CACHE')
-    
+    print("NOT USING CACHE")
+
     default_options = {
         "model": "gpt-4o-mini",
     }
@@ -420,11 +541,18 @@ async def get_llm_response_async(
     call_messages = (
         _mistral_message_transform(prompt) if client_name == "mistral" else prompt
     )
+    
+    if simulate and cost_estimator:
+        with cost_estimator.add_api_item(
+            model=options["model"],
+            input_tokens=len("".join([m["content"] for m in prompt])) // 3,
+            output_tokens=[1, max_tokens],
+        ):
+            if return_probs_for:
+                return {token: 0 for token in return_probs_for}
+            simstr = "This is a test output."
+            return simstr * (simulate // (len(simstr) // 3))
 
-    print(
-        options,
-        f"Approx num tokens: {len(''.join([m['content'] for m in prompt])) // 3}",
-    )
     if client_name == "huggingface_local":
         return get_hf_response(
             prompt=call_messages,
@@ -469,6 +597,7 @@ async def get_llm_response_async(
 
     return text_response
 
+
 @cache
 def get_llm_response(
     prompt: str | list[dict[str, str]],
@@ -476,7 +605,9 @@ def get_llm_response(
     return_probs_for: list[str] | None = None,
     max_tokens: int | None = None,
     words_in_mouth: str | None = None,
-    verbose=False,
+    verbose:bool=False,
+    simulate:bool|int=False,
+    cost_estimator:CostEstimator=None,
     **kwargs,
 ) -> str | dict[str, float]:
     """
@@ -491,14 +622,18 @@ def get_llm_response(
         max_tokens: int | None: Maximum number of tokens to generate.
         words_in_mouth: str | None: Words to append to the prompt, only used for huggingface models.
             E.g. " Sure, here's my response:\n\n"
+        verbose: bool: Whether to print the prompt and response.
+        simulate: bool | int: Whether to simulate the response. If int, number of tokens to return
+            in output. Defaults to False.
+        cost_estimator: CostEstimator: CostEstimator object to use for cost estimation.
 
     Keyword Args:
         response_model: pydantic.BaseModel: Pydantic model to use for response, if using
             instructor. Defaults to None (in which case instructor is not used).
         top_logprobs: int: Number of top logprobs to return. Defaults to 5.
     """
-    
-    print('NOT USING CACHE')
+
+    print("NOT USING CACHE")
 
     default_options = {
         "model": "gpt-4o-2024-05-13",
@@ -515,11 +650,18 @@ def get_llm_response(
     call_messages = (
         _mistral_message_transform(prompt) if client_name == "mistral" else prompt
     )
+    
+    if simulate and cost_estimator:
+        with cost_estimator.add_api_item(
+            model=options["model"],
+            input_tokens=len("".join([m["content"] for m in prompt])) // 3,
+            output_tokens=[1, (max_tokens or 2048)],
+        ):
+            if return_probs_for:
+                return {token: 0 for token in return_probs_for}
+            simstr = "This is a test output."
+            return simstr * (simulate // (len(simstr) // 3))
 
-    print(
-        options,
-        f"Approx num tokens: {len(''.join([m['content'] for m in prompt])) // 3}",
-    )
     if client_name == "huggingface_local":
         return get_hf_response(
             prompt=call_messages,
