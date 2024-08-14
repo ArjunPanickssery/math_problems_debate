@@ -96,6 +96,10 @@ class CostItem:
                 self.output_tokens * self.prices[self.model]["time"]
                 for self.output_tokens in self.output_tokens_range
             ]
+        if self.cost_range is None:
+            print('BROOO???')
+        if self.time_range is None:
+            print('GAAHHHH???')
     
     def __repr__(self):
         return (
@@ -121,6 +125,9 @@ class CostEstimator:
 
     @contextmanager
     def append(self, item: CostItem):
+        item.calc()
+        if item.cost_range is None:
+            print('HUHHHH???')
         self.log.append(item)
         self.num_calls += 1
         self.cost_range[0] += item.cost_range[0]

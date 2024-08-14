@@ -17,7 +17,7 @@ class Debater:
         def __str__(self):
             return f"\n### ARGUMENT FOR {self.answer.symbol}:\n{self.argument}"
 
-    def __call__(self, answer: Answer, transcript: Transcript) -> "Self.TranscriptItem":
+    def __call__(self, answer: Answer, transcript: Transcript, **kwargs) -> "Self.TranscriptItem":
         """Subclasses should customize this."""
         words_in_mouth = " Sure, here's my response:\n\n"
         argument = get_llm_response(
@@ -25,6 +25,7 @@ class Debater:
             model=self.model,
             max_tokens=self.max_wordceling,
             words_in_mouth=words_in_mouth,
+            **kwargs
         )
         return self.TranscriptItem(answer=answer, argument=argument)
 

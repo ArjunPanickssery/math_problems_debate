@@ -60,6 +60,7 @@ class Judge:
                 for answer_symbol in transcript.question.possible_answer_symbols
             ),
             words_in_mouth=words_in_mouth,
+            **kwargs
         )
         return self.TranscriptItem(probabilities=probabilities)
 

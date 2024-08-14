@@ -33,6 +33,7 @@ class JustAskProbabilityJudge(Judge):
                 model=self.model,
                 max_tokens=5,
                 words_in_mouth=words_in_mouth,
+                **kwargs
             )
             # extract numeric value from response 
             # HACK. Maybe we should use instructor instead of regex
@@ -79,6 +80,7 @@ class COTJudge(Judge):
             prompt=self.cot_prompt.format(transcript=transcript),
             model=self.model,
             max_tokens=2048,
+            **kwargs
         )
         words_in_mouth = " I judge that the answer is:\n\n("
         probabilities = get_llm_response(
@@ -90,6 +92,7 @@ class COTJudge(Judge):
                 for answer_symbol in transcript.question.possible_answer_symbols
             ),
             words_in_mouth=words_in_mouth,
+            **kwargs
         )
         return COTJudge.TranscriptItem(probabilities=probabilities, cot=cot)
     
@@ -119,6 +122,7 @@ class COTJustAskProbabilityJudge(COTJudge):
             prompt=self.cot_prompt.format(transcript=transcript),
             model=self.model,
             max_tokens=2048,
+            **kwargs
         )
         probabilities = {}
         for answer in transcript.question.possible_answers:
@@ -128,6 +132,7 @@ class COTJustAskProbabilityJudge(COTJudge):
                 model=self.model,
                 max_tokens=5,
                 words_in_mouth=words_in_mouth,
+                **kwargs
             )
             # extract numeric value from response
             # HACK. Maybe we should use instructor instead of regex

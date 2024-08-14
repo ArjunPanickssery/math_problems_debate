@@ -30,6 +30,7 @@ class Consultant:
             model=self.model,
             max_tokens=self.max_wordceling,
             words_in_mouth=words_in_mouth,
+            **kwargs
         )
         return self.TranscriptItem(answer=answer, response=response)
 
@@ -81,6 +82,7 @@ class Client:
             model=self.model,
             max_tokens=self.max_wordceling,
             words_in_mouth=words_in_mouth,
+            **kwargs
         )
         return self.TranscriptItem(response=response)
 

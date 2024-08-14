@@ -13,6 +13,6 @@ class BlindJudgement(Protocol):
 
     def run(self, question: Question, **kwargs) -> Transcript:
         transcript = Transcript(question)
-        judge_item = self.judge(transcript)
+        judge_item = self.judge(transcript, **kwargs)
         transcript.append(judge_item)
         return transcript

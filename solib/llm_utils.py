@@ -545,7 +545,7 @@ def get_llm_response(
     print("NOT USING CACHE")
 
     default_options = {
-        "model": "gpt-4o-2024-05-13",
+        "model": "gpt-4o-mini",
     }
     options = default_options | kwargs
     options["model"] = model or options["model"]
