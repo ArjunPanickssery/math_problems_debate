@@ -19,6 +19,7 @@ import os
 import math
 import sys
 import asyncio
+from time import time
 from dataclasses import dataclass
 from perscache import Cache
 from perscache.serializers import JSONSerializer
@@ -377,15 +378,16 @@ def get_hf_response(
         return response
 
 
-@cache
+@cache(ignore="cost_estimation")
 async def get_llm_response_async(
     prompt: str | list[dict[str, str]],
-    model: str | None = None,
+    model: str | None = "gpt-4o-mini",
     return_probs_for: list[str] | None = None,
     max_tokens: int | None = None,
     words_in_mouth: str | None = None,
     verbose: bool = False,
-    simulate: dict | None = None,
+    simulate:bool=False,
+    cost_estimation: dict | None = None,
     **kwargs,
 ) -> str | dict[str, float]:
     """
@@ -401,14 +403,14 @@ async def get_llm_response_async(
         words_in_mouth: str | None: Words to append to the prompt, only used for huggingface models.
             E.g. " Sure, here's my response:\n\n"
         verbose: bool: Whether to print the prompt and response.
-        simulate: dict | None: Whether to simulate the response. If given, give as dict with keys:
+        simulate: bool: Whether to simulate the cost of the call.
+        cost_estimation: dict | None: Cost estimation and simulation config. If given, give as dict with keys:
             {
-                "cost_estimator": CostEstimator,
-                "description": str,
-                "output_tokens_range": list[int],
-                "input_tokens_estimator": Callable[[str], int],
-                "output_tokens_estimator": Callable[[str, int], list[int]],
-                "simstr_len": int,
+                "cost_estimator": CostEstimator, (if not given, will not estimate cost)
+                "description": str, (optional, helpful for tracking and breakdown)
+                "input_tokens_estimator": Callable[[str], int], (optional, defaults to len(input_string) // 4.5)
+                "output_tokens_estimator": Callable[[str, int], list[int]], (optional, defaults to [1, 2048])
+                "simstr_len": int, (optional, defaults to 1024)
             }
 
     Keyword Args:
@@ -419,73 +421,126 @@ async def get_llm_response_async(
 
     print("NOT USING CACHE")
 
-    default_options = {
-        "model": "gpt-4o-mini",
-    }
-    options = default_options | kwargs
-    options["model"] = model or options["model"]
     if isinstance(prompt, str):
         prompt = prepare_messages(prompt)
-    if "response_model" in options:
-        client, client_name = get_client_pydantic(options["model"], use_async=True)
+    if "response_model" in kwargs:
+        client, client_name = get_client_pydantic(model, use_async=True)
     else:
-        client, client_name = get_client_native(options["model"], use_async=True)
+        client, client_name = get_client_native(model, use_async=True)
     call_messages = (
         _mistral_message_transform(prompt) if client_name == "mistral" else prompt
     )
+    if cost_estimation is None:
+        cost_estimation = {}
+    cost_estimation = {
+        "cost_estimator": None,
+        "description": None,
+        "input_tokens_estimator": None,
+        "output_tokens_estimator": (
+            (lambda i, j: [1, max_tokens]) if max_tokens is not None else None
+        ),
+        "simstr_len": 1024,
+    } | cost_estimation
 
     if simulate:
-        cost_estimator = simulate["cost_estimator"]
-        if "output_tokens_estimator" not in simulate and max_tokens is not None:
-            simulate["output_tokens_estimator"] = lambda input_string, input_tokens: [
-                1,
-                max_tokens,
-            ]
-        with cost_estimator.append(
-            CostItem(
-                model=options["model"],
+        if cost_estimation["cost_estimator"]:
+            ci = CostItem(
+                model=model,
                 input_string="".join([m["content"] for m in prompt]),
-                description=simulate.get("description", None),
-                input_tokens_estimator=simulate.get("input_tokens_estimator", None),
-                output_tokens_estimator=simulate.get("output_tokens_estimator", None),
+                description=cost_estimation["description"],
+                token_estimator=cost_estimation["input_tokens_estimator"],
+                output_tokens_estimator=cost_estimation["output_tokens_estimator"],
+                exact=False,
             )
-        ):
-            if return_probs_for:
-                return {token: 1.0 for token in return_probs_for}
-            simstr = "This is a test output."
-            return simstr * int(
-                simulate.get("simstr_len", 1024) // (len(simstr) // 4.5)
-            )
+            with cost_estimation["cost_estimator"].append(ci):
+                ...
+        if return_probs_for:
+            return {token: 1.0 for token in return_probs_for}
+        simstr = "This is a test output."
+        return simstr * int(
+            cost_estimation.get("simstr_len", 1024) // (len(simstr) // 4.5)
+        )
 
     if client_name == "huggingface_local":
-        return get_hf_response(
+        t0 = time()
+        response = get_hf_response(
             prompt=call_messages,
-            model_name=options["model"],
+            model_name=model,
             max_tokens=max_tokens,
             return_probs_for=return_probs_for,
             prompt_type="messages",
             words_in_mouth=words_in_mouth,
         )
+        t = time() - t0
+        if cost_estimation["cost_estimator"]:
+            ci = CostItem(
+                time_range=[t, t],
+                model=model,
+                input_string="".join([m["content"] for m in prompt]),
+                description=cost_estimation["description"],
+                token_estimator=cost_estimation["input_tokens_estimator"],
+                output_string=(
+                    response
+                    if not return_probs_for
+                    else max(return_probs_for, key=lambda x: len(x))
+                ),
+                exact=False,
+            )
+            with cost_estimation["cost_estimator"].append(ci):
+                ...
+        return response
     elif client_name == "mistral" and not os.getenv("USE_OPENROUTER"):
+        t0 = time()
         response = await client.chat(
             messages=call_messages,
+            model=model,
             max_tokens=max_tokens,
             logprobs=bool(return_probs_for),
             top_logprobs=(5 if return_probs_for else None),
-            **options,
+            **kwargs,
         )
+        t = time() - t0
     else:
+        t0 = time()
         response = await client.chat.completions.create(
             messages=call_messages,
+            model=model,
             max_tokens=max_tokens,
             logprobs=bool(return_probs_for),
-            top_logprobs=(options.get("top_logprobs", 5) if return_probs_for else None),
-            **options,
+            top_logprobs=(kwargs.get("top_logprobs", 5) if return_probs_for else None),
+            **kwargs,
         )
+        t = time() - t0
 
     text_response = response.choices[0].message.content
+    if cost_estimation["cost_estimator"]:
+        try:
+            input_tokens, output_tokens = (
+                response.usage.prompt_tokens,
+                response.usage.completion_tokens,
+            )
+            exact = True
+        except AttributeError:
+            input_tokens, output_tokens = None, None
+            exact = False
+        ci = CostItem(
+            time_range=[t, t],
+            model=model,
+            input_tokens=input_tokens,
+            output_tokens_range=[output_tokens, output_tokens],
+            input_string="".join([m["content"] for m in prompt]),
+            output_string=(
+                text_response
+                if not return_probs_for
+                else max(return_probs_for, key=lambda x: len(x))
+            ),
+            description=cost_estimation["description"],
+            exact=exact,
+        )
+        with cost_estimation["cost_estimator"].append(ci):
+            ...
 
-    if verbose or os.getenv("VERBOSE") == "True":
+    if verbose:
         print(f"...\nText: {prompt[-1]['content']}\nResponse: {text_response}\n")
 
     if return_probs_for:
@@ -502,7 +557,7 @@ async def get_llm_response_async(
     return text_response
 
 
-@cache
+@cache(ignore="cost_estimation")
 def get_llm_response(
     prompt: str | list[dict[str, str]],
     model: str | None = None,
@@ -510,12 +565,13 @@ def get_llm_response(
     max_tokens: int | None = None,
     words_in_mouth: str | None = None,
     verbose: bool = False,
-    simulate: dict | None = None,
+    simulate:bool=False,
+    cost_estimation: dict | None = None,
     **kwargs,
 ) -> str | dict[str, float]:
     """
     Get LLM response to a prompt.
-
+    
     Args:
         prompt: str | list[dict[str, str]]: Prompt to send to the LLM.
         verbose: bool: Whether to print the prompt and response.
@@ -526,94 +582,141 @@ def get_llm_response(
         words_in_mouth: str | None: Words to append to the prompt, only used for huggingface models.
             E.g. " Sure, here's my response:\n\n"
         verbose: bool: Whether to print the prompt and response.
-        simulate: dict | None: Whether to simulate the response. If given, give as dict with keys:
+        simulate: bool: Whether to simulate the cost of the call.
+        cost_estimation: dict | None: Cost estimation and simulation config. If given, give as dict with keys:
             {
-                "cost_estimator": CostEstimator,
-                "description": str,
-                "output_tokens_range": list[int],
-                "input_tokens_estimator": Callable[[str], int],
-                "output_tokens_estimator": Callable[[str, int], list[int]],
-                "simstr_len": int,
+                "cost_estimator": CostEstimator, (if not given, will not estimate cost)
+                "description": str, (optional, helpful for tracking and breakdown)
+                "input_tokens_estimator": Callable[[str], int], (optional, defaults to len(input_string) // 4.5)
+                "output_tokens_estimator": Callable[[str, int], list[int]], (optional, defaults to [1, 2048])
+                "simstr_len": int, (optional, defaults to 1024)
             }
-
+            
     Keyword Args:
         response_model: pydantic.BaseModel: Pydantic model to use for response, if using
             instructor. Defaults to None (in which case instructor is not used).
         top_logprobs: int: Number of top logprobs to return. Defaults to 5.
     """
-
-    print("NOT USING CACHE")
-
-    default_options = {
-        "model": "gpt-4o-mini",
-    }
-    options = default_options | kwargs
-    options["model"] = model or options["model"]
-
     if isinstance(prompt, str):
         prompt = prepare_messages(prompt)
-    if "response_model" in options:
-        client, client_name = get_client_pydantic(options["model"], use_async=False)
+    if "response_model" in kwargs:
+        client, client_name = get_client_pydantic(model, use_async=False)
     else:
-        client, client_name = get_client_native(options["model"], use_async=False)
+        client, client_name = get_client_native(model, use_async=False)
     call_messages = (
         _mistral_message_transform(prompt) if client_name == "mistral" else prompt
     )
-
+    if cost_estimation is None:
+        cost_estimation = {}
+    cost_estimation = {
+        "cost_estimator": None,
+        "description": None,
+        "input_tokens_estimator": None,
+        "output_tokens_estimator": (
+            (lambda i, j: [1, max_tokens]) if max_tokens is not None else None
+        ),
+        "simstr_len": 1024,
+    } | cost_estimation
+    
     if simulate:
-        cost_estimator = simulate["cost_estimator"]
-        if "output_tokens_estimator" not in simulate and max_tokens is not None:
-            simulate["output_tokens_estimator"] = lambda input_string, input_tokens: [
-                1,
-                max_tokens,
-            ]
-        with cost_estimator.append(
-            CostItem(
-                model=options["model"],
+        if cost_estimation["cost_estimator"]:
+            ci = CostItem(
+                model=model,
                 input_string="".join([m["content"] for m in prompt]),
-                description=simulate.get("description", None),
-                input_tokens_estimator=simulate.get("input_tokens_estimator", None),
-                output_tokens_estimator=simulate.get("output_tokens_estimator", None),
+                description=cost_estimation["description"],
+                token_estimator=cost_estimation["input_tokens_estimator"],
+                output_tokens_estimator=cost_estimation["output_tokens_estimator"],
+                exact=False,
             )
-        ):
-            if return_probs_for:
-                return {token: 1.0 for token in return_probs_for}
-            simstr = "This is a test output."
-            return simstr * int(
-                simulate.get("simstr_len", 1024) // (len(simstr) // 4.5)
-            )
-
+            with cost_estimation["cost_estimator"].append(ci):
+                ...
+        if return_probs_for:
+            return {token: 1.0 for token in return_probs_for}
+        simstr = "This is a test output."
+        return simstr * int(cost_estimation.get("simstr_len", 1024) // (len(simstr) // 4.5))
+    
     if client_name == "huggingface_local":
-        return get_hf_response(
+        t0 = time()
+        response = get_hf_response(
             prompt=call_messages,
-            model_name=options["model"],
+            model_name=model,
             max_tokens=max_tokens,
             return_probs_for=return_probs_for,
             prompt_type="messages",
             words_in_mouth=words_in_mouth,
         )
+        t = time() - t0
+        if cost_estimation["cost_estimator"]:
+            ci = CostItem(
+                time_range=[t, t],
+                model=model,
+                input_string="".join([m["content"] for m in prompt]),
+                description=cost_estimation["description"],
+                token_estimator=cost_estimation["input_tokens_estimator"],
+                output_string=(
+                    response
+                    if not return_probs_for
+                    else max(return_probs_for, key=lambda x: len(x))
+                ),
+                exact=False,
+            )
+            with cost_estimation["cost_estimator"].append(ci):
+                ...
+        return response
     elif client_name == "mistral" and not os.getenv("USE_OPENROUTER"):
+        t0 = time()
         response = client.chat(
             messages=call_messages,
-            max_tokens=max_tokens,
-            logprobs=bool(return_probs_for),
-            top_logprobs=(options.get("top_logprobs", 5) if return_probs_for else None),
-            **options,
-        )
-    else:
-        response = client.chat.completions.create(
-            messages=call_messages,
+            model=model,
             max_tokens=max_tokens,
             logprobs=bool(return_probs_for),
             top_logprobs=(5 if return_probs_for else None),
-            **options,
+            **kwargs,
         )
-
+        t = time() - t0
+    else:
+        t0 = time()
+        response = client.chat.completions.create(
+            messages=call_messages,
+            model=model,
+            max_tokens=max_tokens,
+            logprobs=bool(return_probs_for),
+            top_logprobs=(kwargs.get("top_logprobs", 5) if return_probs_for else None),
+            **kwargs,
+        )
+        t = time() - t0
+        
     text_response = response.choices[0].message.content
-
-    if verbose or os.getenv("VERBOSE") == "True":
+    if cost_estimation["cost_estimator"]:
+        try:
+            input_tokens, output_tokens = (
+                response.usage.prompt_tokens,
+                response.usage.completion_tokens,
+            )
+            exact = True
+        except AttributeError:
+            input_tokens, output_tokens = None, None
+            exact = False
+        ci = CostItem(
+            time_range=[t, t],
+            model=model,
+            input_tokens=input_tokens,
+            output_tokens_range=[output_tokens, output_tokens],
+            input_string="".join([m["content"] for m in prompt]),
+            output_string=(
+                text_response
+                if not return_probs_for
+                else max(return_probs_for, key=lambda x: len(x))
+            ),
+            description=cost_estimation["description"],
+            exact=exact,
+        )
+        with cost_estimation["cost_estimator"].append(ci):
+            ...
+            
+    if verbose:
         print(f"...\nText: {prompt[-1]['content']}\nResponse: {text_response}\n")
-
+        
     if return_probs_for:
         all_logprobs = response.choices[0].logprobs.content[0].top_logprobs
         all_logprobs_dict = {x.token: x.logprob for x in all_logprobs}
@@ -624,5 +727,6 @@ def get_llm_response(
         total_prob = sum(probs.values())
         probs_relative = {token: prob / total_prob for token, prob in probs.items()}
         return probs_relative
-
+    
     return text_response
+
