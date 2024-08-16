@@ -91,8 +91,8 @@ class CostItem:
                 self.output_tokens_range = self.token_estimator(self.output_string)
         input_cost = self.input_tokens * self.PRICES[self.model]["input_tokens"]
         output_cost_range = [
-            self.output_tokens * self.PRICES[self.model]["output_tokens"]
-            for self.output_tokens in self.output_tokens_range
+            output_tokens * self.PRICES[self.model]["output_tokens"]
+            for output_tokens in self.output_tokens_range
         ]
         if self.cost_range is None:
             self.cost_range = [
@@ -100,8 +100,8 @@ class CostItem:
             ]
         if self.time_range is None:
             self.time_range = [
-                self.output_tokens * self.PRICES[self.model]["time"]
-                for self.output_tokens in self.output_tokens_range
+                output_tokens * self.PRICES[self.model]["time"]
+                for output_tokens in self.output_tokens_range
             ]
 
     def __repr__(self):

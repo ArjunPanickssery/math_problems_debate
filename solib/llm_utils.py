@@ -423,10 +423,12 @@ async def get_llm_response_async(
 
     if isinstance(prompt, str):
         prompt = prepare_messages(prompt)
-    if "response_model" in kwargs:
+    response_model = kwargs.get("response_model", None)
+    if response_model:
         client, client_name = get_client_pydantic(model, use_async=True)
     else:
         client, client_name = get_client_native(model, use_async=True)
+        kwargs.pop("response_model", None)
     call_messages = (
         _mistral_message_transform(prompt) if client_name == "mistral" else prompt
     )
@@ -502,7 +504,13 @@ async def get_llm_response_async(
         t = time() - t0
     else:
         t0 = time()
-        response = await client.chat.completions.create(
+        if client_name == "mistral" and not os.getenv("USE_OPENROUTER"):
+            chat_fun = client.chat
+        elif kwargs.get("response_model", None) is None:
+            chat_fun = client.chat.completions.create
+        else:
+            chat_fun = client.chat.completions.create_with_completion
+        response = await chat_fun(
             messages=call_messages,
             model=model,
             max_tokens=max_tokens,
@@ -510,19 +518,27 @@ async def get_llm_response_async(
             top_logprobs=(kwargs.get("top_logprobs", 5) if return_probs_for else None),
             **kwargs,
         )
+        
         t = time() - t0
 
-    text_response = response.choices[0].message.content
+    if response_model is None:
+        text_response = response.choices[0].message.content
+    else:
+        text_response, info = response
+        text_response = text_response.dict()
     if cost_estimation["cost_estimator"]:
-        try:
+        if response_model is None:
             input_tokens, output_tokens = (
                 response.usage.prompt_tokens,
                 response.usage.completion_tokens,
             )
             exact = True
-        except AttributeError:
-            input_tokens, output_tokens = None, None
-            exact = False
+        else:
+            input_tokens, output_tokens = (
+                info.usage.prompt_tokens,
+                info.usage.completion_tokens,
+            )
+            exact = True
         ci = CostItem(
             time_range=[t, t],
             model=model,
@@ -599,10 +615,12 @@ def get_llm_response(
     """
     if isinstance(prompt, str):
         prompt = prepare_messages(prompt)
-    if "response_model" in kwargs:
+    response_model = kwargs.get("response_model", None)
+    if response_model:
         client, client_name = get_client_pydantic(model, use_async=False)
     else:
         client, client_name = get_client_native(model, use_async=False)
+        kwargs.pop("response_model", None)
     call_messages = (
         _mistral_message_transform(prompt) if client_name == "mistral" else prompt
     )
@@ -617,7 +635,7 @@ def get_llm_response(
         ),
         "simstr_len": 1024,
     } | cost_estimation
-    
+
     if simulate:
         if cost_estimation["cost_estimator"]:
             ci = CostItem(
@@ -633,8 +651,10 @@ def get_llm_response(
         if return_probs_for:
             return {token: 1.0 for token in return_probs_for}
         simstr = "This is a test output."
-        return simstr * int(cost_estimation.get("simstr_len", 1024) // (len(simstr) // 4.5))
-    
+        return simstr * int(
+            cost_estimation.get("simstr_len", 1024) // (len(simstr) // 4.5)
+        )
+
     if client_name == "huggingface_local":
         t0 = time()
         response = get_hf_response(
@@ -676,7 +696,13 @@ def get_llm_response(
         t = time() - t0
     else:
         t0 = time()
-        response = client.chat.completions.create(
+        if client_name == "mistral" and not os.getenv("USE_OPENROUTER"):
+            chat_fun = client.chat
+        elif response_model is None:
+            chat_fun = client.chat.completions.create
+        else:
+            chat_fun = client.chat.completions.create_with_completion
+        response = chat_fun(
             messages=call_messages,
             model=model,
             max_tokens=max_tokens,
@@ -686,17 +712,24 @@ def get_llm_response(
         )
         t = time() - t0
         
-    text_response = response.choices[0].message.content
+    if response_model is None:
+        text_response = response.choices[0].message.content
+    else:
+        text_response, info = response
+        text_response = text_response.dict()
     if cost_estimation["cost_estimator"]:
-        try:
+        if response_model is None:
             input_tokens, output_tokens = (
                 response.usage.prompt_tokens,
                 response.usage.completion_tokens,
             )
             exact = True
-        except AttributeError:
-            input_tokens, output_tokens = None, None
-            exact = False
+        else:
+            input_tokens, output_tokens = (
+                info.usage.prompt_tokens,
+                info.usage.completion_tokens,
+            )
+            exact = True
         ci = CostItem(
             time_range=[t, t],
             model=model,
@@ -729,4 +762,3 @@ def get_llm_response(
         return probs_relative
     
     return text_response
-
