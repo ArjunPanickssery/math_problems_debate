@@ -491,17 +491,6 @@ async def get_llm_response_async(
             with cost_estimation["cost_estimator"].append(ci):
                 ...
         return response
-    elif client_name == "mistral" and not os.getenv("USE_OPENROUTER"):
-        t0 = time()
-        response = await client.chat(
-            messages=call_messages,
-            model=model,
-            max_tokens=max_tokens,
-            logprobs=bool(return_probs_for),
-            top_logprobs=(5 if return_probs_for else None),
-            **kwargs,
-        )
-        t = time() - t0
     else:
         t0 = time()
         if client_name == "mistral" and not os.getenv("USE_OPENROUTER"):
@@ -576,7 +565,7 @@ async def get_llm_response_async(
 @cache(ignore="cost_estimation")
 def get_llm_response(
     prompt: str | list[dict[str, str]],
-    model: str | None = None,
+    model: str | None = 'gpt-4o-mini',
     return_probs_for: list[str] | None = None,
     max_tokens: int | None = None,
     words_in_mouth: str | None = None,
@@ -683,17 +672,6 @@ def get_llm_response(
             with cost_estimation["cost_estimator"].append(ci):
                 ...
         return response
-    elif client_name == "mistral" and not os.getenv("USE_OPENROUTER"):
-        t0 = time()
-        response = client.chat(
-            messages=call_messages,
-            model=model,
-            max_tokens=max_tokens,
-            logprobs=bool(return_probs_for),
-            top_logprobs=(5 if return_probs_for else None),
-            **kwargs,
-        )
-        t = time() - t0
     else:
         t0 = time()
         if client_name == "mistral" and not os.getenv("USE_OPENROUTER"):
