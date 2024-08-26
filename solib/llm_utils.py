@@ -23,7 +23,7 @@ from time import time
 from dataclasses import dataclass
 from perscache import Cache
 from perscache.serializers import JSONSerializer
-from typing import Literal
+from typing import Literal, Coroutine
 from dotenv import load_dotenv
 from openai import AsyncOpenAI, OpenAI
 from mistralai.async_client import MistralAsyncClient
@@ -42,6 +42,43 @@ cache = Cache(
     serializer=JSONSerializer(),
 )
 
+async def parallelized_call(
+    func: Coroutine,
+    data: list[str],
+    max_concurrent_queries: int = 100,
+) -> list[any]:
+    """
+    Run async func in parallel on the given data.
+    func will usually be a partial which uses query_api or whatever in some way.
+
+    Example usage:
+        partial_eval_method = functools.partial(eval_method, model=model, **kwargs)
+        results = await parallelized_call(partial_eval_method, [format_post(d) for d in data])
+    """
+
+    if os.getenv("SINGLE_THREAD"):
+        print(f"Running {func} on {len(data)} datapoints sequentially")
+        return [await func(d) for d in data]
+
+    max_concurrent_queries = min(
+        max_concurrent_queries,
+        int(os.getenv("MAX_CONCURRENT_QUERIES", max_concurrent_queries)),
+    )
+
+    print(
+        f"Running {func} on {len(data)} datapoints with {max_concurrent_queries} concurrent queries"
+    )
+
+    # Create a local semaphore
+    local_semaphore = asyncio.Semaphore(max_concurrent_queries)
+
+    async def call_func(sem, func, datapoint):
+        async with sem:
+            return await func(datapoint)
+
+    print("Calling call_func")
+    tasks = [call_func(local_semaphore, func, d) for d in data]
+    return await asyncio.gather(*tasks)
 
 def get_async_openai_client_pydantic() -> Instructor:
     api_key = os.getenv("OPENAI_API_KEY")
