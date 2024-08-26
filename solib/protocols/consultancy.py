@@ -1,7 +1,7 @@
 from typing import Self
 from dataclasses import dataclass
 from solib.utils import random
-from solib.llm_utils import get_llm_response
+from solib.llm_utils import get_llm_response, get_llm_response_async
 from solib.datatypes import Answer, Question
 from solib.protocols.common import Transcript, Judge, Protocol
 
@@ -20,12 +20,12 @@ class Consultant:
                 f"RESPONSE: \n{self.response}"
             )
 
-    def __call__(
+    async def __call__(
         self, answer: Answer, transcript: Transcript, **kwargs
     ) -> "Self.TranscriptItem":
         """Subclasses should customize this."""
         words_in_mouth = " Sure, here's my response:\n\n"
-        response = get_llm_response(
+        response = await get_llm_response_async(
             prompt=self.prompt.format(answer=answer.symbol, transcript=transcript),
             model=self.model,
             max_tokens=self.max_wordceling,
@@ -74,10 +74,10 @@ class Client:
         def __str__(self):
             return f"\n### ENQUIRY FROM JUDGE: \n{self.response}"
 
-    def __call__(self, transcript: Transcript, **kwargs) -> "Self.TranscriptItem":
+    async def __call__(self, transcript: Transcript, **kwargs) -> "Self.TranscriptItem":
         """Subclasses should customize this."""
         words_in_mouth = " Here's my question:\n\n"
-        response = get_llm_response(
+        response = await get_llm_response_async(
             prompt=self.prompt.format(transcript=transcript),
             model=self.model,
             max_tokens=self.max_wordceling,
@@ -154,7 +154,7 @@ class Consultancy(Protocol):
         self.num_turns = kwargs.get("num_turns", 2)
         self.consultant_goes_first = kwargs.get("consultant_goes_first", False)
 
-    def choose_answer(self, question: Question, **kwargs) -> Answer:
+    async def choose_answer(self, question: Question, **kwargs) -> Answer:
         """Choose an answer for the consultant to argue for."""
         return (
             question.possible_answers[0]
@@ -162,18 +162,18 @@ class Consultancy(Protocol):
             else question.possible_answers[1]
         )
 
-    def run(self, question: Question, **kwargs) -> Transcript:
+    async def run(self, question: Question, **kwargs) -> Transcript:
         transcript = Transcript(question, protocol=Consultancy)
-        answer = self.choose_answer(question, **kwargs)
+        answer = await self.choose_answer(question, **kwargs)
         if self.consultant_goes_first:
-            consultant_item = self.consultant(answer, transcript, **kwargs)
+            consultant_item = await self.consultant(answer, transcript, **kwargs)
             transcript.append(consultant_item)
         while not self.end_communication(transcript, **kwargs):
-            client_item = self.client(transcript, **kwargs)
+            client_item = await self.client(transcript, **kwargs)
             transcript.append(client_item)
-            consultant_item = self.consultant(answer, transcript, **kwargs)
+            consultant_item = await self.consultant(answer, transcript, **kwargs)
             transcript.append(consultant_item)
-        judge_item = self.judge(transcript, **kwargs)
+        judge_item = await self.judge(transcript, **kwargs)
         transcript.append(judge_item)
         return transcript
 

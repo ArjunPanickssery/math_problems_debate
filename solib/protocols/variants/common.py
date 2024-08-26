@@ -2,7 +2,7 @@ from typing import Self
 from dataclasses import dataclass
 import re
 from solib.utils import random
-from solib.llm_utils import get_llm_response
+from solib.llm_utils import get_llm_response, get_llm_response_async
 from solib.protocols.common import Transcript, Judge
 
 """
@@ -24,11 +24,11 @@ class JustAskProbabilityJudge(Judge):
         "numerical probability in decimal terms (NOT percentage), nothing else: \n\n"
     )
     
-    def __call__(self, transcript: Transcript, **kwargs) -> "Self.TranscriptItem":
+    async def __call__(self, transcript: Transcript, **kwargs) -> "Self.TranscriptItem":
         probabilities = {}
         for answer in transcript.question.possible_answers:
             words_in_mouth = f" The probability that the answer is {answer.symbol} is:\n\n"
-            response = get_llm_response(
+            response = await get_llm_response_async(
                 prompt=self.prompt.format(transcript=transcript, answer=answer),
                 model=self.model,
                 max_tokens=5,
@@ -75,15 +75,15 @@ class COTJudge(Judge):
         "Final Answer: "
     )
     
-    def __call__(self, transcript: Transcript, **kwargs) -> "Self.TranscriptItem":
-        cot = get_llm_response(
+    async def __call__(self, transcript: Transcript, **kwargs) -> "Self.TranscriptItem":
+        cot = await get_llm_response_async(
             prompt=self.cot_prompt.format(transcript=transcript),
             model=self.model,
             max_tokens=2048,
             **kwargs
         )
         words_in_mouth = " I judge that the answer is:\n\n("
-        probabilities = get_llm_response(
+        probabilities = await get_llm_response_async(
             prompt=self.prompt.format(transcript=transcript, cot=cot),
             model=self.model,
             return_probs_for=transcript.question.possible_answer_symbols,
@@ -117,8 +117,8 @@ class COTJustAskProbabilityJudge(COTJudge):
         "Final numerical (NOT percentage) probability for {answer}: "
     )
     
-    def __call__(self, transcript: Transcript, **kwargs) -> "Self.TranscriptItem":
-        cot = get_llm_response(
+    async def __call__(self, transcript: Transcript, **kwargs) -> "Self.TranscriptItem":
+        cot = await get_llm_response_async(
             prompt=self.cot_prompt.format(transcript=transcript),
             model=self.model,
             max_tokens=2048,
@@ -127,7 +127,7 @@ class COTJustAskProbabilityJudge(COTJudge):
         probabilities = {}
         for answer in transcript.question.possible_answers:
             words_in_mouth = f" The probability that the answer is {answer.symbol} is:\n\n"
-            response = get_llm_response(
+            response = await get_llm_response_async(
                 prompt=self.prompt.format(transcript=transcript, answer=answer, cot=cot),
                 model=self.model,
                 max_tokens=5,
@@ -149,7 +149,7 @@ class HumanJudge(Judge):
     a placeholder for a human judge. It will simply ask the user for probabilities
     for each possible answer."""
     
-    def __call__(self, transcript: Transcript, **kwargs) -> "Self.TranscriptItem":
+    async def __call__(self, transcript: Transcript, **kwargs) -> "Self.TranscriptItem":
         probabilities = {}
         print(transcript)
         for answer in transcript.question.possible_answers:
@@ -165,7 +165,7 @@ class RandomJudge(Judge):
     """A random judge that can be used in a protocol. It will randomly assign
     probabilities to each possible answer."""
     
-    def __call__(self, transcript: Transcript, **kwargs) -> "Self.TranscriptItem":
+    async def __call__(self, transcript: Transcript, **kwargs) -> "Self.TranscriptItem":
         probabilities = {}
         for answer in transcript.question.possible_answers:
             probabilities[answer.symbol] = random(transcript, **kwargs)

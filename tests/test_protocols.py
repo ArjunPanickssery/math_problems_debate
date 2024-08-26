@@ -1,4 +1,5 @@
 import pytest
+import asyncio
 from copy import deepcopy
 from solib.utils import *
 from solib.llm_utils import *
@@ -110,9 +111,9 @@ ques = Question(
     correct_answer=Answer("A", "Donald Trump"),
 )
 
-
+@pytest.mark.asyncio
 @pytest.mark.parametrize("protocol, kwargs", param_sets)
-def test_protocols(protocol, kwargs, request):
+async def test_protocols(protocol, kwargs, request):
     models = [
         v.model
         for k, v in kwargs.items()
@@ -132,7 +133,7 @@ def test_protocols(protocol, kwargs, request):
         )
     instance = protocol(**kwargs)
     assert isinstance(instance, Protocol)
-    transcript = instance.run(ques)
+    transcript = await instance.run(ques)
     assert transcript.question == ques
     # assert transcript.protocol == protocol # actually no because subclasses
     assert isinstance(transcript.transcript, list)

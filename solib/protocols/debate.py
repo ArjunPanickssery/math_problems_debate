@@ -1,7 +1,7 @@
 from typing import Self
 from dataclasses import dataclass
 from solib.utils import random
-from solib.llm_utils import get_llm_response
+from solib.llm_utils import get_llm_response, get_llm_response_async
 from solib.datatypes import Answer, Question
 from solib.protocols.common import Transcript, Judge, Protocol
 
@@ -17,10 +17,10 @@ class Debater:
         def __str__(self):
             return f"\n### ARGUMENT FOR {self.answer.symbol}:\n{self.argument}"
 
-    def __call__(self, answer: Answer, transcript: Transcript, **kwargs) -> "Self.TranscriptItem":
+    async def __call__(self, answer: Answer, transcript: Transcript, **kwargs) -> "Self.TranscriptItem":
         """Subclasses should customize this."""
         words_in_mouth = " Sure, here's my response:\n\n"
-        argument = get_llm_response(
+        argument = await get_llm_response_async(
             prompt=self.prompt.format(answer=answer.symbol, transcript=transcript),
             model=self.model,
             max_tokens=self.max_wordceling,
@@ -103,15 +103,15 @@ class SequentialDebate(Protocol):
             )
         return debater_1_answer, debater_2_answer
 
-    def run(self, question: Question, **kwargs) -> Transcript:
+    async def run(self, question: Question, **kwargs) -> Transcript:
         transcript = Transcript(question, protocol=SequentialDebate)
         debater_1_answer, debater_2_answer = self.choose_answers(question, **kwargs)
         while not self.end_communication(transcript, **kwargs):
-            debater_1_item = self.debater_1(debater_1_answer, transcript, **kwargs)
+            debater_1_item = await self.debater_1(debater_1_answer, transcript, **kwargs)
             transcript.append(debater_1_item)
-            debater_2_item = self.debater_2(debater_2_answer, transcript, **kwargs)
+            debater_2_item = await self.debater_2(debater_2_answer, transcript, **kwargs)
             transcript.append(debater_2_item)
-        judge_item = self.judge(transcript, **kwargs)
+        judge_item = await self.judge(transcript, **kwargs)
         transcript.append(judge_item)
         return transcript
 
