@@ -16,57 +16,143 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """
 
 import os
-import math
-import sys
-import asyncio
-from time import time
-from dataclasses import dataclass
+import warnings
+from typing import Literal
 from perscache import Cache
 from perscache.serializers import JSONSerializer
-from typing import Literal
-from dotenv import load_dotenv
-from openai import AsyncOpenAI, OpenAI
-from mistralai.async_client import MistralAsyncClient
-from mistralai.client import MistralClient
-from mistralai.models.chat_completion import ChatMessage
-from anthropic import AsyncAnthropic, Anthropic
-from huggingface_hub import snapshot_download
-from transformers import AutoTokenizer, AutoModelForCausalLM  # AutoModelForSeq2SeqLM
-import transformers
-import instructor
-from instructor.client import Instructor
-from instructor.mode import Mode
-from solib.cost_estimator import CostItem, CostEstimator
+from costly import Costlog, CostlyResponse, costly
 
 cache = Cache(
     serializer=JSONSerializer(),
 )
 
 
-def get_async_openai_client_pydantic() -> Instructor:
+def get_ai(
+    model: str,
+    use_async=False,
+    use_instructor: bool = False,
+    what_to_return: Literal["client", "generate", "return_probs"] = "generate",
+):
+    if model.startswith("hf:"):  # Hugging Face local models
+        from transformers import AutoTokenizer, AutoModelForCausalLM
+        api_key = os.getenv("HF_TOKEN")
+        model = model.split("hf:")[1]
+        tokenizer = AutoTokenizer.from_pretrained(model)
+        model = AutoModelForCausalLM.from_pretrained(
+            model, device_map="auto", token=api_key
+        )
+        client = (tokenizer, model)
+        def generate(prompt, max_tokens=2048):
+            input_ids = tokenizer.encode(prompt, return_tensors="pt").to(model.device)
+            output = model.generate(input_ids, max_length=max_tokens)
+            decoded = tokenizer.decode(output[0], skip_special_tokens=True)
+            prompt_end = prompt[-9:] # HACK
+            response = decoded.split(prompt_end)[-1]
+            return response
+    elif model.startswith("or:"):  # OpenRouter
+        import openai
+        model = model.split("or:")[1]
+        api_key = os.getenv("OPENROUTER_API_KEY")
+        if use_async:
+            client = openai.AsyncOpenAI(
+                base_url="https://openrouter.ai/api/v1", api_key=api_key
+            )
+        else:
+            client = openai.OpenAI(
+                base_url="https://openrouter.ai/api/v1", api_key=api_key
+            )
+        if use_instructor:
+            import instructor
+            from instructor.mode import Mode
+
+            mode = Mode.MD_JSON
+            if model.startswith("mistral"):
+                mode = Mode.MISTRAL_TOOLS
+            elif model.startswith("gpt"):
+                mode = Mode.TOOLS_STRICT
+            client = instructor.from_openai(client, mode=mode)
+    else:
+        if model.startswith(("gpt", "openai", "babbage", "davinci")):
+            import openai
+
+            api_key = os.getenv("OPENAI_API_KEY")
+            if use_async:
+                client = openai.AsyncOpenAI(api_key=api_key)
+            else:
+                client = openai.OpenAI(api_key=api_key)
+        elif model.startswith(("claude", "anthropic")):
+            import anthropic
+
+            api_key = os.getenv("ANTHROPIC_API_KEY")
+            if use_async:
+                client = anthropic.AsyncAnthropic(api_key=api_key)
+            else:
+                client = anthropic.Anthropic(api_key=api_key)
+        elif model.startswith("mistral"):
+            if use_async:
+                from mistralai.async_client import MistralAsyncClient
+
+                api_key = os.getenv("MISTRAL_API_KEY")
+                client = MistralAsyncClient(api_key=api_key)
+            else:
+                from mistralai.client import MistralClient
+
+                api_key = os.getenv("MISTRAL_API_KEY")
+                client = MistralClient(api_key=api_key)
+        else:
+            raise ValueError(f"Model {model} is not supported for now")
+        if use_instructor:
+            import instructor
+            from instructor.mode import Mode
+
+            mode = Mode.TOOLS
+            if model.startswith("mistral"):
+                mode = Mode.MISTRAL_TOOLS
+            elif model.startswith("gpt"):
+                mode = Mode.TOOLS_STRICT
+            elif model.startswith(("anthropic", "claude")):
+                mode = Mode.ANTHROPIC_JSON
+            client = instructor.from_openai(client, mode=mode)
+
+
+def get_async_openai_client_pydantic() -> "Instructor":
+    import instructor
+    from openai import AsyncOpenAI
+
     api_key = os.getenv("OPENAI_API_KEY")
     _client = AsyncOpenAI(api_key=api_key)
     return instructor.from_openai(_client)
 
 
-def get_async_openai_client_native() -> AsyncOpenAI:
+def get_async_openai_client_native() -> "AsyncOpenAI":
+    from openai import AsyncOpenAI
+
     api_key = os.getenv("OPENAI_API_KEY")
     return AsyncOpenAI(api_key=api_key)
 
 
-def get_openai_client_pydantic() -> Instructor:
+def get_openai_client_pydantic() -> "Instructor":
+    import instructor
+    from openai import OpenAI
+
     api_key = os.getenv("OPENAI_API_KEY")
     _client = OpenAI(api_key=api_key)
     return instructor.from_openai(_client)
 
 
-def get_openai_client_native() -> OpenAI:
+def get_openai_client_native() -> "OpenAI":
+    from openai import OpenAI
+
     api_key = os.getenv("OPENAI_API_KEY")
     return OpenAI(api_key=api_key)
 
 
-def get_async_openrouter_client_pydantic(**kwargs) -> Instructor:
-    print(
+def get_async_openrouter_client_pydantic(**kwargs) -> "Instructor":
+    import instructor
+    from openai import AsyncOpenAI
+    from instructor.mode import Mode
+
+    warnings.warn(
         "Only some OpenRouter endpoints have `response_format`. If you encounter errors, please check on the OpenRouter website."
     )
     api_key = os.getenv("OPENROUTER_API_KEY")
@@ -75,15 +161,21 @@ def get_async_openrouter_client_pydantic(**kwargs) -> Instructor:
     return instructor.from_openai(_client, mode=Mode.MD_JSON, **kwargs)
 
 
-def get_async_openrouter_client_native() -> AsyncOpenAI:
+def get_async_openrouter_client_native() -> "AsyncOpenAI":
+    from openai import AsyncOpenAI
+
     print("Calling models through OpenRouter")
     api_key = os.getenv("OPENROUTER_API_KEY")
     print(f"OPENROUTER_API_KEY: {api_key}")
     return AsyncOpenAI(base_url="https://openrouter.ai/api/v1", api_key=api_key)
 
 
-def get_openrouter_client_pydantic(**kwargs) -> Instructor:
-    print(
+def get_openrouter_client_pydantic(**kwargs) -> "Instructor":
+    import instructor
+    from openai import OpenAI
+    from instructor.mode import Mode
+
+    warnings.warn(
         "Only some OpenRouter endpoints have `response_format`. If you encounter errors, please check on the OpenRouter website."
     )
     print("Calling models through OpenRouter")
@@ -95,77 +187,94 @@ def get_openrouter_client_pydantic(**kwargs) -> Instructor:
     return instructor.from_openai(_client, mode=Mode.TOOLS, **kwargs)
 
 
-def get_openrouter_client_native() -> OpenAI:
+def get_openrouter_client_native() -> "OpenAI":
+    from openai import OpenAI
+
     print("Calling models through OpenRouter")
     api_key = os.getenv("OPENROUTER_API_KEY")
     print(f"OPENROUTER_API_KEY: {api_key}")
     return OpenAI(base_url="https://openrouter.ai/api/v1", api_key=api_key)
 
 
-def get_mistral_async_client_pydantic() -> Instructor:
+def get_mistral_async_client_pydantic() -> "Instructor":
+    import instructor
+    from mistralai.async_client import MistralAsyncClient
+
     api_key = os.getenv("MISTRAL_API_KEY")
     _client = MistralAsyncClient(api_key=api_key)
     return instructor.from_openai(_client, mode=instructor.Mode.MISTRAL_TOOLS)
 
 
-def get_mistral_async_client_native() -> MistralAsyncClient:
+def get_mistral_async_client_native() -> "MistralAsyncClient":
+    from mistralai.async_client import MistralAsyncClient
+
     api_key = os.getenv("MISTRAL_API_KEY")
     return MistralAsyncClient(api_key=api_key)
 
 
-def get_mistral_client_pydantic() -> Instructor:
+def get_mistral_client_pydantic() -> "Instructor":
+    import instructor
+    from mistralai.client import MistralClient
+
     api_key = os.getenv("MISTRAL_API_KEY")
     _client = MistralClient(api_key=api_key)
     return instructor.from_openai(_client, mode=instructor.Mode.MISTRAL_TOOLS)
 
 
-def get_mistral_client_native() -> MistralClient:
+def get_mistral_client_native() -> "MistralClient":
+    from mistralai.client import MistralClient
+
     api_key = os.getenv("MISTRAL_API_KEY")
     return MistralClient(api_key=api_key)
 
 
-def get_anthropic_async_client_pydantic() -> Instructor:
+def get_anthropic_async_client_pydantic() -> "Instructor":
+    import instructor
+    from anthropic import AsyncAnthropic
+
     api_key = os.getenv("ANTHROPIC_API_KEY")
     _client = AsyncAnthropic(api_key=api_key)
     return instructor.from_anthropic(_client, mode=instructor.Mode.ANTHROPIC_JSON)
 
 
-def get_anthropic_async_client_native() -> AsyncAnthropic:
+def get_anthropic_async_client_native() -> "AsyncAnthropic":
+    from anthropic import AsyncAnthropic
+
     api_key = os.getenv("ANTHROPIC_API_KEY")
     return AsyncAnthropic(api_key=api_key)
 
 
-def get_anthropic_client_pydantic() -> Instructor:
+def get_anthropic_client_pydantic() -> "Instructor":
+    import instructor
+    from anthropic import Anthropic
+
     api_key = os.getenv("ANTHROPIC_API_KEY")
     _client = Anthropic(api_key=api_key)
     return instructor.from_anthropic(_client, mode=instructor.Mode.ANTHROPIC_JSON)
 
 
-def get_anthropic_client_native() -> Anthropic:
+def get_anthropic_client_native() -> "Anthropic":
+    from anthropic import Anthropic
+
     api_key = os.getenv("ANTHROPIC_API_KEY")
     return Anthropic(api_key=api_key)
 
 
-def get_togetherai_client_native() -> OpenAI:
+def get_togetherai_client_native() -> "OpenAI":
+    from openai import OpenAI
+
     url = "https://api.together.xyz/v1"
     api_key = os.getenv("TOGETHER_API_KEY")
     return OpenAI(api_key=api_key, base_url=url)
 
 
 def get_huggingface_local_client(hf_repo):
-    # hf_model_path = os.path.join(os.getenv("HF_MODELS_DIR"), hf_repo)
-    # if not os.path.exists(hf_model_path):
-    #     snapshot_download(hf_repo, local_dir=hf_model_path)
+    from transformers import AutoTokenizer, AutoModelForCausalLM
 
     tokenizer = AutoTokenizer.from_pretrained(hf_repo)
-
     model = AutoModelForCausalLM.from_pretrained(
         hf_repo, device_map="auto", token=os.getenv("HF_TOKEN")
     )
-    # pipeline = transformers.pipeline(
-    #     "text-generation", model=model, tokenizer=tokenizer, max_new_tokens=2048
-    # )
-    # return pipeline
     return tokenizer, model
 
 
@@ -212,11 +321,13 @@ def get_provider(model: str) -> str:
 
 
 def get_client_native(
-    model: str, use_async=True
-) -> tuple[AsyncOpenAI | OpenAI | MistralAsyncClient | MistralClient, str]:
+    model: str,
+    use_async=True,
+    use_openrouter=False,
+) -> tuple["AsyncOpenAI" | "OpenAI" | "MistralAsyncClient" | "MistralClient", str]:
     provider = get_provider(model)
 
-    if os.getenv("USE_OPENROUTER"):
+    if use_openrouter:
         client = (
             get_async_openrouter_client_native()
             if use_async
@@ -244,16 +355,17 @@ def get_client_native(
     return client, provider
 
 
-def get_client_pydantic(model: str, use_async=True) -> tuple[Instructor, str]:
+def get_client_pydantic(
+    model: str, use_async=True, use_openrouter=False
+) -> tuple["Instructor", str]:
+    import instructor
+
     provider = get_provider(model)
     if provider == "togetherai" and "nitro" not in model:
         raise NotImplementedError(
             "Most models on TogetherAI API, and the same models on OpenRouter API too, do not support function calling / JSON output mode. So, no Pydantic outputs for now. The exception seem to be Nitro-hosted models on OpenRouter."
         )
 
-    use_openrouter = (
-        os.getenv("USE_OPENROUTER") and os.getenv("USE_OPENROUTER") != "False"
-    )
     if use_openrouter:
         kwargs = {}
         if provider == "mistral":
@@ -295,17 +407,19 @@ def get_client_pydantic(model: str, use_async=True) -> tuple[Instructor, str]:
     return client, provider
 
 
-def is_llama2_tokenized(model: str) -> bool:
-    keywords = ["Llama-2", "pythia"]
-    return any(keyword in model for keyword in keywords)
-
-
 def _mistral_message_transform(messages):
+    from mistralai.client import ChatMessage
+
     mistral_messages = []
     for message in messages:
         mistral_message = ChatMessage(role=message["role"], content=message["content"])
         mistral_messages.append(mistral_message)
     return mistral_messages
+
+
+####################################################################################################
+####################################################################################################
+####################################################################################################
 
 
 def prepare_messages(prompt: str) -> list[dict[str, str]]:
@@ -386,7 +500,7 @@ async def get_llm_response_async(
     max_tokens: int | None = None,
     words_in_mouth: str | None = None,
     verbose: bool = False,
-    simulate:bool=False,
+    simulate: bool = False,
     cost_estimation: dict | None = None,
     **kwargs,
 ) -> str | dict[str, float]:
@@ -507,7 +621,7 @@ async def get_llm_response_async(
             top_logprobs=(kwargs.get("top_logprobs", 5) if return_probs_for else None),
             **kwargs,
         )
-        
+
         t = time() - t0
 
     if response_model is None:
@@ -565,18 +679,18 @@ async def get_llm_response_async(
 @cache(ignore="cost_estimation")
 def get_llm_response(
     prompt: str | list[dict[str, str]],
-    model: str | None = 'gpt-4o-mini',
+    model: str | None = "gpt-4o-mini",
     return_probs_for: list[str] | None = None,
     max_tokens: int | None = None,
     words_in_mouth: str | None = None,
     verbose: bool = False,
-    simulate:bool=False,
+    simulate: bool = False,
     cost_estimation: dict | None = None,
     **kwargs,
 ) -> str | dict[str, float]:
     """
     Get LLM response to a prompt.
-    
+
     Args:
         prompt: str | list[dict[str, str]]: Prompt to send to the LLM.
         verbose: bool: Whether to print the prompt and response.
@@ -596,7 +710,7 @@ def get_llm_response(
                 "output_tokens_estimator": Callable[[str, int], list[int]], (optional, defaults to [1, 2048])
                 "simstr_len": int, (optional, defaults to 1024)
             }
-            
+
     Keyword Args:
         response_model: pydantic.BaseModel: Pydantic model to use for response, if using
             instructor. Defaults to None (in which case instructor is not used).
@@ -689,7 +803,7 @@ def get_llm_response(
             **kwargs,
         )
         t = time() - t0
-        
+
     if response_model is None:
         text_response = response.choices[0].message.content
     else:
@@ -724,10 +838,10 @@ def get_llm_response(
         )
         with cost_estimation["cost_estimator"].append(ci):
             ...
-            
+
     if verbose:
         print(f"...\nText: {prompt[-1]['content']}\nResponse: {text_response}\n")
-        
+
     if return_probs_for:
         all_logprobs = response.choices[0].logprobs.content[0].top_logprobs
         all_logprobs_dict = {x.token: x.logprob for x in all_logprobs}
@@ -738,5 +852,5 @@ def get_llm_response(
         total_prob = sum(probs.values())
         probs_relative = {token: prob / total_prob for token, prob in probs.items()}
         return probs_relative
-    
+
     return text_response
