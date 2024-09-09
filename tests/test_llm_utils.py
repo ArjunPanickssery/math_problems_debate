@@ -17,7 +17,7 @@ def test_get_llm_response_returns_string(model, request):
     if model.startswith("hf:") and not request.config.getoption("--runhf", False):
         pytest.skip("slow test, add --runhf option to run")
     prompt = "What is the capital of France?"
-    response = get_llm_response(prompt, model=model)
+    response = get_llm_response(prompt=prompt, model=model)
     assert isinstance(response, str)
 
 
@@ -29,7 +29,7 @@ def test_get_llm_response_returns_dict(model, request):
         'Answer exactly "0", "1", ... or "9", with nothing else in your response.'
     )
     response = get_llm_response(
-        prompt,
+        prompt=prompt,
         model=model,
         return_probs_for=[str(n) for n in range(10)],
     )
@@ -41,7 +41,7 @@ def test_get_llm_response_with_max_tokens(model, request):
         pytest.skip("slow test, add --runhf option to run")
     prompt = "What is the capital of France?"
     max_tokens = 50
-    response = get_llm_response(prompt, model=model, max_tokens=max_tokens)
+    response = get_llm_response(prompt=prompt, model=model, max_tokens=max_tokens)
     assert isinstance(response, str)
     assert len(response.split()) <= max_tokens
 
@@ -54,7 +54,9 @@ def test_get_llm_response_with_words_in_mouth(model, request):
         'Answer exactly "0", "1", ... or "9", with nothing else in your response.'
     )
     words_in_mouth = " My guess for the correct answer is:\n\n"
-    response = get_llm_response(prompt, model=model, words_in_mouth=words_in_mouth)
+    response = get_llm_response(
+        prompt=prompt, model=model, words_in_mouth=words_in_mouth
+    )
     assert isinstance(response, str)
 
 
@@ -63,7 +65,7 @@ async def test_get_llm_response_async_returns_string(model, request):
     if model.startswith("hf:") and not request.config.getoption("--runhf", False):
         pytest.skip("slow test, add --runhf option to run")
     prompt = "What is the capital of France?"
-    response = await get_llm_response_async(prompt, model=model)
+    response = await get_llm_response_async(prompt=prompt, model=model)
     assert isinstance(response, str)
 
 
@@ -76,7 +78,7 @@ async def test_get_llm_response_async_returns_dict(model, request):
         'Answer exactly "0", "1", ... or "9", with nothing else in your response.'
     )
     response = await get_llm_response_async(
-        prompt,
+        prompt=prompt,
         model=model,
         return_probs_for=[str(n) for n in range(10)],
     )
@@ -89,7 +91,9 @@ async def test_get_llm_response_async_with_max_tokens(model, request):
         pytest.skip("slow test, add --runhf option to run")
     prompt = "What is the capital of France?"
     max_tokens = 50
-    response = await get_llm_response_async(prompt, model=model, max_tokens=max_tokens)
+    response = await get_llm_response_async(
+        prompt=prompt, model=model, max_tokens=max_tokens
+    )
     assert isinstance(response, str)
     assert len(response.split()) <= max_tokens
 
@@ -104,6 +108,6 @@ async def test_get_llm_response_async_with_words_in_mouth(model, request):
     )
     words_in_mouth = " My guess for the correct answer is:\n\n"
     response = await get_llm_response_async(
-        prompt, model=model, words_in_mouth=words_in_mouth
+        prompt=prompt, model=model, words_in_mouth=words_in_mouth
     )
     assert isinstance(response, str)

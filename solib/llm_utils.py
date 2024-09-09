@@ -17,24 +17,78 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 import os
 import warnings
-from typing import Literal
+import inspect
+import math
+from typing import Literal, Union, TYPE_CHECKING
 from perscache import Cache
 from perscache.serializers import JSONSerializer
 from costly import Costlog, CostlyResponse, costly
 
-cache = Cache(
-    serializer=JSONSerializer(),
-)
+if TYPE_CHECKING:
+    from pydantic import BaseModel
+    from transformers import AutoTokenizer
+    from openai import AsyncOpenAI, OpenAI
+    from anthropic import AsyncAnthropic, Anthropic
+    from mistralai.async_client import MistralAsyncClient, MistralClient
+    from mistralai.client import MistralClient
+    from instructor import Instructor
+
+cache = Cache(serializer=JSONSerializer())
 
 
-def get_ai(
+def format_prompt(
+    prompt: str = None,
+    messages: list[dict[str, str]] = None,
+    input_string: str = None,
+    tokenizer: Union["AutoTokenizer", None] = None,
+    system_message: str | None = None,
+    words_in_mouth: str | None = None,
+) -> dict[Literal["messages", "input_string"], str | list[dict[str, str]]]:
+    """
+    Three types of prompts:
+        prompt: 'What is the capital of the moon?'
+        messages: a list[dict[str, str]] in the Chat Message format
+        input_string: a string that the LLM can directly <im_start> etc.
+    
+    This converts prompt -> messages -> input_string. Returns both messages
+    and input_string. If both prompt and messages are provided, prompt is
+    ignored. You cannot convert anything in the reverse order.
+
+    Args:
+        prompt: str: Prompt to convert. Either prompt or messages must be provided
+            to calculate input_string.
+        messages: list[dict[str, str]]: Messages to convert. Either prompt or 
+            messages must be provided to calculate input_string.
+        tokenizer: AutoTokenizer: Tokenizer to use for the conversion.
+        system_message: str | None: System message to add to the messages. Will be
+            ignored if messages is provided.
+        words_in_mouth: str | None: Words to append to the prompt. Will be ignored
+            if input_string is provided.
+    Returns:
+        dict: with keys "messages" and "input_string". "input_string" will be None
+            if tokenizer is None.
+    """
+    if input_string is None:
+        if messages is None:
+            assert prompt is not None
+            messages = []
+            if system_message is not None:
+                messages.append({"role": "system", "content": system_message})
+            messages.append({"role": "user", "content": prompt})
+        if tokenizer is not None:
+            input_string = tokenizer.apply_chat_template(messages, tokenize=False)
+        if words_in_mouth is not None:
+            input_string += words_in_mouth
+    return {"messages": messages, "input_string": input_string}
+
+def get_llm(
     model: str,
     use_async=False,
     use_instructor: bool = False,
-    what_to_return: Literal["client", "generate", "return_probs"] = "generate",
 ):
     if model.startswith("hf:"):  # Hugging Face local models
         from transformers import AutoTokenizer, AutoModelForCausalLM
+
         api_key = os.getenv("HF_TOKEN")
         model = model.split("hf:")[1]
         tokenizer = AutoTokenizer.from_pretrained(model)
@@ -42,815 +96,409 @@ def get_ai(
             model, device_map="auto", token=api_key
         )
         client = (tokenizer, model)
-        def generate(prompt, max_tokens=2048):
+
+        def generate(
+            prompt: str = None,
+            messages: list[dict[str, str]] = None,
+            input_string: str = None,
+            system_message: str | None = None,
+            words_in_mouth: str | None = None,
+            max_tokens: int = 2048,
+            **kwargs,
+        ):
+            input_string = format_prompt(
+                prompt=prompt,
+                messages=messages,
+                input_string=input_string,
+                tokenizer=tokenizer,
+                system_message=system_message,
+                words_in_mouth=words_in_mouth,
+            )
             input_ids = tokenizer.encode(prompt, return_tensors="pt").to(model.device)
             output = model.generate(input_ids, max_length=max_tokens)
             decoded = tokenizer.decode(output[0], skip_special_tokens=True)
-            prompt_end = prompt[-9:] # HACK
+            prompt_end = prompt[-9:]  # HACK
             response = decoded.split(prompt_end)[-1]
             return response
-    elif model.startswith("or:"):  # OpenRouter
-        import openai
-        model = model.split("or:")[1]
-        api_key = os.getenv("OPENROUTER_API_KEY")
-        if use_async:
-            client = openai.AsyncOpenAI(
-                base_url="https://openrouter.ai/api/v1", api_key=api_key
-            )
-        else:
-            client = openai.OpenAI(
-                base_url="https://openrouter.ai/api/v1", api_key=api_key
-            )
-        if use_instructor:
-            import instructor
-            from instructor.mode import Mode
 
-            mode = Mode.MD_JSON
-            if model.startswith("mistral"):
-                mode = Mode.MISTRAL_TOOLS
-            elif model.startswith("gpt"):
-                mode = Mode.TOOLS_STRICT
-            client = instructor.from_openai(client, mode=mode)
+        def return_probs(
+            return_probs_for: list[str],
+            prompt: str = None,
+            messages: list[dict[str, str]] = None,
+            input_string: str = None,
+            system_message: str | None = None,
+            words_in_mouth: str | None = None,
+            **kwargs,
+        ):
+            input_string = format_prompt(
+                prompt=prompt,
+                messages=messages,
+                input_string=input_string,
+                tokenizer=tokenizer,
+                system_message=system_message,
+                words_in_mouth=words_in_mouth,
+            )
+            input_ids = tokenizer.encode(prompt, return_tensors="pt").to(model.device)
+            output = model(input_ids).logits[0, -1, :]
+            output_probs = output.softmax(dim=0)
+            probs = {token: 0 for token in return_probs_for}
+            for token in probs:
+                token_enc = tokenizer.encode(token)[-1]
+                if token_enc in output_probs:
+                    probs[token] = output_probs[token_enc].item()
+            total_prob = sum(probs.values())
+            probs_relative = {token: prob / total_prob for token, prob in probs.items()}
+            return probs_relative
+    
     else:
-        if model.startswith(("gpt", "openai", "babbage", "davinci")):
+        if model.startswith("or:"):  # OpenRouter
             import openai
 
-            api_key = os.getenv("OPENAI_API_KEY")
+            model_or = model.split("or:")[1]
+            api_key = os.getenv("OPENROUTER_API_KEY")
             if use_async:
-                client = openai.AsyncOpenAI(api_key=api_key)
+                client = openai.AsyncOpenAI(
+                    base_url="https://openrouter.ai/api/v1", api_key=api_key
+                )
             else:
-                client = openai.OpenAI(api_key=api_key)
-        elif model.startswith(("claude", "anthropic")):
-            import anthropic
+                client = openai.OpenAI(
+                    base_url="https://openrouter.ai/api/v1", api_key=api_key
+                )
+            get_response = client.chat.completions.create
+            if use_instructor:
+                import instructor
+                from instructor.mode import Mode
 
-            api_key = os.getenv("ANTHROPIC_API_KEY")
-            if use_async:
-                client = anthropic.AsyncAnthropic(api_key=api_key)
-            else:
-                client = anthropic.Anthropic(api_key=api_key)
-        elif model.startswith("mistral"):
-            if use_async:
-                from mistralai.async_client import MistralAsyncClient
-
-                api_key = os.getenv("MISTRAL_API_KEY")
-                client = MistralAsyncClient(api_key=api_key)
-            else:
-                from mistralai.client import MistralClient
-
-                api_key = os.getenv("MISTRAL_API_KEY")
-                client = MistralClient(api_key=api_key)
+                mode = Mode.MD_JSON
+                if model_or.startswith("mistral"):
+                    mode = Mode.MISTRAL_TOOLS
+                elif model_or.startswith("gpt"):
+                    mode = Mode.TOOLS_STRICT
+                client = instructor.from_openai(client, mode=mode)
         else:
-            raise ValueError(f"Model {model} is not supported for now")
+            if model.startswith(("gpt", "openai", "babbage", "davinci")):
+                import openai
+
+                api_key = os.getenv("OPENAI_API_KEY")
+                if use_async:
+                    client = openai.AsyncOpenAI(api_key=api_key)
+                else:
+                    client = openai.OpenAI(api_key=api_key)
+                get_response = client.chat.completions.create
+            elif model.startswith(("claude", "anthropic")):
+                import anthropic
+
+                api_key = os.getenv("ANTHROPIC_API_KEY")
+                if use_async:
+                    client = anthropic.AsyncAnthropic(api_key=api_key)
+                else:
+                    client = anthropic.Anthropic(api_key=api_key)
+                get_response = client.messages.create
+            elif model.startswith("mistral"):
+                if use_async:
+                    from mistralai.async_client import MistralAsyncClient
+
+                    api_key = os.getenv("MISTRAL_API_KEY")
+                    client = MistralAsyncClient(api_key=api_key)
+                else:
+                    from mistralai.client import MistralClient
+
+                    api_key = os.getenv("MISTRAL_API_KEY")
+                    client = MistralClient(api_key=api_key)
+                get_response = client.chat
+            else:
+                raise ValueError(f"Model {model} is not supported for now")
+            if use_instructor:
+                import instructor
+                from instructor.mode import Mode
+
+                mode = Mode.TOOLS
+                if model.startswith("mistral"):
+                    mode = Mode.MISTRAL_TOOLS
+                    client = instructor.from_mistral(client, mode=mode)
+                elif model.startswith("gpt"):
+                    mode = Mode.TOOLS_STRICT # use OpenAI structured outputs
+                    client = instructor.from_openai(client, mode=mode)
+                elif model.startswith(("anthropic", "claude")):
+                    mode = Mode.ANTHROPIC_JSON
+                    client = instructor.from_anthropic(client, mode=mode)
+                        
         if use_instructor:
-            import instructor
-            from instructor.mode import Mode
-
-            mode = Mode.TOOLS
+            get_response = client.chat.completions.create_with_completion
+            def process_response(response):
+                raw_response, completion = response
+                usage = completion.usage
+                return raw_response, usage
+        else:
+            # create_fn already set above
+            def process_response(response):
+                raw_response = response.choices[0].message.content
+                usage = response.usage
+                return raw_response, usage
+        def generate(
+            prompt: str = None,
+            messages: list[dict[str, str]] = None,
+            system_message: str | None = None,
+            max_tokens: int | None = None,
+            response_model: Union["BaseModel", None] = None,
+            temperature: float = 0.0,
+            **kwargs,
+        ):
+            messages = format_prompt(
+                prompt=prompt,
+                messages=messages,
+                system_message=system_message,
+            )["messages"]
+            
             if model.startswith("mistral"):
-                mode = Mode.MISTRAL_TOOLS
-            elif model.startswith("gpt"):
-                mode = Mode.TOOLS_STRICT
-            elif model.startswith(("anthropic", "claude")):
-                mode = Mode.ANTHROPIC_JSON
-            client = instructor.from_openai(client, mode=mode)
-
-
-def get_async_openai_client_pydantic() -> "Instructor":
-    import instructor
-    from openai import AsyncOpenAI
-
-    api_key = os.getenv("OPENAI_API_KEY")
-    _client = AsyncOpenAI(api_key=api_key)
-    return instructor.from_openai(_client)
-
-
-def get_async_openai_client_native() -> "AsyncOpenAI":
-    from openai import AsyncOpenAI
-
-    api_key = os.getenv("OPENAI_API_KEY")
-    return AsyncOpenAI(api_key=api_key)
-
-
-def get_openai_client_pydantic() -> "Instructor":
-    import instructor
-    from openai import OpenAI
-
-    api_key = os.getenv("OPENAI_API_KEY")
-    _client = OpenAI(api_key=api_key)
-    return instructor.from_openai(_client)
-
-
-def get_openai_client_native() -> "OpenAI":
-    from openai import OpenAI
-
-    api_key = os.getenv("OPENAI_API_KEY")
-    return OpenAI(api_key=api_key)
-
-
-def get_async_openrouter_client_pydantic(**kwargs) -> "Instructor":
-    import instructor
-    from openai import AsyncOpenAI
-    from instructor.mode import Mode
-
-    warnings.warn(
-        "Only some OpenRouter endpoints have `response_format`. If you encounter errors, please check on the OpenRouter website."
-    )
-    api_key = os.getenv("OPENROUTER_API_KEY")
-    print(f"OPENROUTER_API_KEY: {api_key}")
-    _client = AsyncOpenAI(base_url="https://openrouter.ai/api/v1", api_key=api_key)
-    return instructor.from_openai(_client, mode=Mode.MD_JSON, **kwargs)
-
-
-def get_async_openrouter_client_native() -> "AsyncOpenAI":
-    from openai import AsyncOpenAI
-
-    print("Calling models through OpenRouter")
-    api_key = os.getenv("OPENROUTER_API_KEY")
-    print(f"OPENROUTER_API_KEY: {api_key}")
-    return AsyncOpenAI(base_url="https://openrouter.ai/api/v1", api_key=api_key)
-
-
-def get_openrouter_client_pydantic(**kwargs) -> "Instructor":
-    import instructor
-    from openai import OpenAI
-    from instructor.mode import Mode
-
-    warnings.warn(
-        "Only some OpenRouter endpoints have `response_format`. If you encounter errors, please check on the OpenRouter website."
-    )
-    print("Calling models through OpenRouter")
-    _client = OpenAI(
-        base_url="https://openrouter.ai/api/v1",
-        api_key=os.getenv("OPENROUTER_API_KEY"),
-    )
-    print(f"OPENROUTER_API_KEY: {os.getenv('OPENROUTER_API_KEY')}")
-    return instructor.from_openai(_client, mode=Mode.TOOLS, **kwargs)
-
-
-def get_openrouter_client_native() -> "OpenAI":
-    from openai import OpenAI
-
-    print("Calling models through OpenRouter")
-    api_key = os.getenv("OPENROUTER_API_KEY")
-    print(f"OPENROUTER_API_KEY: {api_key}")
-    return OpenAI(base_url="https://openrouter.ai/api/v1", api_key=api_key)
-
-
-def get_mistral_async_client_pydantic() -> "Instructor":
-    import instructor
-    from mistralai.async_client import MistralAsyncClient
-
-    api_key = os.getenv("MISTRAL_API_KEY")
-    _client = MistralAsyncClient(api_key=api_key)
-    return instructor.from_openai(_client, mode=instructor.Mode.MISTRAL_TOOLS)
-
-
-def get_mistral_async_client_native() -> "MistralAsyncClient":
-    from mistralai.async_client import MistralAsyncClient
-
-    api_key = os.getenv("MISTRAL_API_KEY")
-    return MistralAsyncClient(api_key=api_key)
-
-
-def get_mistral_client_pydantic() -> "Instructor":
-    import instructor
-    from mistralai.client import MistralClient
-
-    api_key = os.getenv("MISTRAL_API_KEY")
-    _client = MistralClient(api_key=api_key)
-    return instructor.from_openai(_client, mode=instructor.Mode.MISTRAL_TOOLS)
-
-
-def get_mistral_client_native() -> "MistralClient":
-    from mistralai.client import MistralClient
-
-    api_key = os.getenv("MISTRAL_API_KEY")
-    return MistralClient(api_key=api_key)
-
-
-def get_anthropic_async_client_pydantic() -> "Instructor":
-    import instructor
-    from anthropic import AsyncAnthropic
-
-    api_key = os.getenv("ANTHROPIC_API_KEY")
-    _client = AsyncAnthropic(api_key=api_key)
-    return instructor.from_anthropic(_client, mode=instructor.Mode.ANTHROPIC_JSON)
-
-
-def get_anthropic_async_client_native() -> "AsyncAnthropic":
-    from anthropic import AsyncAnthropic
-
-    api_key = os.getenv("ANTHROPIC_API_KEY")
-    return AsyncAnthropic(api_key=api_key)
-
-
-def get_anthropic_client_pydantic() -> "Instructor":
-    import instructor
-    from anthropic import Anthropic
-
-    api_key = os.getenv("ANTHROPIC_API_KEY")
-    _client = Anthropic(api_key=api_key)
-    return instructor.from_anthropic(_client, mode=instructor.Mode.ANTHROPIC_JSON)
-
-
-def get_anthropic_client_native() -> "Anthropic":
-    from anthropic import Anthropic
-
-    api_key = os.getenv("ANTHROPIC_API_KEY")
-    return Anthropic(api_key=api_key)
-
-
-def get_togetherai_client_native() -> "OpenAI":
-    from openai import OpenAI
-
-    url = "https://api.together.xyz/v1"
-    api_key = os.getenv("TOGETHER_API_KEY")
-    return OpenAI(api_key=api_key, base_url=url)
-
-
-def get_huggingface_local_client(hf_repo):
-    from transformers import AutoTokenizer, AutoModelForCausalLM
-
-    tokenizer = AutoTokenizer.from_pretrained(hf_repo)
-    model = AutoModelForCausalLM.from_pretrained(
-        hf_repo, device_map="auto", token=os.getenv("HF_TOKEN")
-    )
-    return tokenizer, model
-
-
-def is_openai(model: str) -> bool:
-    keywords = [
-        "ft:gpt",
-        "gpt-4o",
-        "gpt-4",
-        "gpt-3.5",
-        "babbage",
-        "davinci",
-        "openai",
-        "open-ai",
-    ]
-    return any(keyword in model for keyword in keywords)
-
-
-def is_mistral(model: str) -> bool:
-    if model.startswith("mistral"):
-        return True
-
-
-def is_anthropic(model: str) -> bool:
-    keywords = ["anthropic", "claude"]
-    return any(keyword in model for keyword in keywords)
-
-
-def is_huggingface_local(model: str) -> bool:
-    keywords = ["huggingface", "hf"]
-    return any(keyword in model for keyword in keywords)
-
-
-def get_provider(model: str) -> str:
-    if is_openai(model):
-        return "openai"
-    elif is_mistral(model):
-        return "mistral"
-    elif is_anthropic(model):
-        return "anthropic"
-    elif is_huggingface_local(model):
-        return "huggingface_local"
-    else:
-        raise NotImplementedError(f"Model {model} is not supported for now")
-
-
-def get_client_native(
-    model: str,
-    use_async=True,
-    use_openrouter=False,
-) -> tuple["AsyncOpenAI" | "OpenAI" | "MistralAsyncClient" | "MistralClient", str]:
-    provider = get_provider(model)
-
-    if use_openrouter:
-        client = (
-            get_async_openrouter_client_native()
-            if use_async
-            else get_openrouter_client_native()
-        )
-    elif provider == "openai":
-        client = (
-            get_async_openai_client_native()
-            if use_async
-            else get_openai_client_native()
-        )
-    elif provider == "mistral":
-        client = (
-            get_mistral_async_client_native()
-            if use_async
-            else get_mistral_client_native()
-        )
-    elif provider == "huggingface_local":
-        assert model.startswith("hf:")
-        model = model.split("hf:")[1]
-        client = get_huggingface_local_client(model)
-    else:
-        raise NotImplementedError(f"Model {model} is not supported for now")
-
-    return client, provider
-
-
-def get_client_pydantic(
-    model: str, use_async=True, use_openrouter=False
-) -> tuple["Instructor", str]:
-    import instructor
-
-    provider = get_provider(model)
-    if provider == "togetherai" and "nitro" not in model:
-        raise NotImplementedError(
-            "Most models on TogetherAI API, and the same models on OpenRouter API too, do not support function calling / JSON output mode. So, no Pydantic outputs for now. The exception seem to be Nitro-hosted models on OpenRouter."
-        )
-
-    if use_openrouter:
-        kwargs = {}
-        if provider == "mistral":
-            # https://python.useinstructor.com/hub/mistral/
-            print(
-                "Only some Mistral endpoints have `response_format` on OpenRouter. If you encounter errors, please check on the OpenRouter website."
-            )
-            kwargs["mode"] = instructor.Mode.MISTRAL_TOOLS
-        elif provider == "anthropic":
-            raise NotImplementedError(
-                "Anthropic over OpenRouter does not work as of June 4 2024"
-            )
-        client = (
-            get_async_openrouter_client_pydantic(**kwargs)
-            if use_async
-            else get_openrouter_client_pydantic(**kwargs)
-        )
-    elif provider == "openai":
-        client = (
-            get_async_openai_client_pydantic()
-            if use_async
-            else get_openai_client_pydantic()
-        )
-    elif provider == "mistral":
-        client = (
-            get_mistral_async_client_pydantic()
-            if use_async
-            else get_mistral_client_pydantic()
-        )
-    elif provider == "anthropic":
-        client = (
-            get_anthropic_async_client_pydantic()
-            if use_async
-            else get_anthropic_client_pydantic()
-        )
-    else:
-        raise NotImplementedError(f"Model {model} is not supported for now")
-
-    return client, provider
-
-
-def _mistral_message_transform(messages):
-    from mistralai.client import ChatMessage
-
-    mistral_messages = []
-    for message in messages:
-        mistral_message = ChatMessage(role=message["role"], content=message["content"])
-        mistral_messages.append(mistral_message)
-    return mistral_messages
-
-
-####################################################################################################
-####################################################################################################
-####################################################################################################
-
-
-def prepare_messages(prompt: str) -> list[dict[str, str]]:
-    return [
-        {"role": "system", "content": "You are a helpful assistant."},
-        {"role": "user", "content": prompt},
-    ]
-
-
-def get_hf_response(
-    prompt: str | list[dict[str, str]],
-    model_name: str,
-    max_tokens: int | None = None,
-    return_probs_for: list[str] | None = None,
-    prompt_type: Literal["plain", "messages", "formatted"] = "plain",
-    words_in_mouth: str | None = None,
-) -> str | dict[str, float]:
-    """
-    Get response from Hugging Face model.
-
-    Args:
-        prompt: str | list[dict[str, str]]: Prompt to send to the LLM.
-        model_name: str: Name of the Hugging Face model to use.
-        max_tokens: int | None: Maximum number of tokens to generate.
-        return_probs_for: list[str] | None: List of tokens to return relative probabilities for.
-            If None, simply returns the text response.
-        prompt_type: Literal["plain", "messages", "formatted"]: Type of prompt.
-            "plain" is a plain question, which needs to be formatted into the HF model's syntax.
-            "messages" means the prompt is a list[dict] as in the ChatCompletions API.
-            "formatted" means the prompt should be sent as-is to the HF model.
-        words_in_mouth: str | None: Words to append to the prompt.
-            E.g. " Sure, here's my response:\n\n"
-    """
-    hf_repo = model_name.split("hf:")[1]
-    tokenizer, model = get_huggingface_local_client(hf_repo)
-    if words_in_mouth is None:
-        words_in_mouth = ""
-    if prompt_type == "plain":
-        assert isinstance(prompt, str)
-        prompt = prepare_messages(prompt)
-        prompt = tokenizer.apply_chat_template(prompt, tokenize=False)
-    elif prompt_type == "messages":
-        assert isinstance(prompt, list)
-        assert isinstance(prompt[0], dict)
-        prompt = tokenizer.apply_chat_template(prompt, tokenize=False)
-    elif prompt_type == "formatted":
-        assert isinstance(prompt, str)
-        ...
-    prompt += words_in_mouth
-    if max_tokens is None:
-        max_tokens = 2048
-
-    input_ids = tokenizer.encode(prompt, return_tensors="pt").to(model.device)
-    if return_probs_for:
-        output = model(input_ids).logits[0, -1, :]
-        output_probs = output.softmax(dim=0)
-        probs = {token: 0 for token in return_probs_for}
-        for token in probs:
-            token_enc = tokenizer.encode(token)[-1]
-            if token_enc in output_probs:
-                probs[token] = output_probs[token_enc].item()
-        total_prob = sum(probs.values())
-        probs_relative = {token: prob / total_prob for token, prob in probs.items()}
-        return probs_relative
-    else:
-        output = model.generate(input_ids, max_length=max_tokens)
-        decoded = tokenizer.decode(output[0], skip_special_tokens=True)
-        prompt_end = prompt[-9:]
-        response = decoded.split(prompt_end)[-1]
-        return response
-
-
-@cache(ignore="cost_estimation")
-async def get_llm_response_async(
-    prompt: str | list[dict[str, str]],
-    model: str | None = "gpt-4o-mini",
-    return_probs_for: list[str] | None = None,
-    max_tokens: int | None = None,
-    words_in_mouth: str | None = None,
-    verbose: bool = False,
-    simulate: bool = False,
-    cost_estimation: dict | None = None,
-    **kwargs,
-) -> str | dict[str, float]:
-    """
-    Get LLM response to a prompt.
-
-    Args:
-        prompt: str | list[dict[str, str]]: Prompt to send to the LLM.
-        verbose: bool: Whether to print the prompt and response.
-        model: str | None: Model to use for the LLM. Defaults to "gpt-4o-mini".
-        return_probs_for: list[str] | None: List of tokens to return relative probabilities for.
-            If None, simply returns the text response.
-        max_tokens: int | None: Maximum number of tokens to generate.
-        words_in_mouth: str | None: Words to append to the prompt, only used for huggingface models.
-            E.g. " Sure, here's my response:\n\n"
-        verbose: bool: Whether to print the prompt and response.
-        simulate: bool: Whether to simulate the cost of the call.
-        cost_estimation: dict | None: Cost estimation and simulation config. If given, give as dict with keys:
-            {
-                "cost_estimator": CostEstimator, (if not given, will not estimate cost)
-                "description": str, (optional, helpful for tracking and breakdown)
-                "input_tokens_estimator": Callable[[str], int], (optional, defaults to len(input_string) // 4.5)
-                "output_tokens_estimator": Callable[[str, int], list[int]], (optional, defaults to [1, 2048])
-                "simstr_len": int, (optional, defaults to 1024)
+                from mistralai.client import ChatMessage
+                messages = [ChatMessage(role=x['role'], content=x['content']) for x in messages]
+                
+            allowed_params = inspect.signature(get_response).parameters.keys()
+            response_params = {
+                'messages': messages,
+                'model': model,
+                'max_tokens': max_tokens,
+                'response_model': response_model,
+                'temperature': temperature,
             }
+            filtered_params = {k: v for k, v in response_params.items() if k in allowed_params}
+            
+            response = get_response(**filtered_params)
+            raw_response, usage = process_response(response)
+            return raw_response, usage
 
-    Keyword Args:
-        response_model: pydantic.BaseModel: Pydantic model to use for response, if using
-            instructor. Defaults to None (in which case instructor is not used).
-        top_logprobs: int: Number of top logprobs to return. Defaults to 5.
-    """
-
-    print("NOT USING CACHE")
-
-    if isinstance(prompt, str):
-        prompt = prepare_messages(prompt)
-    response_model = kwargs.get("response_model", None)
-    if response_model:
-        client, client_name = get_client_pydantic(model, use_async=True)
-    else:
-        client, client_name = get_client_native(model, use_async=True)
-        kwargs.pop("response_model", None)
-    call_messages = (
-        _mistral_message_transform(prompt) if client_name == "mistral" else prompt
-    )
-    if cost_estimation is None:
-        cost_estimation = {}
-    cost_estimation = {
-        "cost_estimator": None,
-        "description": None,
-        "input_tokens_estimator": None,
-        "output_tokens_estimator": (
-            (lambda i, j: [1, max_tokens]) if max_tokens is not None else None
-        ),
-        "simstr_len": 1024,
-    } | cost_estimation
-
-    if simulate:
-        if cost_estimation["cost_estimator"]:
-            ci = CostItem(
-                model=model,
-                input_string="".join([m["content"] for m in prompt]),
-                description=cost_estimation["description"],
-                token_estimator=cost_estimation["input_tokens_estimator"],
-                output_tokens_estimator=cost_estimation["output_tokens_estimator"],
-                exact=False,
-            )
-            with cost_estimation["cost_estimator"].append(ci):
-                ...
-        if return_probs_for:
-            return {token: 1.0 for token in return_probs_for}
-        simstr = "This is a test output."
-        return simstr * int(
-            cost_estimation.get("simstr_len", 1024) // (len(simstr) // 4.5)
-        )
-
-    if client_name == "huggingface_local":
-        t0 = time()
-        response = get_hf_response(
-            prompt=call_messages,
-            model_name=model,
-            max_tokens=max_tokens,
-            return_probs_for=return_probs_for,
-            prompt_type="messages",
-            words_in_mouth=words_in_mouth,
-        )
-        t = time() - t0
-        if cost_estimation["cost_estimator"]:
-            ci = CostItem(
-                time_range=[t, t],
-                model=model,
-                input_string="".join([m["content"] for m in prompt]),
-                description=cost_estimation["description"],
-                token_estimator=cost_estimation["input_tokens_estimator"],
-                output_string=(
-                    response
-                    if not return_probs_for
-                    else max(return_probs_for, key=lambda x: len(x))
-                ),
-                exact=False,
-            )
-            with cost_estimation["cost_estimator"].append(ci):
-                ...
-        return response
-    else:
-        t0 = time()
-        if client_name == "mistral" and not os.getenv("USE_OPENROUTER"):
-            chat_fun = client.chat
-        elif kwargs.get("response_model", None) is None:
-            chat_fun = client.chat.completions.create
-        else:
-            chat_fun = client.chat.completions.create_with_completion
-        response = await chat_fun(
-            messages=call_messages,
-            model=model,
-            max_tokens=max_tokens,
-            logprobs=bool(return_probs_for),
-            top_logprobs=(kwargs.get("top_logprobs", 5) if return_probs_for else None),
+        async def generate_async(
+            prompt: str = None,
+            messages: list[dict[str, str]] = None,
+            system_message: str | None = None,
+            max_tokens: int | None = None,
+            response_model: Union["BaseModel", None] = None,
+            temperature: float = 0.0,
             **kwargs,
-        )
+        ):
+            messages = format_prompt(
+                prompt=prompt,
+                messages=messages,
+                system_message=system_message,
+            )["messages"]
 
-        t = time() - t0
+            if model.startswith("mistral"):
+                from mistralai.client import ChatMessage
+                messages = [ChatMessage(role=x['role'], content=x['content']) for x in messages]
 
-    if response_model is None:
-        text_response = response.choices[0].message.content
-    else:
-        text_response, info = response
-        text_response = text_response.dict()
-    if cost_estimation["cost_estimator"]:
-        if response_model is None:
-            input_tokens, output_tokens = (
-                response.usage.prompt_tokens,
-                response.usage.completion_tokens,
-            )
-            exact = True
-        else:
-            input_tokens, output_tokens = (
-                info.usage.prompt_tokens,
-                info.usage.completion_tokens,
-            )
-            exact = True
-        ci = CostItem(
-            time_range=[t, t],
-            model=model,
-            input_tokens=input_tokens,
-            output_tokens_range=[output_tokens, output_tokens],
-            input_string="".join([m["content"] for m in prompt]),
-            output_string=(
-                text_response
-                if not return_probs_for
-                else max(return_probs_for, key=lambda x: len(x))
-            ),
-            description=cost_estimation["description"],
-            exact=exact,
-        )
-        with cost_estimation["cost_estimator"].append(ci):
-            ...
+            allowed_params = inspect.signature(get_response).parameters.keys()
+            response_params = {
+                'messages': messages,
+                'model': model,
+                'max_tokens': max_tokens,
+                'response_model': response_model,
+                'temperature': temperature,
+            }
+            filtered_params = {k: v for k, v in response_params.items() if k in allowed_params}
+            
+            response = await get_response(**filtered_params)
+            raw_response, usage = process_response(response)
+            return raw_response, usage
+        
+        def return_probs(
+            return_probs_for: list[str],
+            prompt: str = None,
+            messages: list[dict[str, str]] = None,
+            system_message: str | None = None,
+            top_logprobs: int = 5,
+            temperature: float = 0.0,
+            **kwargs,
+        ):
+            messages = format_prompt(
+                prompt=prompt,
+                messages=messages,
+                system_message=system_message,
+            )["messages"]
 
-    if verbose:
-        print(f"...\nText: {prompt[-1]['content']}\nResponse: {text_response}\n")
+            if model.startswith("mistral"):
+                from mistralai.client import ChatMessage
+                messages = [ChatMessage(role=x['role'], content=x['content']) for x in messages]
 
-    if return_probs_for:
-        all_logprobs = response.choices[0].logprobs.content[0].top_logprobs
-        all_logprobs_dict = {x.token: x.logprob for x in all_logprobs}
-        probs = {token: 0 for token in return_probs_for}
-        for token, prob in all_logprobs_dict.items():
-            if token in probs:
-                probs[token] = math.exp(prob)
-        total_prob = sum(probs.values())
-        probs_relative = {token: prob / total_prob for token, prob in probs.items()}
-        return probs_relative
+            allowed_params = inspect.signature(get_response).parameters.keys()
+            response_params = {
+                'messages': messages,
+                'model': model,
+                'max_tokens': 1,
+                'logprobs': True,
+                'top_logprobs': top_logprobs,
+                'temperature': temperature,
+            }
+            filtered_params = {k: v for k, v in response_params.items() if k in allowed_params}
+            response = get_response(**filtered_params)
+            raw_response, usage = process_response(response)
+            all_logprobs = response.choices[0].logprobs.content[0].top_logprobs
+            all_logprobs_dict = {x.token: x.logprob for x in all_logprobs}
+            probs = {token: 0 for token in return_probs_for}
+            for token, prob in all_logprobs_dict.items():
+                if token in probs:
+                    probs[token] = math.exp(prob)
+            total_prob = sum(probs.values())
+            probs_relative = {token: prob / total_prob for token, prob in probs.items()}
+            return probs_relative, usage
+        
+        async def return_probs_async(
+            return_probs_for: list[str],
+            prompt: str = None,
+            messages: list[dict[str, str]] = None,
+            system_message: str | None = None,
+            top_logprobs: int = 5,
+            temperature: float = 0.0,
+            **kwargs,
+        ):
+            messages = format_prompt(
+                prompt=prompt,
+                messages=messages,
+                system_message=system_message,
+            )["messages"]
 
-    return text_response
+            if model.startswith("mistral"):
+                from mistralai.client import ChatMessage
+                messages = [ChatMessage(role=x['role'], content=x['content']) for x in messages]
 
+            allowed_params = inspect.signature(get_response).parameters.keys()
+            response_params = {
+                'messages': messages,
+                'model': model,
+                'max_tokens': 1,
+                'logprobs': True,
+                'top_logprobs': top_logprobs,
+                'temperature': temperature,
+            }
+            filtered_params = {k: v for k, v in response_params.items() if k in allowed_params}
+            response = await get_response(**filtered_params)
+            raw_response, usage = process_response(response)
+            all_logprobs = response.choices[0].logprobs.content[0].top_logprobs
+            all_logprobs_dict = {x.token: x.logprob for x in all_logprobs}
+            probs = {token: 0 for token in return_probs_for}
+            for token, prob in all_logprobs_dict.items():
+                if token in probs:
+                    probs[token] = math.exp(prob)
+            total_prob = sum(probs.values())
+            probs_relative = {token: prob / total_prob for token, prob in probs.items()}
+            return probs_relative, usage
+        
+    return {
+        "client": client,
+        "generate": generate,
+        "generate_async": generate_async,
+        "return_probs": return_probs,
+        "return_probs_async": return_probs_async,
+    }
 
-@cache(ignore="cost_estimation")
 def get_llm_response(
-    prompt: str | list[dict[str, str]],
-    model: str | None = "gpt-4o-mini",
-    return_probs_for: list[str] | None = None,
-    max_tokens: int | None = None,
+    model: str,
+    response_model: Union["BaseModel", None] = None,
+    prompt: str = None,
+    messages: list[dict[str, str]] = None,
+    input_string: str = None,
+    system_message: str | None = None,
     words_in_mouth: str | None = None,
-    verbose: bool = False,
-    simulate: bool = False,
-    cost_estimation: dict | None = None,
-    **kwargs,
-) -> str | dict[str, float]:
-    """
-    Get LLM response to a prompt.
-
-    Args:
-        prompt: str | list[dict[str, str]]: Prompt to send to the LLM.
-        verbose: bool: Whether to print the prompt and response.
-        model: str | None: Model to use for the LLM. Defaults to "gpt-4o-mini".
-        return_probs_for: list[str] | None: List of tokens to return relative probabilities for.
-            If None, simply returns the text response.
-        max_tokens: int | None: Maximum number of tokens to generate.
-        words_in_mouth: str | None: Words to append to the prompt, only used for huggingface models.
-            E.g. " Sure, here's my response:\n\n"
-        verbose: bool: Whether to print the prompt and response.
-        simulate: bool: Whether to simulate the cost of the call.
-        cost_estimation: dict | None: Cost estimation and simulation config. If given, give as dict with keys:
-            {
-                "cost_estimator": CostEstimator, (if not given, will not estimate cost)
-                "description": str, (optional, helpful for tracking and breakdown)
-                "input_tokens_estimator": Callable[[str], int], (optional, defaults to len(input_string) // 4.5)
-                "output_tokens_estimator": Callable[[str, int], list[int]], (optional, defaults to [1, 2048])
-                "simstr_len": int, (optional, defaults to 1024)
-            }
-
-    Keyword Args:
-        response_model: pydantic.BaseModel: Pydantic model to use for response, if using
-            instructor. Defaults to None (in which case instructor is not used).
-        top_logprobs: int: Number of top logprobs to return. Defaults to 5.
-    """
-    if isinstance(prompt, str):
-        prompt = prepare_messages(prompt)
-    response_model = kwargs.get("response_model", None)
-    if response_model:
-        client, client_name = get_client_pydantic(model, use_async=False)
-    else:
-        client, client_name = get_client_native(model, use_async=False)
-        kwargs.pop("response_model", None)
-    call_messages = (
-        _mistral_message_transform(prompt) if client_name == "mistral" else prompt
+    max_tokens: int = 2048,
+    temperature: float = 0.0,
+):
+    ai = get_llm(
+        model=model,
+        use_async=False,
+        use_instructor=(response_model is not None),
     )
-    if cost_estimation is None:
-        cost_estimation = {}
-    cost_estimation = {
-        "cost_estimator": None,
-        "description": None,
-        "input_tokens_estimator": None,
-        "output_tokens_estimator": (
-            (lambda i, j: [1, max_tokens]) if max_tokens is not None else None
-        ),
-        "simstr_len": 1024,
-    } | cost_estimation
+    return ai["generate"](
+        model=model,
+        prompt=prompt,
+        messages=messages,
+        input_string=input_string,
+        system_message=system_message,
+        words_in_mouth=words_in_mouth,
+        max_tokens=max_tokens,
+        response_model=response_model,
+        temperature=temperature,
+    )
 
-    if simulate:
-        if cost_estimation["cost_estimator"]:
-            ci = CostItem(
-                model=model,
-                input_string="".join([m["content"] for m in prompt]),
-                description=cost_estimation["description"],
-                token_estimator=cost_estimation["input_tokens_estimator"],
-                output_tokens_estimator=cost_estimation["output_tokens_estimator"],
-                exact=False,
-            )
-            with cost_estimation["cost_estimator"].append(ci):
-                ...
-        if return_probs_for:
-            return {token: 1.0 for token in return_probs_for}
-        simstr = "This is a test output."
-        return simstr * int(
-            cost_estimation.get("simstr_len", 1024) // (len(simstr) // 4.5)
-        )
+async def get_llm_response_async(
+    model: str,
+    response_model: Union["BaseModel", None] = None,
+    prompt: str = None,
+    messages: list[dict[str, str]] = None,
+    input_string: str = None,
+    system_message: str | None = None,
+    words_in_mouth: str | None = None,
+    max_tokens: int = 2048,
+    temperature: float = 0.0,
+):
+    ai = get_llm(
+        model=model,
+        use_async=True,
+        use_instructor=(response_model is not None),
+    )
+    return await ai["generate_async"](
+        model=model,
+        prompt=prompt,
+        messages=messages,
+        input_string=input_string,
+        system_message=system_message,
+        words_in_mouth=words_in_mouth,
+        max_tokens=max_tokens,
+        response_model=response_model,
+        temperature=temperature,
+    )
+        
+def get_llm_probs(
+    model: str,
+    return_probs_for: list[str],
+    prompt: str = None,
+    messages: list[dict[str, str]] = None,
+    input_string: str = None,
+    system_message: str | None = None,
+    words_in_mouth: str | None = None,
+    top_logprobs: int = 5,
+    temperature: float = 0.0,
+):
+    ai = get_llm(
+        model=model,
+        use_async=False,
+        use_instructor=False,
+    )
+    return ai["return_probs"](
+        model=model,
+        return_probs_for=return_probs_for,
+        prompt=prompt,
+        messages=messages,
+        input_string=input_string,
+        system_message=system_message,
+        words_in_mouth=words_in_mouth,
+        top_logprobs=top_logprobs,
+        temperature=temperature,
+    )
 
-    if client_name == "huggingface_local":
-        t0 = time()
-        response = get_hf_response(
-            prompt=call_messages,
-            model_name=model,
-            max_tokens=max_tokens,
-            return_probs_for=return_probs_for,
-            prompt_type="messages",
-            words_in_mouth=words_in_mouth,
-        )
-        t = time() - t0
-        if cost_estimation["cost_estimator"]:
-            ci = CostItem(
-                time_range=[t, t],
-                model=model,
-                input_string="".join([m["content"] for m in prompt]),
-                description=cost_estimation["description"],
-                token_estimator=cost_estimation["input_tokens_estimator"],
-                output_string=(
-                    response
-                    if not return_probs_for
-                    else max(return_probs_for, key=lambda x: len(x))
-                ),
-                exact=False,
-            )
-            with cost_estimation["cost_estimator"].append(ci):
-                ...
-        return response
-    else:
-        t0 = time()
-        if client_name == "mistral" and not os.getenv("USE_OPENROUTER"):
-            chat_fun = client.chat
-        elif response_model is None:
-            chat_fun = client.chat.completions.create
-        else:
-            chat_fun = client.chat.completions.create_with_completion
-        response = chat_fun(
-            messages=call_messages,
-            model=model,
-            max_tokens=max_tokens,
-            logprobs=bool(return_probs_for),
-            top_logprobs=(kwargs.get("top_logprobs", 5) if return_probs_for else None),
-            **kwargs,
-        )
-        t = time() - t0
-
-    if response_model is None:
-        text_response = response.choices[0].message.content
-    else:
-        text_response, info = response
-        text_response = text_response.dict()
-    if cost_estimation["cost_estimator"]:
-        if response_model is None:
-            input_tokens, output_tokens = (
-                response.usage.prompt_tokens,
-                response.usage.completion_tokens,
-            )
-            exact = True
-        else:
-            input_tokens, output_tokens = (
-                info.usage.prompt_tokens,
-                info.usage.completion_tokens,
-            )
-            exact = True
-        ci = CostItem(
-            time_range=[t, t],
-            model=model,
-            input_tokens=input_tokens,
-            output_tokens_range=[output_tokens, output_tokens],
-            input_string="".join([m["content"] for m in prompt]),
-            output_string=(
-                text_response
-                if not return_probs_for
-                else max(return_probs_for, key=lambda x: len(x))
-            ),
-            description=cost_estimation["description"],
-            exact=exact,
-        )
-        with cost_estimation["cost_estimator"].append(ci):
-            ...
-
-    if verbose:
-        print(f"...\nText: {prompt[-1]['content']}\nResponse: {text_response}\n")
-
-    if return_probs_for:
-        all_logprobs = response.choices[0].logprobs.content[0].top_logprobs
-        all_logprobs_dict = {x.token: x.logprob for x in all_logprobs}
-        probs = {token: 0 for token in return_probs_for}
-        for token, prob in all_logprobs_dict.items():
-            if token in probs:
-                probs[token] = math.exp(prob)
-        total_prob = sum(probs.values())
-        probs_relative = {token: prob / total_prob for token, prob in probs.items()}
-        return probs_relative
-
-    return text_response
+async def get_llm_probs_async(
+    model: str,
+    return_probs_for: list[str],
+    prompt: str = None,
+    messages: list[dict[str, str]] = None,
+    input_string: str = None,
+    system_message: str | None = None,
+    words_in_mouth: str | None = None,
+    top_logprobs: int = 5,
+    temperature: float = 0.0,
+):
+    ai = get_llm(
+        model=model,
+        use_async=True,
+        use_instructor=False,
+    )
+    return await ai["return_probs_async"](
+        model=model,
+        return_probs_for=return_probs_for,
+        prompt=prompt,
+        messages=messages,
+        input_string=input_string,
+        system_message=system_message,
+        words_in_mouth=words_in_mouth,
+        top_logprobs=top_logprobs,
+        temperature=temperature,
+    )
