@@ -11,8 +11,8 @@ class BlindJudgement(Protocol):
     ):
         self.judge = judge
 
-    def run(self, question: Question, **kwargs) -> Transcript:
+    async def run(self, question: Question, **kwargs) -> Transcript:
         transcript = Transcript(question)
-        judge_item = self.judge(transcript, **kwargs)
+        judge_item = await self.judge(transcript, **kwargs)
         transcript.append(judge_item)
         return transcript

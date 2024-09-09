@@ -1,9 +1,10 @@
 import json
+import asyncio
 from typing import Self, Any
 from dataclasses import dataclass
 import numpy as np
 from solib.utils import config
-from solib.llm_utils import get_llm_response
+from solib.llm_utils import get_llm_response, get_llm_response_async, parallelized_call
 from solib.datatypes import Answer, Question
 
 
@@ -49,9 +50,9 @@ class Judge:
         def __str__(self):
             return f"\n## JUDGE PROBABILITY ESTIMATES:\n{self.probabilities}"
 
-    def __call__(self, transcript: Transcript, **kwargs) -> "Self.TranscriptItem":
+    async def __call__(self, transcript: Transcript, **kwargs) -> "Self.TranscriptItem":
         words_in_mouth = " I judge that the answer is:\n\n("
-        probabilities = get_llm_response(
+        probabilities = await get_llm_response_async(
             prompt=self.prompt.format(transcript=transcript),
             model=self.model,
             return_probs_for=transcript.question.possible_answer_symbols,
@@ -93,23 +94,24 @@ class Protocol:
     def __init__(self, judge: Judge):
         raise NotImplementedError
 
-    def run(self, question: Question, **kwargs) -> Transcript:
+    async def run(self, question: Question, **kwargs) -> Transcript:
         raise NotImplementedError
 
-    def __call__(self, question: Question, **kwargs) -> dict[str, float]:
-        transcript = self.run(question, **kwargs)
+    async def __call__(self, question: Question, **kwargs) -> dict[str, float]:
+        transcript = await self.run(question, **kwargs)
         return transcript.judgement.probabilities
 
-    def score(
+    async def score(
         self, question: Question, probabilities: list[float] = None, **kwargs
     ) -> float:
         if probabilities is None:
-            probabilities = self(question, **kwargs)
+            transcript = await self.run(question, **kwargs)
+            probabilities = transcript.judgement.probabilities
         return np.log(
             probabilities[question.possible_answers.index(question.correct_answer)]
         )
 
-    def test(
+    async def test(
         self,
         questions: list[Question],
         verbose: bool = False,
@@ -117,17 +119,21 @@ class Protocol:
         **kwargs,
     ):
         results = []
-        for question in questions:
-            transcript = self.run(question, **kwargs)
+
+        async def process_question(question):
+            transcript = await self.run(question, **kwargs)
             probabilities = transcript.judgement.probabilities
-            score = self.score(question, probabilities, **kwargs)
+            score = await self.score(question, probabilities, **kwargs)
             result = {
                 "transcript": transcript,
                 "score": score,
             }
             if verbose:
                 print(result)
-            results.append(result)
+            return result
+
+        results = await parallelized_call(process_question, questions)
+        
         scores = [result["score"] for result in results]
         stats = {
             "mean_score": np.mean(scores),

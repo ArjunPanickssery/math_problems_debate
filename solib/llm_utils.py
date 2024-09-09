@@ -16,10 +16,11 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """
 
 import os
+import asyncio
 import warnings
 import inspect
 import math
-from typing import Literal, Union, TYPE_CHECKING
+from typing import Literal, Union, Coroutine, TYPE_CHECKING
 from perscache import Cache
 from perscache.serializers import JSONSerializer
 from costly import Costlog, CostlyResponse, costly
@@ -35,6 +36,43 @@ if TYPE_CHECKING:
 
 cache = Cache(serializer=JSONSerializer())
 
+async def parallelized_call(
+    func: Coroutine,
+    data: list[str],
+    max_concurrent_queries: int = 100,
+) -> list[any]:
+    """
+    Run async func in parallel on the given data.
+    func will usually be a partial which uses query_api or whatever in some way.
+
+    Example usage:
+        partial_eval_method = functools.partial(eval_method, model=model, **kwargs)
+        results = await parallelized_call(partial_eval_method, [format_post(d) for d in data])
+    """
+
+    if os.getenv("SINGLE_THREAD"):
+        print(f"Running {func} on {len(data)} datapoints sequentially")
+        return [await func(d) for d in data]
+
+    max_concurrent_queries = min(
+        max_concurrent_queries,
+        int(os.getenv("MAX_CONCURRENT_QUERIES", max_concurrent_queries)),
+    )
+
+    print(
+        f"Running {func} on {len(data)} datapoints with {max_concurrent_queries} concurrent queries"
+    )
+
+    # Create a local semaphore
+    local_semaphore = asyncio.Semaphore(max_concurrent_queries)
+
+    async def call_func(sem, func, datapoint):
+        async with sem:
+            return await func(datapoint)
+
+    print("Calling call_func")
+    tasks = [call_func(local_semaphore, func, d) for d in data]
+    return await asyncio.gather(*tasks)
 
 def format_prompt(
     prompt: str = None,
