@@ -1,5 +1,5 @@
 import pytest
-from solib.llm_utils import get_llm_response, get_llm_response_async
+from solib.llm_utils import get_llm_response, get_llm_response_async, get_llm_probs, get_llm_probs_async
 import asyncio
 
 @pytest.fixture(
@@ -28,7 +28,7 @@ def test_get_llm_response_returns_dict(model, request):
         "Take a random guess as to what the 1,000,001st digit of pi is. "
         'Answer exactly "0", "1", ... or "9", with nothing else in your response.'
     )
-    response = get_llm_response(
+    response = get_llm_probs(
         prompt=prompt,
         model=model,
         return_probs_for=[str(n) for n in range(10)],
@@ -77,7 +77,7 @@ async def test_get_llm_response_async_returns_dict(model, request):
         "Take a random guess as to what the 1,000,001st digit of pi is. "
         'Answer exactly "0", "1", ... or "9", with nothing else in your response.'
     )
-    response = await get_llm_response_async(
+    response = await get_llm_probs_async(
         prompt=prompt,
         model=model,
         return_probs_for=[str(n) for n in range(10)],

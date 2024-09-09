@@ -273,7 +273,10 @@ def get_llm(
                 raw_response = response.choices[0].message.content
                 usage = response.usage
                 return raw_response, usage
+        
+        @costly()
         def generate(
+            model: str = model,
             prompt: str = None,
             messages: list[dict[str, str]] = None,
             system_message: str | None = None,
@@ -304,9 +307,17 @@ def get_llm(
             
             response = get_response(**filtered_params)
             raw_response, usage = process_response(response)
-            return raw_response, usage
+            return CostlyResponse(
+                output=raw_response,
+                cost_info={
+                    "input_tokens": usage.prompt_tokens,
+                    "output_tokens": usage.completion_tokens,
+                }
+            )
 
+        @costly()
         async def generate_async(
+            model: str = model,
             prompt: str = None,
             messages: list[dict[str, str]] = None,
             system_message: str | None = None,
@@ -337,10 +348,18 @@ def get_llm(
             
             response = await get_response(**filtered_params)
             raw_response, usage = process_response(response)
-            return raw_response, usage
+            return CostlyResponse(
+                output=raw_response,
+                cost_info={
+                    "input_tokens": usage.prompt_tokens,
+                    "output_tokens": usage.completion_tokens,
+                }
+            )
         
+        @costly()
         def return_probs(
             return_probs_for: list[str],
+            model: str = model,
             prompt: str = None,
             messages: list[dict[str, str]] = None,
             system_message: str | None = None,
@@ -378,10 +397,18 @@ def get_llm(
                     probs[token] = math.exp(prob)
             total_prob = sum(probs.values())
             probs_relative = {token: prob / total_prob for token, prob in probs.items()}
-            return probs_relative, usage
+            return CostlyResponse(
+                output=probs_relative,
+                cost_info={
+                    "input_tokens": usage.prompt_tokens,
+                    "output_tokens": usage.completion_tokens,
+                }
+            )
         
+        @costly()
         async def return_probs_async(
             return_probs_for: list[str],
+            model: str = model,
             prompt: str = None,
             messages: list[dict[str, str]] = None,
             system_message: str | None = None,
@@ -419,7 +446,13 @@ def get_llm(
                     probs[token] = math.exp(prob)
             total_prob = sum(probs.values())
             probs_relative = {token: prob / total_prob for token, prob in probs.items()}
-            return probs_relative, usage
+            return CostlyResponse(
+                output=probs_relative,
+                cost_info={
+                    "input_tokens": usage.prompt_tokens,
+                    "output_tokens": usage.completion_tokens,
+                }
+            )
         
     return {
         "client": client,
