@@ -135,6 +135,7 @@ def get_llm(
         )
         client = (tokenizer, model)
 
+        # TODO: add cost logging for local models
         def generate(
             prompt: str = None,
             messages: list[dict[str, str]] = None,
@@ -159,6 +160,7 @@ def get_llm(
             response = decoded.split(prompt_end)[-1]
             return response
 
+        # TODO: add cost logging for local models
         def return_probs(
             return_probs_for: list[str],
             prompt: str = None,
@@ -377,11 +379,13 @@ def get_llm(
                 from mistralai.client import ChatMessage
                 messages = [ChatMessage(role=x['role'], content=x['content']) for x in messages]
 
+            max_tokens = max(len(token) for token in return_probs_for)
+    
             allowed_params = inspect.signature(get_response).parameters.keys()
             response_params = {
                 'messages': messages,
                 'model': model,
-                'max_tokens': 1,
+                'max_tokens': max_tokens,
                 'logprobs': True,
                 'top_logprobs': top_logprobs,
                 'temperature': temperature,
@@ -426,11 +430,13 @@ def get_llm(
                 from mistralai.client import ChatMessage
                 messages = [ChatMessage(role=x['role'], content=x['content']) for x in messages]
 
+            max_tokens = max(len(token) for token in return_probs_for)
+            
             allowed_params = inspect.signature(get_response).parameters.keys()
             response_params = {
                 'messages': messages,
                 'model': model,
-                'max_tokens': 1,
+                'max_tokens': max_tokens,
                 'logprobs': True,
                 'top_logprobs': top_logprobs,
                 'temperature': temperature,
