@@ -24,6 +24,7 @@ from typing import Literal, Union, Coroutine, TYPE_CHECKING
 from perscache import Cache
 from perscache.serializers import JSONSerializer
 from costly import Costlog, CostlyResponse, costly
+from solib.utils import apply, apply_async
 
 if TYPE_CHECKING:
     from pydantic import BaseModel
@@ -35,6 +36,7 @@ if TYPE_CHECKING:
     from instructor import Instructor
 
 cache = Cache(serializer=JSONSerializer())
+
 
 async def parallelized_call(
     func: Coroutine,
@@ -74,6 +76,7 @@ async def parallelized_call(
     tasks = [call_func(local_semaphore, func, d) for d in data]
     return await asyncio.gather(*tasks)
 
+
 def format_prompt(
     prompt: str = None,
     messages: list[dict[str, str]] = None,
@@ -87,7 +90,7 @@ def format_prompt(
         prompt: 'What is the capital of the moon?'
         messages: a list[dict[str, str]] in the Chat Message format
         input_string: a string that the LLM can directly <im_start> etc.
-    
+
     This converts prompt -> messages -> input_string. Returns both messages
     and input_string. If both prompt and messages are provided, prompt is
     ignored. You cannot convert anything in the reverse order.
@@ -95,7 +98,7 @@ def format_prompt(
     Args:
         prompt: str: Prompt to convert. Either prompt or messages must be provided
             to calculate input_string.
-        messages: list[dict[str, str]]: Messages to convert. Either prompt or 
+        messages: list[dict[str, str]]: Messages to convert. Either prompt or
             messages must be provided to calculate input_string.
         tokenizer: AutoTokenizer: Tokenizer to use for the conversion.
         system_message: str | None: System message to add to the messages. Will be
@@ -118,6 +121,7 @@ def format_prompt(
         if words_in_mouth is not None:
             input_string += words_in_mouth
     return {"messages": messages, "input_string": input_string}
+
 
 def get_llm(
     model: str,
@@ -189,7 +193,7 @@ def get_llm(
             total_prob = sum(probs.values())
             probs_relative = {token: prob / total_prob for token, prob in probs.items()}
             return probs_relative
-    
+
     else:
         if model.startswith("or:"):  # OpenRouter
             import openai
@@ -257,25 +261,27 @@ def get_llm(
                     mode = Mode.MISTRAL_TOOLS
                     client = instructor.from_mistral(client, mode=mode)
                 elif model.startswith("gpt"):
-                    mode = Mode.TOOLS_STRICT # use OpenAI structured outputs
+                    mode = Mode.TOOLS_STRICT  # use OpenAI structured outputs
                     client = instructor.from_openai(client, mode=mode)
                 elif model.startswith(("anthropic", "claude")):
                     mode = Mode.ANTHROPIC_JSON
                     client = instructor.from_anthropic(client, mode=mode)
-                        
+
         if use_instructor:
             get_response = client.chat.completions.create_with_completion
+
             def process_response(response):
                 raw_response, completion = response
                 usage = completion.usage
                 return raw_response, usage
+
         else:
             # create_fn already set above
             def process_response(response):
                 raw_response = response.choices[0].message.content
                 usage = response.usage
                 return raw_response, usage
-        
+
         @costly()
         def generate(
             model: str = model,
@@ -292,29 +298,32 @@ def get_llm(
                 messages=messages,
                 system_message=system_message,
             )["messages"]
-            
+
             if model.startswith("mistral"):
                 from mistralai.client import ChatMessage
-                messages = [ChatMessage(role=x['role'], content=x['content']) for x in messages]
-                
-            allowed_params = inspect.signature(get_response).parameters.keys()
-            response_params = {
-                'messages': messages,
-                'model': model,
-                'max_tokens': max_tokens,
-                'response_model': response_model,
-                'temperature': temperature,
-            }
-            filtered_params = {k: v for k, v in response_params.items() if k in allowed_params}
-            
-            response = get_response(**filtered_params)
+
+                messages = [
+                    ChatMessage(role=x["role"], content=x["content"]) for x in messages
+                ]
+
+            response = apply(
+                get_response,
+                **{
+                    "messages": messages,
+                    "model": model,
+                    "max_tokens": max_tokens,
+                    "response_model": response_model,
+                    "temperature": temperature,
+                },
+            )
+
             raw_response, usage = process_response(response)
             return CostlyResponse(
                 output=raw_response,
                 cost_info={
                     "input_tokens": usage.prompt_tokens,
                     "output_tokens": usage.completion_tokens,
-                }
+                },
             )
 
         @costly()
@@ -336,28 +345,31 @@ def get_llm(
 
             if model.startswith("mistral"):
                 from mistralai.client import ChatMessage
-                messages = [ChatMessage(role=x['role'], content=x['content']) for x in messages]
 
-            allowed_params = inspect.signature(get_response).parameters.keys()
-            response_params = {
-                'messages': messages,
-                'model': model,
-                'max_tokens': max_tokens,
-                'response_model': response_model,
-                'temperature': temperature,
-            }
-            filtered_params = {k: v for k, v in response_params.items() if k in allowed_params}
-            
-            response = await get_response(**filtered_params)
+                messages = [
+                    ChatMessage(role=x["role"], content=x["content"]) for x in messages
+                ]
+
+            response = await apply_async(
+                get_response,
+                **{
+                    "messages": messages,
+                    "model": model,
+                    "max_tokens": max_tokens,
+                    "response_model": response_model,
+                    "temperature": temperature,
+                },
+            )
+
             raw_response, usage = process_response(response)
             return CostlyResponse(
                 output=raw_response,
                 cost_info={
                     "input_tokens": usage.prompt_tokens,
                     "output_tokens": usage.completion_tokens,
-                }
+                },
             )
-        
+
         @costly()
         def return_probs(
             return_probs_for: list[str],
@@ -377,21 +389,24 @@ def get_llm(
 
             if model.startswith("mistral"):
                 from mistralai.client import ChatMessage
-                messages = [ChatMessage(role=x['role'], content=x['content']) for x in messages]
+
+                messages = [
+                    ChatMessage(role=x["role"], content=x["content"]) for x in messages
+                ]
 
             max_tokens = max(len(token) for token in return_probs_for)
-    
-            allowed_params = inspect.signature(get_response).parameters.keys()
-            response_params = {
-                'messages': messages,
-                'model': model,
-                'max_tokens': max_tokens,
-                'logprobs': True,
-                'top_logprobs': top_logprobs,
-                'temperature': temperature,
-            }
-            filtered_params = {k: v for k, v in response_params.items() if k in allowed_params}
-            response = get_response(**filtered_params)
+
+            response = apply(
+                get_response,
+                **{
+                    "messages": messages,
+                    "model": model,
+                    "max_tokens": max_tokens,
+                    "logprobs": True,
+                    "top_logprobs": top_logprobs,
+                    "temperature": temperature,
+                },
+            )
             raw_response, usage = process_response(response)
             all_logprobs = response.choices[0].logprobs.content[0].top_logprobs
             all_logprobs_dict = {x.token: x.logprob for x in all_logprobs}
@@ -406,9 +421,9 @@ def get_llm(
                 cost_info={
                     "input_tokens": usage.prompt_tokens,
                     "output_tokens": usage.completion_tokens,
-                }
+                },
             )
-        
+
         @costly()
         async def return_probs_async(
             return_probs_for: list[str],
@@ -428,21 +443,24 @@ def get_llm(
 
             if model.startswith("mistral"):
                 from mistralai.client import ChatMessage
-                messages = [ChatMessage(role=x['role'], content=x['content']) for x in messages]
+
+                messages = [
+                    ChatMessage(role=x["role"], content=x["content"]) for x in messages
+                ]
 
             max_tokens = max(len(token) for token in return_probs_for)
-            
-            allowed_params = inspect.signature(get_response).parameters.keys()
-            response_params = {
-                'messages': messages,
-                'model': model,
-                'max_tokens': max_tokens,
-                'logprobs': True,
-                'top_logprobs': top_logprobs,
-                'temperature': temperature,
-            }
-            filtered_params = {k: v for k, v in response_params.items() if k in allowed_params}
-            response = await get_response(**filtered_params)
+
+            response = await apply_async(
+                get_response,
+                **{
+                    "messages": messages,
+                    "model": model,
+                    "max_tokens": max_tokens,
+                    "logprobs": True,
+                    "top_logprobs": top_logprobs,
+                    "temperature": temperature,
+                },
+            )
             raw_response, usage = process_response(response)
             all_logprobs = response.choices[0].logprobs.content[0].top_logprobs
             all_logprobs_dict = {x.token: x.logprob for x in all_logprobs}
@@ -457,9 +475,9 @@ def get_llm(
                 cost_info={
                     "input_tokens": usage.prompt_tokens,
                     "output_tokens": usage.completion_tokens,
-                }
+                },
             )
-        
+
     return {
         "client": client,
         "generate": generate,
@@ -468,8 +486,9 @@ def get_llm(
         "return_probs_async": return_probs_async,
     }
 
+
 def get_llm_response(
-    model: str = 'gpt-4o-mini',
+    model: str = "gpt-4o-mini",
     response_model: Union["BaseModel", None] = None,
     prompt: str = None,
     messages: list[dict[str, str]] = None,
@@ -480,7 +499,7 @@ def get_llm_response(
     temperature: float = 0.0,
     **kwargs,
 ):
-    model = model or 'gpt-4o-mini'
+    model = model or "gpt-4o-mini"
     ai = get_llm(
         model=model,
         use_async=False,
@@ -499,8 +518,9 @@ def get_llm_response(
         **kwargs,
     )
 
+
 async def get_llm_response_async(
-    model: str = 'gpt-4o-mini',
+    model: str = "gpt-4o-mini",
     response_model: Union["BaseModel", None] = None,
     prompt: str = None,
     messages: list[dict[str, str]] = None,
@@ -511,7 +531,7 @@ async def get_llm_response_async(
     temperature: float = 0.0,
     **kwargs,
 ):
-    model = model or 'gpt-4o-mini'
+    model = model or "gpt-4o-mini"
     ai = get_llm(
         model=model,
         use_async=True,
@@ -529,10 +549,11 @@ async def get_llm_response_async(
         temperature=temperature,
         **kwargs,
     )
-        
+
+
 def get_llm_probs(
     return_probs_for: list[str],
-    model: str = 'gpt-4o-mini',
+    model: str = "gpt-4o-mini",
     prompt: str = None,
     messages: list[dict[str, str]] = None,
     input_string: str = None,
@@ -542,7 +563,7 @@ def get_llm_probs(
     temperature: float = 0.0,
     **kwargs,
 ):
-    model = model or 'gpt-4o-mini'
+    model = model or "gpt-4o-mini"
     ai = get_llm(
         model=model,
         use_async=False,
@@ -561,9 +582,10 @@ def get_llm_probs(
         **kwargs,
     )
 
+
 async def get_llm_probs_async(
     return_probs_for: list[str],
-    model: str = 'gpt-4o-mini',
+    model: str = "gpt-4o-mini",
     prompt: str = None,
     messages: list[dict[str, str]] = None,
     input_string: str = None,
@@ -573,7 +595,7 @@ async def get_llm_probs_async(
     temperature: float = 0.0,
     **kwargs,
 ):
-    model = model or 'gpt-4o-mini'
+    model = model or "gpt-4o-mini"
     ai = get_llm(
         model=model,
         use_async=True,

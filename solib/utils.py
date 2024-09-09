@@ -26,3 +26,17 @@ def seed(*args, **kwargs):
 def random(*args, **kwargs):
     seed(*args, **kwargs)
     return rnd.random()
+
+def apply(func, *args, **kwargs):
+    """Apply a function tolerant to extra parameters"""
+    import inspect
+    allowed_params = inspect.signature(func).parameters.keys()
+    filtered_params = {k: v for k, v in kwargs.items() if k in allowed_params}
+    return func(*args, **filtered_params)
+
+async def apply_async(func, *args, **kwargs):
+    """Apply a function tolerant to extra parameters (async version)"""
+    import inspect
+    allowed_params = inspect.signature(func).parameters.keys()
+    filtered_params = {k: v for k, v in kwargs.items() if k in allowed_params}
+    return await func(*args, **filtered_params)
