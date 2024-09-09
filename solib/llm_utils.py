@@ -469,7 +469,7 @@ def get_llm(
     }
 
 def get_llm_response(
-    model: str,
+    model: str = 'gpt-4o-mini',
     response_model: Union["BaseModel", None] = None,
     prompt: str = None,
     messages: list[dict[str, str]] = None,
@@ -480,6 +480,7 @@ def get_llm_response(
     temperature: float = 0.0,
     **kwargs,
 ):
+    model = model or 'gpt-4o-mini'
     ai = get_llm(
         model=model,
         use_async=False,
@@ -499,7 +500,7 @@ def get_llm_response(
     )
 
 async def get_llm_response_async(
-    model: str,
+    model: str = 'gpt-4o-mini',
     response_model: Union["BaseModel", None] = None,
     prompt: str = None,
     messages: list[dict[str, str]] = None,
@@ -510,6 +511,7 @@ async def get_llm_response_async(
     temperature: float = 0.0,
     **kwargs,
 ):
+    model = model or 'gpt-4o-mini'
     ai = get_llm(
         model=model,
         use_async=True,
@@ -529,8 +531,8 @@ async def get_llm_response_async(
     )
         
 def get_llm_probs(
-    model: str,
     return_probs_for: list[str],
+    model: str = 'gpt-4o-mini',
     prompt: str = None,
     messages: list[dict[str, str]] = None,
     input_string: str = None,
@@ -540,6 +542,7 @@ def get_llm_probs(
     temperature: float = 0.0,
     **kwargs,
 ):
+    model = model or 'gpt-4o-mini'
     ai = get_llm(
         model=model,
         use_async=False,
@@ -559,8 +562,8 @@ def get_llm_probs(
     )
 
 async def get_llm_probs_async(
-    model: str,
     return_probs_for: list[str],
+    model: str = 'gpt-4o-mini',
     prompt: str = None,
     messages: list[dict[str, str]] = None,
     input_string: str = None,
@@ -570,6 +573,7 @@ async def get_llm_probs_async(
     temperature: float = 0.0,
     **kwargs,
 ):
+    model = model or 'gpt-4o-mini'
     ai = get_llm(
         model=model,
         use_async=True,
