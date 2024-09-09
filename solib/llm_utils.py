@@ -478,6 +478,7 @@ def get_llm_response(
     words_in_mouth: str | None = None,
     max_tokens: int = 2048,
     temperature: float = 0.0,
+    **kwargs,
 ):
     ai = get_llm(
         model=model,
@@ -494,6 +495,7 @@ def get_llm_response(
         max_tokens=max_tokens,
         response_model=response_model,
         temperature=temperature,
+        **kwargs,
     )
 
 async def get_llm_response_async(
@@ -506,6 +508,7 @@ async def get_llm_response_async(
     words_in_mouth: str | None = None,
     max_tokens: int = 2048,
     temperature: float = 0.0,
+    **kwargs,
 ):
     ai = get_llm(
         model=model,
@@ -522,6 +525,7 @@ async def get_llm_response_async(
         max_tokens=max_tokens,
         response_model=response_model,
         temperature=temperature,
+        **kwargs,
     )
         
 def get_llm_probs(
@@ -534,6 +538,7 @@ def get_llm_probs(
     words_in_mouth: str | None = None,
     top_logprobs: int = 5,
     temperature: float = 0.0,
+    **kwargs,
 ):
     ai = get_llm(
         model=model,
@@ -550,6 +555,7 @@ def get_llm_probs(
         words_in_mouth=words_in_mouth,
         top_logprobs=top_logprobs,
         temperature=temperature,
+        **kwargs,
     )
 
 async def get_llm_probs_async(
@@ -562,6 +568,7 @@ async def get_llm_probs_async(
     words_in_mouth: str | None = None,
     top_logprobs: int = 5,
     temperature: float = 0.0,
+    **kwargs,
 ):
     ai = get_llm(
         model=model,
@@ -578,4 +585,5 @@ async def get_llm_probs_async(
         words_in_mouth=words_in_mouth,
         top_logprobs=top_logprobs,
         temperature=temperature,
+        **kwargs,
     )
