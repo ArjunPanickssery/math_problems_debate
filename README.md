@@ -28,18 +28,9 @@ Throughout this repo, always use `solib.utils.random(*args, **kwargs)` instead o
 
 # Simulation and cost estimation
 
-You can do a simulated run of any function involving API calls in order to estimate cost before actually running the experiment. Simply initiate a `solib.cost_estimator.CostEstimator` object (say `ce`) and pass the arguments `simulate=True, cost_estimation={"cost_estimator": ce}` to the function you're calling, then `print(ce)` to see the results. 
-```python
-    cost_estimation = 
-    {
-        "cost_estimator": CostEstimator, # if not given, will not estimate cost
-        "description": str, # optional, helpful for tracking and breakdown
-        "input_tokens_estimator": Callable[[str], int], # optional, defaults to len(input_string) // 4.5
-        "output_tokens_estimator": Callable[[str, int], list[int]], # optional, defaults to [1, 2048]
-        "simstr_len": int, # optional, defaults to 1024
-    }
-```
-In contributing to the repo, ensure that all functions involving API calls allow `**kwargs` to ensure an unbroken kwarg pathway to `get_llm_response`.
+We use the [`costly`](https://github.com/abhimanyupallavisudhir/costly) package for cost estimation ahead of making API calls.
+
+In contributing to the repo, ensure that all functions involving API calls allow an unbroken kwarg pathway to the costly functions in `solib.llm_utils`. Actually, we only need `simulate`, `cost_estimation`, `description` to be passed through, so if you need to discriminate between `kwargs` for different purposes, just pass these parameters through all purposes.
 
 # Caching
 

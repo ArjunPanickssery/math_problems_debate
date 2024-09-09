@@ -282,7 +282,13 @@ def get_llm(
                 usage = response.usage
                 return raw_response, usage
 
-        @costly()
+        _get_messages = lambda kwargs: format_prompt(
+            prompt=kwargs.get("prompt"),
+            messages=kwargs.get("messages"),
+            system_message=kwargs.get("system_message"),
+        )["messages"]
+
+        @costly(messages=_get_messages)
         def generate(
             model: str = model,
             prompt: str = None,
@@ -326,7 +332,7 @@ def get_llm(
                 },
             )
 
-        @costly()
+        @costly(messages=_get_messages)
         async def generate_async(
             model: str = model,
             prompt: str = None,
@@ -370,7 +376,7 @@ def get_llm(
                 },
             )
 
-        @costly()
+        @costly(messages=_get_messages)
         def return_probs(
             return_probs_for: list[str],
             model: str = model,
@@ -424,7 +430,7 @@ def get_llm(
                 },
             )
 
-        @costly()
+        @costly(messages=_get_messages)
         async def return_probs_async(
             return_probs_for: list[str],
             model: str = model,
