@@ -2,6 +2,7 @@ import json
 from dataclasses import dataclass
 from typing import Any
 from pathlib import Path
+from pydantic import BaseModel, field_validator
 
 @dataclass
 class Answer:
@@ -32,3 +33,12 @@ class Question:
     @property
     def possible_answers_dict(self) -> dict[str, Answer]:
         return {answer.symbol: answer for answer in self.possible_answers}
+
+class Prob(BaseModel):
+    prob: float
+
+    @field_validator("prob")
+    @classmethod
+    def validate_prob(cls, v):
+        assert 0.0 <= v <= 1.0, "Probability must be between 0 and 1."
+        return v

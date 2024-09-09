@@ -4,7 +4,13 @@ from typing import Self, Any
 from dataclasses import dataclass
 import numpy as np
 from solib.utils import config
-from solib.llm_utils import get_llm_response, get_llm_response_async, parallelized_call
+from solib.llm_utils import (
+    get_llm_response,
+    get_llm_response_async,
+    get_llm_probs,
+    get_llm_probs_async,
+    parallelized_call,
+)
 from solib.datatypes import Answer, Question
 
 
@@ -52,16 +58,12 @@ class Judge:
 
     async def __call__(self, transcript: Transcript, **kwargs) -> "Self.TranscriptItem":
         words_in_mouth = " I judge that the answer is:\n\n("
-        probabilities = await get_llm_response_async(
+        probabilities = await get_llm_probs_async(
             prompt=self.prompt.format(transcript=transcript),
             model=self.model,
             return_probs_for=transcript.question.possible_answer_symbols,
-            max_tokens=max(
-                len(answer_symbol)
-                for answer_symbol in transcript.question.possible_answer_symbols
-            ),
             words_in_mouth=words_in_mouth,
-            **kwargs
+            **kwargs,
         )
         return self.TranscriptItem(probabilities=probabilities)
 
@@ -133,7 +135,7 @@ class Protocol:
             return result
 
         results = await parallelized_call(process_question, questions)
-        
+
         scores = [result["score"] for result in results]
         stats = {
             "mean_score": np.mean(scores),

@@ -1,6 +1,6 @@
 from typing import Self
 from dataclasses import dataclass
-import re
+from solib.datatypes import Prob
 from solib.utils import random
 from solib.llm_utils import get_llm_response, get_llm_response_async
 from solib.protocols.common import Transcript, Judge
@@ -31,16 +31,12 @@ class JustAskProbabilityJudge(Judge):
             response = await get_llm_response_async(
                 prompt=self.prompt.format(transcript=transcript, answer=answer),
                 model=self.model,
+                response_model=Prob,
                 max_tokens=5,
                 words_in_mouth=words_in_mouth,
                 **kwargs
             )
-            # extract numeric value from response 
-            # HACK. Maybe we should use instructor instead of regex
-            print('PRINTING RESPONSE')
-            print(response)
-            probability = float(re.findall("\d+\.\d+", response)[0])
-            probabilities[answer.symbol] = probability
+            probabilities[answer.symbol] = response.prob
         # normalize probabilities
         total = sum(probabilities.values())
         for answer in probabilities:
@@ -130,14 +126,12 @@ class COTJustAskProbabilityJudge(COTJudge):
             response = await get_llm_response_async(
                 prompt=self.prompt.format(transcript=transcript, answer=answer, cot=cot),
                 model=self.model,
+                response_model=Prob,
                 max_tokens=5,
                 words_in_mouth=words_in_mouth,
                 **kwargs
             )
-            # extract numeric value from response
-            # HACK. Maybe we should use instructor instead of regex
-            probability = float(re.findall("\d+\.\d+", response)[0])
-            probabilities[answer.symbol] = probability
+            probabilities[answer.symbol] = response.prob
         # normalize probabilities
         total = sum(probabilities.values())
         for answer in probabilities:
