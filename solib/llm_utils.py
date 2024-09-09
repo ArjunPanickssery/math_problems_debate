@@ -24,6 +24,7 @@ from typing import Literal, Union, Coroutine, TYPE_CHECKING
 from perscache import Cache
 from perscache.serializers import JSONSerializer
 from costly import Costlog, CostlyResponse, costly
+from costly.simulators.llm_simulator_faker import LLM_Simulator_Faker
 from solib.utils import apply, apply_async
 
 if TYPE_CHECKING:
@@ -36,7 +37,6 @@ if TYPE_CHECKING:
     from instructor import Instructor
 
 cache = Cache(serializer=JSONSerializer())
-
 
 async def parallelized_call(
     func: Coroutine,
@@ -376,7 +376,7 @@ def get_llm(
                 },
             )
 
-        @costly(messages=_get_messages)
+        @costly(messages=_get_messages, simulator=LLM_Simulator_Faker.simulate_llm_probs)
         def return_probs(
             return_probs_for: list[str],
             model: str = model,
@@ -430,7 +430,7 @@ def get_llm(
                 },
             )
 
-        @costly(messages=_get_messages)
+        @costly(messages=_get_messages, simulator=LLM_Simulator_Faker.simulate_llm_probs)
         async def return_probs_async(
             return_probs_for: list[str],
             model: str = model,
