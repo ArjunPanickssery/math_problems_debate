@@ -26,6 +26,8 @@ poetry run pytest -s --runhf # to run even tests involving hf models
 
 Throughout this repo, always use `solib.utils.random(*args, **kwargs)` instead of `random.random()`. This automatically sets the seed based on `args` (which should be the args of the function you're running), and optionally a `user_seed` kwarg. This is useful for caching and reproducibility.
 
+The only exception to this is `costly` simulators.
+
 # Simulation and cost estimation
 
 We use the [`costly`](https://github.com/abhimanyupallavisudhir/costly) package for cost estimation ahead of making API calls.

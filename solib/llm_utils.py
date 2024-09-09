@@ -26,6 +26,7 @@ from perscache.serializers import JSONSerializer
 from costly import Costlog, CostlyResponse, costly
 from costly.simulators.llm_simulator_faker import LLM_Simulator_Faker
 from solib.utils import apply, apply_async
+from solib.datatypes import Prob
 
 if TYPE_CHECKING:
     from pydantic import BaseModel
@@ -37,6 +38,13 @@ if TYPE_CHECKING:
     from instructor import Instructor
 
 cache = Cache(serializer=JSONSerializer())
+
+class LLM_Simulator(LLM_Simulator_Faker):
+    @classmethod
+    def _fake_custom(cls, t: type):
+        assert issubclass(t, Prob)
+        import random
+        return t(prob = random.random())
 
 async def parallelized_call(
     func: Coroutine,
@@ -276,7 +284,7 @@ def get_llm(
                 return raw_response, usage
 
         else:
-            # create_fn already set above
+            # get_response already set above
             def process_response(response):
                 raw_response = response.choices[0].message.content
                 usage = response.usage
@@ -288,7 +296,7 @@ def get_llm(
             system_message=kwargs.get("system_message"),
         )["messages"]
 
-        @costly(messages=_get_messages)
+        @costly(simulator=LLM_Simulator.simulate_llm_call, messages=_get_messages)
         def generate(
             model: str = model,
             prompt: str = None,
@@ -332,7 +340,7 @@ def get_llm(
                 },
             )
 
-        @costly(messages=_get_messages)
+        @costly(simulator=LLM_Simulator.simulate_llm_call, messages=_get_messages)
         async def generate_async(
             model: str = model,
             prompt: str = None,
@@ -376,7 +384,7 @@ def get_llm(
                 },
             )
 
-        @costly(messages=_get_messages, simulator=LLM_Simulator_Faker.simulate_llm_probs)
+        @costly(simulator=LLM_Simulator.simulate_llm_probs, messages=_get_messages)
         def return_probs(
             return_probs_for: list[str],
             model: str = model,
@@ -430,7 +438,7 @@ def get_llm(
                 },
             )
 
-        @costly(messages=_get_messages, simulator=LLM_Simulator_Faker.simulate_llm_probs)
+        @costly(simulator=LLM_Simulator.simulate_llm_probs, messages=_get_messages)
         async def return_probs_async(
             return_probs_for: list[str],
             model: str = model,
