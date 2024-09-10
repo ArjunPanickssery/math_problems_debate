@@ -17,16 +17,18 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 import os
 import asyncio
+import json
 import math
 from typing import Literal, Union, Coroutine, TYPE_CHECKING
+from pydantic import BaseModel
 from perscache import Cache
+from perscache.serializers import JSONSerializer
 from costly import Costlog, CostlyResponse, costly
 from costly.simulators.llm_simulator_faker import LLM_Simulator_Faker
 from solib.utils import apply, apply_async
 from solib.datatypes import Prob
 
 if TYPE_CHECKING:
-    from pydantic import BaseModel
     from transformers import AutoTokenizer
     from openai import AsyncOpenAI, OpenAI
     from anthropic import AsyncAnthropic, Anthropic
@@ -34,7 +36,23 @@ if TYPE_CHECKING:
     from mistralai.client import MistralClient
     from instructor import Instructor
 
-cache = Cache() # cannot use JSON Serializer b/c of pydantic types like Prob
+class PydanticJSONSerializer(JSONSerializer):
+    @staticmethod
+    def default(obj):
+        if isinstance(obj, BaseModel):
+            return obj.model_dump()
+        raise TypeError(f'Object of type {obj.__class__.__name__} is not JSON serializable')
+
+    @classmethod
+    def dumps(cls, data):
+        return json.dumps(data, default=cls.default).encode('utf-8')
+
+    @classmethod
+    def loads(cls, data):
+        return json.loads(data.decode('utf-8'))
+
+# Replace the existing cache initialization with this:
+cache = Cache(serializer=PydanticJSONSerializer())
 
 
 class LLM_Simulator(LLM_Simulator_Faker):
