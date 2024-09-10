@@ -17,12 +17,9 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 import os
 import asyncio
-import warnings
-import inspect
 import math
 from typing import Literal, Union, Coroutine, TYPE_CHECKING
 from perscache import Cache
-from perscache.serializers import JSONSerializer
 from costly import Costlog, CostlyResponse, costly
 from costly.simulators.llm_simulator_faker import LLM_Simulator_Faker
 from solib.utils import apply, apply_async
@@ -37,14 +34,17 @@ if TYPE_CHECKING:
     from mistralai.client import MistralClient
     from instructor import Instructor
 
-cache = Cache(serializer=JSONSerializer())
+cache = Cache() # cannot use JSON Serializer b/c of pydantic types like Prob
+
 
 class LLM_Simulator(LLM_Simulator_Faker):
     @classmethod
     def _fake_custom(cls, t: type):
         assert issubclass(t, Prob)
         import random
-        return t(prob = random.random())
+
+        return t(prob=random.random())
+
 
 async def parallelized_call(
     func: Coroutine,
@@ -501,6 +501,7 @@ def get_llm(
     }
 
 
+@cache(ignore="cost_log")
 def get_llm_response(
     model: str = "gpt-4o-mini",
     response_model: Union["BaseModel", None] = None,
@@ -511,7 +512,8 @@ def get_llm_response(
     words_in_mouth: str | None = None,
     max_tokens: int = 2048,
     temperature: float = 0.0,
-    **kwargs,
+    cost_log: Costlog = None,  # need to give explicitly b/c cache
+    **kwargs,  # kwargs necessary for costly
 ):
     model = model or "gpt-4o-mini"
     ai = get_llm(
@@ -529,10 +531,12 @@ def get_llm_response(
         max_tokens=max_tokens,
         response_model=response_model,
         temperature=temperature,
+        cost_log=cost_log,
         **kwargs,
     )
 
 
+@cache(ignore="cost_log")
 async def get_llm_response_async(
     model: str = "gpt-4o-mini",
     response_model: Union["BaseModel", None] = None,
@@ -543,6 +547,7 @@ async def get_llm_response_async(
     words_in_mouth: str | None = None,
     max_tokens: int = 2048,
     temperature: float = 0.0,
+    cost_log: Costlog = None,  # need to give explicitly b/c cache
     **kwargs,
 ):
     model = model or "gpt-4o-mini"
@@ -561,10 +566,12 @@ async def get_llm_response_async(
         max_tokens=max_tokens,
         response_model=response_model,
         temperature=temperature,
+        cost_log=cost_log,
         **kwargs,
     )
 
 
+@cache(ignore="cost_log")
 def get_llm_probs(
     return_probs_for: list[str],
     model: str = "gpt-4o-mini",
@@ -575,6 +582,7 @@ def get_llm_probs(
     words_in_mouth: str | None = None,
     top_logprobs: int = 5,
     temperature: float = 0.0,
+    cost_log: Costlog = None,  # need to give explicitly b/c cache
     **kwargs,
 ):
     model = model or "gpt-4o-mini"
@@ -593,10 +601,11 @@ def get_llm_probs(
         words_in_mouth=words_in_mouth,
         top_logprobs=top_logprobs,
         temperature=temperature,
+        cost_log=cost_log,
         **kwargs,
     )
 
-
+@cache(ignore="cost_log")
 async def get_llm_probs_async(
     return_probs_for: list[str],
     model: str = "gpt-4o-mini",
@@ -607,6 +616,7 @@ async def get_llm_probs_async(
     words_in_mouth: str | None = None,
     top_logprobs: int = 5,
     temperature: float = 0.0,
+    cost_log: Costlog = None,  # need to give explicitly b/c cache
     **kwargs,
 ):
     model = model or "gpt-4o-mini"
@@ -625,5 +635,6 @@ async def get_llm_probs_async(
         words_in_mouth=words_in_mouth,
         top_logprobs=top_logprobs,
         temperature=temperature,
+        cost_log=cost_log,
         **kwargs,
     )
