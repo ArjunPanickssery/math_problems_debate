@@ -2,8 +2,8 @@
 """
 Copyright 2024 Alejandro Alvarez, Abhimanyu Pallavi Sudhir, Daniel Paleka
 
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation 
-files (the “Software”), to deal in the Software without restriction, including without limitation the rights to use, copy, 
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation
+files (the “Software”), to deal in the Software without restriction, including without limitation the rights to use, copy,
 modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software
 is furnished to do so, subject to the following conditions:
 
@@ -27,6 +27,8 @@ from costly import Costlog, CostlyResponse, costly
 from costly.simulators.llm_simulator_faker import LLM_Simulator_Faker
 from solib.utils import apply, apply_async
 from solib.datatypes import Prob
+from solib import tool_use
+from solib.tool_use import ToolStopper, HuggingFaceToolCaller
 
 if TYPE_CHECKING:
     from transformers import AutoTokenizer
@@ -110,6 +112,8 @@ def format_prompt(
     tokenizer: Union["AutoTokenizer", None] = None,
     system_message: str | None = None,
     words_in_mouth: str | None = None,
+    tools: list[callable] = None,
+    natively_supports_tools: bool = False,
 ) -> dict[Literal["messages", "input_string"], str | list[dict[str, str]]]:
     """
     Three types of prompts:
@@ -131,19 +135,32 @@ def format_prompt(
             ignored if messages is provided.
         words_in_mouth: str | None: Words to append to the prompt. Will be ignored
             if input_string is provided.
+        tools: list[callable]: If tool use is enabled, this will be a list of python functions.
+        natively_supports_tools: bool: If True, the model natively supports tools and we can pass
+            them in the `tools` parameter in apply_chat_template if tokenizer is supplied. If False,
+            we will use the default tool prompt in tool_use.HuggingFaceToolCaller.TOOLS_PROMPT, and
+            we will append it as the first system message to the messages.
     Returns:
         dict: with keys "messages" and "input_string". "input_string" will be None
             if tokenizer is None.
     """
     if input_string is None:
         if messages is None:
+
             assert prompt is not None
             messages = []
             if system_message is not None:
                 messages.append({"role": "system", "content": system_message})
             messages.append({"role": "user", "content": prompt})
+
+        if tools and not natively_supports_tools:
+            messages.insert(0, {"role": "system", "content": tool_use.get_tool_prompt(tools)})
+
         if tokenizer is not None:
-            input_string = tokenizer.apply_chat_template(messages, tokenize=False)
+            if tools and natively_supports_tools:
+                input_string = tokenizer.apply_chat_template(messages, tokenize=False, tools=tools)
+            else:
+                input_string = tokenizer.apply_chat_template(messages, tokenize=False)
         if words_in_mouth is not None:
             input_string += words_in_mouth
     return {"messages": messages, "input_string": input_string}
@@ -153,6 +170,8 @@ def get_llm(
     model: str,
     use_async=False,
     use_instructor: bool = False,
+    tools: list[callable] = None,
+    hf_quantization_config = None
 ):
     if model.startswith("hf:"):  # Hugging Face local models
         from transformers import AutoTokenizer, AutoModelForCausalLM
@@ -160,9 +179,16 @@ def get_llm(
         api_key = os.getenv("HF_TOKEN")
         model = model.split("hf:")[1]
         tokenizer = AutoTokenizer.from_pretrained(model)
+        device_map = 'cuda' if hf_quantization_config is not None else 'auto'
         model = AutoModelForCausalLM.from_pretrained(
-            model, device_map="auto", token=api_key
+            model, device_map=device_map, token=api_key, quantization_config=hf_quantization_config
         )
+
+        natively_supports_tools = False
+        if tools:
+            model = HuggingFaceToolCaller(tokenizer, model, tools)
+            natively_supports_tools = model.natively_supports_tools()
+
         client = (tokenizer, model)
 
         # TODO: add cost logging for local models
@@ -182,13 +208,18 @@ def get_llm(
                 tokenizer=tokenizer,
                 system_message=system_message,
                 words_in_mouth=words_in_mouth,
+                tools=tools,
+                natively_supports_tools=natively_supports_tools,
             )
-            input_ids = tokenizer.encode(prompt, return_tensors="pt").to(model.device)
-            output = model.generate(input_ids, max_length=max_tokens)
-            decoded = tokenizer.decode(output[0], skip_special_tokens=True)
-            prompt_end = prompt[-9:]  # HACK
-            response = decoded.split(prompt_end)[-1]
-            return response
+
+            input_ids = tokenizer.encode(input_string['input_string'], return_tensors="pt",
+                                         add_special_tokens=False).to(model.device)
+
+            input_length = input_ids.shape[1]
+            output = model.generate(input_ids, max_length=max_tokens, do_sample=False, temperature=None, top_p=None)[0]
+
+            decoded = tokenizer.decode(output[input_length:], skip_special_tokens=True)
+            return decoded
 
         # TODO: add cost logging for local models
         def return_probs(
@@ -200,7 +231,7 @@ def get_llm(
             words_in_mouth: str | None = None,
             **kwargs,
         ):
-            input_string = format_prompt(
+            input_string = format_prompt(  # don't pass tools to judges
                 prompt=prompt,
                 messages=messages,
                 input_string=input_string,
@@ -208,7 +239,7 @@ def get_llm(
                 system_message=system_message,
                 words_in_mouth=words_in_mouth,
             )
-            input_ids = tokenizer.encode(prompt, return_tensors="pt").to(model.device)
+            input_ids = tokenizer.encode(input_string['input_string'], return_tensors="pt").to(model.device)
             output = model(input_ids).logits[0, -1, :]
             output_probs = output.softmax(dim=0)
             probs = {token: 0 for token in return_probs_for}
@@ -219,6 +250,12 @@ def get_llm(
             total_prob = sum(probs.values())
             probs_relative = {token: prob / total_prob for token, prob in probs.items()}
             return probs_relative
+
+        return {
+            "client": client,
+            "generate": generate,
+            "return_probs": return_probs,
+        }
 
     else:
         if model.startswith("or:"):  # OpenRouter
@@ -308,10 +345,15 @@ def get_llm(
                 usage = response.usage
                 return raw_response, usage
 
+        # assume tool support for all API models
+        natively_supports_tools = True
+
         _get_messages = lambda kwargs: format_prompt(
             prompt=kwargs.get("prompt"),
             messages=kwargs.get("messages"),
             system_message=kwargs.get("system_message"),
+            tools=tools,
+            natively_supports_tools=natively_supports_tools
         )["messages"]
 
         @costly(simulator=LLM_Simulator.simulate_llm_call, messages=_get_messages)
@@ -329,6 +371,8 @@ def get_llm(
                 prompt=prompt,
                 messages=messages,
                 system_message=system_message,
+                tools=tools,
+                natively_supports_tools=natively_supports_tools
             )["messages"]
 
             if model.startswith("mistral"):
@@ -373,6 +417,8 @@ def get_llm(
                 prompt=prompt,
                 messages=messages,
                 system_message=system_message,
+                tools=tools,
+                natively_supports_tools=natively_supports_tools
             )["messages"]
 
             if model.startswith("mistral"):
@@ -417,6 +463,8 @@ def get_llm(
                 prompt=prompt,
                 messages=messages,
                 system_message=system_message,
+                tools=tools,
+                natively_supports_tools=natively_supports_tools
             )["messages"]
 
             if model.startswith("mistral"):
@@ -471,6 +519,8 @@ def get_llm(
                 prompt=prompt,
                 messages=messages,
                 system_message=system_message,
+                tools=tools,
+                natively_supports_tools=natively_supports_tools
             )["messages"]
 
             if model.startswith("mistral"):
@@ -509,14 +559,13 @@ def get_llm(
                     "output_tokens": usage.completion_tokens,
                 },
             )
-
-    return {
-        "client": client,
-        "generate": generate,
-        "generate_async": generate_async,
-        "return_probs": return_probs,
-        "return_probs_async": return_probs_async,
-    }
+        return {
+            "client": client,
+            "generate": generate,
+            "generate_async": generate_async,
+            "return_probs": return_probs,
+            "return_probs_async": return_probs_async,
+        }
 
 
 @cache(ignore="cost_log")
@@ -531,6 +580,8 @@ def get_llm_response(
     max_tokens: int = 2048,
     temperature: float = 0.0,
     cost_log: Costlog = None,  # need to give explicitly b/c cache
+    tools: list[callable] = None,
+    hf_quantization_config = None,
     **kwargs,  # kwargs necessary for costly
 ):
     model = model or "gpt-4o-mini"
@@ -538,6 +589,8 @@ def get_llm_response(
         model=model,
         use_async=False,
         use_instructor=(response_model is not None),
+        tools=tools,
+        hf_quantization_config=hf_quantization_config
     )
     return ai["generate"](
         model=model,
@@ -566,6 +619,8 @@ async def get_llm_response_async(
     max_tokens: int = 2048,
     temperature: float = 0.0,
     cost_log: Costlog = None,  # need to give explicitly b/c cache
+    tools: list[callable] = None,
+    hf_quantization_config = None,
     **kwargs,
 ):
     model = model or "gpt-4o-mini"
@@ -573,6 +628,8 @@ async def get_llm_response_async(
         model=model,
         use_async=True,
         use_instructor=(response_model is not None),
+        tools=tools,
+        hf_quantization_config=hf_quantization_config
     )
     return await ai["generate_async"](
         model=model,
@@ -601,6 +658,8 @@ def get_llm_probs(
     top_logprobs: int = 5,
     temperature: float = 0.0,
     cost_log: Costlog = None,  # need to give explicitly b/c cache
+    tools: list[callable] = None,
+    hf_quantization_config = None,
     **kwargs,
 ):
     model = model or "gpt-4o-mini"
@@ -608,6 +667,8 @@ def get_llm_probs(
         model=model,
         use_async=False,
         use_instructor=False,
+        tools=tools,
+        hf_quantization_config=hf_quantization_config
     )
     return ai["return_probs"](
         model=model,
@@ -635,6 +696,8 @@ async def get_llm_probs_async(
     top_logprobs: int = 5,
     temperature: float = 0.0,
     cost_log: Costlog = None,  # need to give explicitly b/c cache
+    tools: list[callable] = None,
+    hf_quantization_config = None,
     **kwargs,
 ):
     model = model or "gpt-4o-mini"
@@ -642,6 +705,8 @@ async def get_llm_probs_async(
         model=model,
         use_async=True,
         use_instructor=False,
+        tools=tools,
+        hf_quantization_config=hf_quantization_config
     )
     return await ai["return_probs_async"](
         model=model,
