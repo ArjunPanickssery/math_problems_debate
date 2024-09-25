@@ -236,3 +236,21 @@ def tool_use_loop_generate(input: List[BaseMessage],
                 input.append(ToolMessage(tool_result, tool_call_id=t['id']))
         else:
             return input[start_len:]
+
+
+async def tool_use_loop_generate_async(input: List[BaseMessage],
+                                        get_response: Callable[[List[BaseMessage]], BaseMessage],
+                                        tool_map: Dict[str, Callable],
+                                        **kwargs):
+     start_len = len(input)
+     while True:
+          response = await apply_async(get_response,
+                                         **{'input': input,
+                                         **kwargs})
+          input.append(response)
+          if response.tool_calls:
+                for t in response.tool_calls:
+                 tool_result = tool_map[t['name']](**t['args'])
+                 input.append(ToolMessage(tool_result, tool_call_id=t['id']))
+          else:
+                return input[start_len:]

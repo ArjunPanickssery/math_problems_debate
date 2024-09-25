@@ -332,13 +332,17 @@ def get_llm(
             def process_response(response):
                 raw_response, completion = response
                 usage = completion.usage
+                usage = {'input_tokens': usage.prompt_tokens,
+                         'output_tokens': usage.completion_tokens}
                 return raw_response, usage
 
         else:
             if tools is not None:
                 client = client.bind_tools(structured_tools)
-                _get_response = client.ainvoke if use_async else client.invoke
-                get_response = partial(tool_use.tool_use_loop_generate, get_response=_get_response, tool_map=tool_map)
+                if use_async:
+                    get_response = partial(tool_use.tool_use_loop_generate_async, get_response=client.ainvoke, tool_map=tool_map)
+                else:
+                    get_response = partial(tool_use.tool_use_loop_generate, get_response=client.invoke, tool_map=tool_map)
             else:
                 get_response = client.ainvoke if use_async else client.invoke
 
@@ -350,6 +354,7 @@ def get_llm(
                 else:
                     raw_response = response.content
                     usage = response.usage_metadata
+
                 return raw_response, usage
 
 
@@ -392,10 +397,7 @@ def get_llm(
             raw_response, usage = process_response(response)
             return CostlyResponse(
                 output=raw_response,
-                cost_info={
-                    "input_tokens": usage['input_tokens'],
-                    "output_tokens": usage['output_tokens'],
-                },
+                cost_info=usage,
             )
 
         @costly(simulator=LLM_Simulator.simulate_llm_call, messages=_get_messages)
@@ -430,10 +432,7 @@ def get_llm(
             raw_response, usage = process_response(response)
             return CostlyResponse(
                 output=raw_response,
-                cost_info={
-                    "input_tokens": usage.prompt_tokens,
-                    "output_tokens": usage.completion_tokens,
-                },
+                cost_info=usage,
             )
 
         @costly(simulator=LLM_Simulator.simulate_llm_probs, messages=_get_messages)
@@ -478,10 +477,7 @@ def get_llm(
             probs_relative = {token: prob / total_prob for token, prob in probs.items()}
             return CostlyResponse(
                 output=probs_relative,
-                cost_info={
-                    "input_tokens": usage.prompt_tokens,
-                    "output_tokens": usage.completion_tokens,
-                },
+                cost_info=usage,
             )
 
         @costly(simulator=LLM_Simulator.simulate_llm_probs, messages=_get_messages)
@@ -526,10 +522,7 @@ def get_llm(
             probs_relative = {token: prob / total_prob for token, prob in probs.items()}
             return CostlyResponse(
                 output=probs_relative,
-                cost_info={
-                    "input_tokens": usage.prompt_tokens,
-                    "output_tokens": usage.completion_tokens,
-                },
+                cost_info=usage,
             )
         return {
             "client": client,
