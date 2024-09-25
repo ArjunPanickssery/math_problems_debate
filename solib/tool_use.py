@@ -1,12 +1,16 @@
-from typing import Callable, Dict, List, Literal, Union
+from typing import Callable, Dict, List, Literal, Tuple, Union
 import torch
 torch.set_grad_enabled(False)
 from transformers import AutoTokenizer, AutoModelForCausalLM, StoppingCriteria, StoppingCriteriaList
 import re
 import ast, operator
 import json
+
+from langchain_core.messages import HumanMessage, ToolMessage, SystemMessage, BaseMessage
 from langchain.tools import tool, StructuredTool
 from langchain_core.tools import render_text_description
+
+from solib.utils import apply, apply_async
 
 
 def math_eval(expr: str) -> Union[str, float]:
@@ -107,10 +111,14 @@ class ToolStopper(StoppingCriteria):
                 return True
         return False
 
+def get_structured_tools(tools: List[Callable | StructuredTool]) -> Tuple[Dict[str, Callable], List[StructuredTool]]:
+    tool_map = {tool.__name__: tool for tool in tools}
+    structured_tools = [(t if isinstance(t, StructuredTool) else tool(t)) for t in tools]
+    return tool_map, structured_tools
+
 
 def render_tools(tools: List[Union[Callable, StructuredTool]]) -> str:
-    tool_text = render_text_description([t if isinstance(t, StructuredTool) else tool(t)
-                                                   for t in tools])
+    tool_text = render_text_description(get_structured_tools(tools)[1])
     return tool_text
 
 
@@ -152,7 +160,7 @@ class HuggingFaceToolCaller:
 
     def __init__(self, tokenizer, model, tools=None):
         self.tools = tools
-        self.tool_map = {tool.__name__: tool for tool in tools}
+        self.tool_map = get_structured_tools(tools)[0]
         self.stopper = ToolStopper(tokenizer)
 
         self.tokenizer = tokenizer
@@ -185,4 +193,21 @@ class HuggingFaceToolCaller:
                 return output
 
 
-# def tool_use_loop_generate(messages, model, max_tokens, response_model, temperature)
+def tool_use_loop_generate(input: List[BaseMessage],
+                           get_response: Callable[[List[BaseMessage]], BaseMessage],
+                           tool_map: Dict[str, Callable],
+                           **kwargs):
+    start_len = len(input)
+    while True:
+        response = apply(get_response,
+                         **{'input': input,
+                          **kwargs})
+        input.append(response)
+        if response.tool_calls:
+            for tool_call in response.tool_calls:
+                tool_name = tool_call['name']
+                tool_args = tool_call['args']
+                tool_result = tool_map[tool_name](**tool_args)
+                input.append(ToolMessage(tool_result, tool_call_id=tool_call['id']))
+        else:
+            return input[start_len:]

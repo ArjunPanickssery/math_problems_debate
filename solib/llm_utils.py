@@ -15,6 +15,7 @@ LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRA
 IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """
 
+from functools import partial
 import os
 import asyncio
 import json
@@ -25,6 +26,13 @@ from perscache import Cache
 from perscache.serializers import JSONSerializer
 from costly import Costlog, CostlyResponse, costly
 from costly.simulators.llm_simulator_faker import LLM_Simulator_Faker
+
+from langchain_core.messages import HumanMessage, ToolMessage, SystemMessage, BaseMessage
+from langchain_openai import ChatOpenAI
+from langchain_mistralai import ChatMistralAI
+from langchain_anthropic import ChatAnthropic
+
+
 from solib.utils import apply, apply_async
 from solib.datatypes import Prob
 from solib import tool_use
@@ -32,11 +40,7 @@ from solib.tool_use import ToolStopper, HuggingFaceToolCaller
 
 if TYPE_CHECKING:
     from transformers import AutoTokenizer
-    from openai import AsyncOpenAI, OpenAI
-    from anthropic import AsyncAnthropic, Anthropic
-    from mistralai.async_client import MistralAsyncClient, MistralClient
-    from mistralai.client import MistralClient
-    from instructor import Instructor
+
 
 class PydanticJSONSerializer(JSONSerializer):
     @staticmethod
@@ -107,18 +111,19 @@ async def parallelized_call(
 
 def format_prompt(
     prompt: str = None,
-    messages: list[dict[str, str]] = None,
+    messages: list[dict[str, str] | BaseMessage] = None,
     input_string: str = None,
     tokenizer: Union["AutoTokenizer", None] = None,
     system_message: str | None = None,
     words_in_mouth: str | None = None,
     tools: list[callable] = None,
     natively_supports_tools: bool = False,
-) -> dict[Literal["messages", "input_string"], str | list[dict[str, str]]]:
+    msg_type: Literal["langchain", "dict"] = "dict",
+) -> dict[Literal["messages", "input_string"], str | list[dict[str, str] | BaseMessage]]:
     """
     Three types of prompts:
         prompt: 'What is the capital of the moon?'
-        messages: a list[dict[str, str]] in the Chat Message format
+        messages: a list[dict[str, str] | BaseMessage] in the Chat Message format
         input_string: a string that the LLM can directly <im_start> etc.
 
     This converts prompt -> messages -> input_string. Returns both messages
@@ -128,7 +133,7 @@ def format_prompt(
     Args:
         prompt: str: Prompt to convert. Either prompt or messages must be provided
             to calculate input_string.
-        messages: list[dict[str, str]]: Messages to convert. Either prompt or
+        messages: list[dict[str, str] | BaseMessage]: Messages to convert. Either prompt or
             messages must be provided to calculate input_string.
         tokenizer: AutoTokenizer: Tokenizer to use for the conversion.
         system_message: str | None: System message to add to the messages. Will be
@@ -140,6 +145,9 @@ def format_prompt(
             them in the `tools` parameter in apply_chat_template if tokenizer is supplied. If False,
             we will use the default tool prompt in tool_use.HuggingFaceToolCaller.TOOLS_PROMPT, and
             we will append it as the first system message to the messages.
+        msg_type: Literal["langchain", "mistral", "dict"]: Type of messages. If "langchain", messages
+            will be langchain.BaseMessages. If "mistral", messages will be in the mistral ChatMessages.
+            If "dict", messages will be in the dictionary format
     Returns:
         dict: with keys "messages" and "input_string". "input_string" will be None
             if tokenizer is None.
@@ -148,12 +156,20 @@ def format_prompt(
         if messages is None:
 
             assert prompt is not None
+
             messages = []
             if system_message is not None:
-                messages.append({"role": "system", "content": system_message})
-            messages.append({"role": "user", "content": prompt})
+                if msg_type == "langchain":
+                    messages.append(SystemMessage(content=system_message))
+                else:
+                    messages.append({"role": "system", "content": system_message})
 
-        if tools and not natively_supports_tools:
+            if msg_type == "langchain":
+                messages.append(HumanMessage(content=prompt))
+            else:
+                messages.append({"role": "user", "content": prompt})
+
+        if tools and not natively_supports_tools:   # technically, we should check msg_type here, but we're assuming all chat API models natively support tools
             messages.insert(0, {"role": "system", "content": tool_use.get_tool_prompt(tools)})
 
         if tokenizer is not None:
@@ -258,20 +274,17 @@ def get_llm(
         }
 
     else:
-        if model.startswith("or:"):  # OpenRouter
-            import openai
+        natively_supports_tools = True  # assume all chat API models natively support tools
+        if tools is not None:
+            tool_map, structured_tools = tool_use.get_structured_tools(tools)
+        msg_type = 'dict' if use_instructor else 'langchain'
+        input_name = "input" if msg_type == "langchain" else "messages"   # langchain uses 'input' instead of 'messages'
 
+        if model.startswith("or:"):  # OpenRouter
             model_or = model.split("or:")[1]
             api_key = os.getenv("OPENROUTER_API_KEY")
-            if use_async:
-                client = openai.AsyncOpenAI(
-                    base_url="https://openrouter.ai/api/v1", api_key=api_key
-                )
-            else:
-                client = openai.OpenAI(
-                    base_url="https://openrouter.ai/api/v1", api_key=api_key
-                )
-            get_response = client.chat.completions.create
+            client = ChatOpenAI(model=model, base_url="https://openrouter.ai/api/v1", api_key=api_key)
+
             if use_instructor:
                 import instructor
                 from instructor.mode import Mode
@@ -284,37 +297,20 @@ def get_llm(
                 client = instructor.from_openai(client, mode=mode)
         else:
             if model.startswith(("gpt", "openai", "babbage", "davinci")):
-                import openai
-
                 api_key = os.getenv("OPENAI_API_KEY")
-                if use_async:
-                    client = openai.AsyncOpenAI(api_key=api_key)
-                else:
-                    client = openai.OpenAI(api_key=api_key)
-                get_response = client.chat.completions.create
+                client = ChatOpenAI(model=model, api_key=api_key)
+
             elif model.startswith(("claude", "anthropic")):
-                import anthropic
-
                 api_key = os.getenv("ANTHROPIC_API_KEY")
-                if use_async:
-                    client = anthropic.AsyncAnthropic(api_key=api_key)
-                else:
-                    client = anthropic.Anthropic(api_key=api_key)
-                get_response = client.messages.create
+                client = ChatAnthropic(model=model, api_key=api_key)
+
             elif model.startswith("mistral"):
-                if use_async:
-                    from mistralai.async_client import MistralAsyncClient
+                api_key = os.getenv("MISTRAL_API_KEY")
+                client = ChatMistralAI(model=model, api_key=api_key)
 
-                    api_key = os.getenv("MISTRAL_API_KEY")
-                    client = MistralAsyncClient(api_key=api_key)
-                else:
-                    from mistralai.client import MistralClient
-
-                    api_key = os.getenv("MISTRAL_API_KEY")
-                    client = MistralClient(api_key=api_key)
-                get_response = client.chat
             else:
                 raise ValueError(f"Model {model} is not supported for now")
+
             if use_instructor:
                 import instructor
                 from instructor.mode import Mode
@@ -339,21 +335,29 @@ def get_llm(
                 return raw_response, usage
 
         else:
-            # get_response already set above
+            if tools is not None:
+                client = client.bind_tools(structured_tools)
+                _get_response = client.ainvoke if use_async else client.invoke
+                get_response = partial(tool_use.tool_use_loop_generate, get_response=_get_response, tool_map=tool_map)
+            else:
+                get_response = client.ainvoke if use_async else client.invoke
+
             def process_response(response):
-                raw_response = response.choices[0].message.content
-                usage = response.usage
+                if isinstance(response, list):   # handle tool calling case
+                    raw_response = [r for r in response if not isinstance(r, HumanMessage)]
+                    usage = {k: sum([r.usage_metadata[k] for r in response
+                                     if hasattr(r, 'usage_metadata')]) for k in response[0].usage_metadata}
+                else:
+                    raw_response = response.content
+                    usage = response.usage_metadata
                 return raw_response, usage
 
-        # assume tool support for all API models
-        natively_supports_tools = True
 
         _get_messages = lambda kwargs: format_prompt(
             prompt=kwargs.get("prompt"),
             messages=kwargs.get("messages"),
             system_message=kwargs.get("system_message"),
-            tools=tools,
-            natively_supports_tools=natively_supports_tools
+            msg_type=msg_type
         )["messages"]
 
         @costly(simulator=LLM_Simulator.simulate_llm_call, messages=_get_messages)
@@ -371,21 +375,13 @@ def get_llm(
                 prompt=prompt,
                 messages=messages,
                 system_message=system_message,
-                tools=tools,
-                natively_supports_tools=natively_supports_tools
+                msg_type=msg_type
             )["messages"]
-
-            if model.startswith("mistral"):
-                from mistralai.client import ChatMessage
-
-                messages = [
-                    ChatMessage(role=x["role"], content=x["content"]) for x in messages
-                ]
 
             response = apply(
                 get_response,
                 **{
-                    "messages": messages,
+                    input_name: messages,
                     "model": model,
                     "max_tokens": max_tokens,
                     "response_model": response_model,
@@ -397,8 +393,8 @@ def get_llm(
             return CostlyResponse(
                 output=raw_response,
                 cost_info={
-                    "input_tokens": usage.prompt_tokens,
-                    "output_tokens": usage.completion_tokens,
+                    "input_tokens": usage['input_tokens'],
+                    "output_tokens": usage['output_tokens'],
                 },
             )
 
@@ -417,21 +413,13 @@ def get_llm(
                 prompt=prompt,
                 messages=messages,
                 system_message=system_message,
-                tools=tools,
-                natively_supports_tools=natively_supports_tools
+                msg_type=msg_type
             )["messages"]
-
-            if model.startswith("mistral"):
-                from mistralai.client import ChatMessage
-
-                messages = [
-                    ChatMessage(role=x["role"], content=x["content"]) for x in messages
-                ]
 
             response = await apply_async(
                 get_response,
                 **{
-                    "messages": messages,
+                    input_name: messages,
                     "model": model,
                     "max_tokens": max_tokens,
                     "response_model": response_model,
@@ -463,23 +451,15 @@ def get_llm(
                 prompt=prompt,
                 messages=messages,
                 system_message=system_message,
-                tools=tools,
-                natively_supports_tools=natively_supports_tools
+                msg_type=msg_type
             )["messages"]
-
-            if model.startswith("mistral"):
-                from mistralai.client import ChatMessage
-
-                messages = [
-                    ChatMessage(role=x["role"], content=x["content"]) for x in messages
-                ]
 
             max_tokens = max(len(token) for token in return_probs_for)
 
             response = apply(
                 get_response,
                 **{
-                    "messages": messages,
+                    input_name: messages,
                     "model": model,
                     "max_tokens": max_tokens,
                     "logprobs": True,
@@ -519,23 +499,15 @@ def get_llm(
                 prompt=prompt,
                 messages=messages,
                 system_message=system_message,
-                tools=tools,
-                natively_supports_tools=natively_supports_tools
+                msg_type=msg_type
             )["messages"]
-
-            if model.startswith("mistral"):
-                from mistralai.client import ChatMessage
-
-                messages = [
-                    ChatMessage(role=x["role"], content=x["content"]) for x in messages
-                ]
 
             max_tokens = max(len(token) for token in return_probs_for)
 
             response = await apply_async(
                 get_response,
                 **{
-                    "messages": messages,
+                    input_name: messages,
                     "model": model,
                     "max_tokens": max_tokens,
                     "logprobs": True,
