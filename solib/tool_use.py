@@ -6,7 +6,7 @@ import re
 import ast, operator
 import json
 
-from langchain_core.messages import HumanMessage, ToolMessage, SystemMessage, BaseMessage
+from langchain_core.messages import HumanMessage, ToolMessage, SystemMessage, BaseMessage, AIMessage
 from langchain.tools import tool, StructuredTool
 from langchain_core.tools import render_text_description
 
@@ -53,6 +53,7 @@ def math_eval(expr: str) -> Union[str, float]:
         return eval_node(node)
     except ValueError as e:
         return "Invalid expression"
+
 
 
 class ToolStopper(StoppingCriteria):
@@ -123,6 +124,7 @@ def render_tools(tools: List[Union[Callable, StructuredTool]]) -> str:
 
 
 def get_tool_prompt(tools: List[Union[Callable, StructuredTool]]) -> str:
+    # prompt format based off of https://huggingface.co/NousResearch/Hermes-2-Pro-Llama-3-8B/tree/main
     TOOLS_PROMPT = """
 You are a tool calling LLM that has access to the following set of tools.
 You are provided with function signatures within <tools></tools> XML tags.
@@ -135,29 +137,54 @@ Don\'t make assumptions about what values to plug into functions. Here are the a
 
 Every tool call should be surrounded by <tool_call></tool_call> tags. And should take the form of a JSON object with the following format:
 <tool_call>
-{{"name": <function-name>, "arguments": <args-dict>}}
+{{"name": <function-name>, "args": <args-dict>}}
 </tool_call>
 
 The result will then be automatically supplied in the form of a JSON object with the following format:
 <tool_result>
-{{"name": <function-name>, "result": <result>, "arguments": <args-dict>}}
+{{"name": <function-name>, "result": <result>, "args": <args-dict>}}
 </tool_result>
 """
     rendered_tools = render_tools(tools)
     return TOOLS_PROMPT.format(rendered_tools=rendered_tools)
 
 
-class HuggingFaceToolCaller:
-    TOOL_RESULT_PROMPT = """
+TOOL_RESULT_PROMPT = """
 <tool_result>
 {{
     "name": {name},
     "result": {result},
-    "arguments": {arguments}
+    "args": {arguments}
 }}
 </tool_result>
 """
 
+
+def render_tool_call_result(name: str, result: str, args: Dict[str, str]) -> str:
+
+    return TOOL_RESULT_PROMPT.format(name=name, result=result, arguments=args)
+
+def render_tool_call_conversation(response: List[BaseMessage]) -> str:
+    raw_response = ""
+    tool_calls = {}   # map tool call ids to their associated messages
+    for r in response:
+        if isinstance(r, HumanMessage):  # ignore input prompt
+            continue
+        elif isinstance(r, AIMessage):
+            if r.tool_calls:
+                for t in r.tool_calls:
+                    tool_calls[t['id']] = t
+                    tool_json = {"name": t['name'], "args": t['args']}
+                    raw_response += f"\n<tool_call>\n{tool_json}\n</tool_call>\n"
+            else:
+                raw_response += r.content
+        elif isinstance(r, ToolMessage):  # tool response
+            tool_call = tool_calls[r.tool_call_id]
+            raw_response += render_tool_call_result(tool_call['name'], r.content, tool_call['args'])
+    return raw_response
+
+
+class HuggingFaceToolCaller:
     def __init__(self, tokenizer, model, tools=None):
         self.tools = tools
         self.tool_map = get_structured_tools(tools)[0]
@@ -179,13 +206,13 @@ class HuggingFaceToolCaller:
             tool_call = self.stopper.find_tool_call(generated_text)
             if tool_call:
                 tool_name = tool_call.get('name', 'Must supply the `name` field for valid tool calls')
-                args = tool_call.get('arguments', {})
+                args = tool_call.get('args', {})
                 try:
                     tool_result = self.tool_map.get(tool_name, lambda: 'Invalid tool name')(**args)
                 except Exception as e:
                     tool_result = f"Error: {e}"
                 # should add handling here to turn the args into the right types
-                result = self.TOOL_RESULT_PROMPT.format(name=tool_name, result=tool_result, arguments=args)
+                result = render_tool_call_result(tool_name, tool_result, args)
                 result_ids = self.tokenizer.encode(result, return_tensors='pt', add_special_tokens=False).to(self.device)
                 input_ids = torch.cat([output, result_ids], dim=-1)
                 last_length = len(input_ids[0])
@@ -204,10 +231,8 @@ def tool_use_loop_generate(input: List[BaseMessage],
                           **kwargs})
         input.append(response)
         if response.tool_calls:
-            for tool_call in response.tool_calls:
-                tool_name = tool_call['name']
-                tool_args = tool_call['args']
-                tool_result = tool_map[tool_name](**tool_args)
-                input.append(ToolMessage(tool_result, tool_call_id=tool_call['id']))
+            for t in response.tool_calls:
+                tool_result = tool_map[t['name']](**t['args'])
+                input.append(ToolMessage(tool_result, tool_call_id=t['id']))
         else:
             return input[start_len:]

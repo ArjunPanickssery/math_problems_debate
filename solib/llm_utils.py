@@ -27,7 +27,7 @@ from perscache.serializers import JSONSerializer
 from costly import Costlog, CostlyResponse, costly
 from costly.simulators.llm_simulator_faker import LLM_Simulator_Faker
 
-from langchain_core.messages import HumanMessage, ToolMessage, SystemMessage, BaseMessage
+from langchain_core.messages import HumanMessage, ToolMessage, SystemMessage, BaseMessage, AIMessage
 from langchain_openai import ChatOpenAI
 from langchain_mistralai import ChatMistralAI
 from langchain_anthropic import ChatAnthropic
@@ -343,8 +343,8 @@ def get_llm(
                 get_response = client.ainvoke if use_async else client.invoke
 
             def process_response(response):
-                if isinstance(response, list):   # handle tool calling case
-                    raw_response = [r for r in response if not isinstance(r, HumanMessage)]
+                if isinstance(response, list):   # handle tool calling case, make the output match the hugging face case somewhat
+                    raw_response = tool_use.render_tool_call_conversation(response)
                     usage = {k: sum([r.usage_metadata[k] for r in response
                                      if hasattr(r, 'usage_metadata')]) for k in response[0].usage_metadata}
                 else:
