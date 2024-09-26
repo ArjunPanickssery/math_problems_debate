@@ -1,4 +1,4 @@
-from typing import Self
+from typing import Callable, List, Self
 from dataclasses import dataclass
 from solib.utils import random
 from solib.llm_utils import get_llm_response, get_llm_response_async
@@ -25,12 +25,13 @@ class Debater:
             model=self.model,
             max_tokens=self.max_wordceling,
             words_in_mouth=words_in_mouth,
+            tools=self.tools,
             **kwargs
         )
         return self.TranscriptItem(answer=answer, argument=argument)
 
     def __init__(
-        self, prompt: str = None, model: str = None, max_wordceling: int | None = None
+        self, prompt: str = None, model: str = None, max_wordceling: int | None = None, tools: List[Callable] | None = None
     ):
         """Initialize a default / basic Debater. Can be overriden in subclasses.
 
@@ -39,6 +40,7 @@ class Debater:
             model (str): model for the debater. Default None.
             max_wordceling (int | None): maximum number of tokens for the debater.
                 E.g. 2048 for a normal one, or 80 for tweet_debater. Default None.
+            tools (List[Callable] | None): list of tools for the debater. Default None.
         """
         if prompt is None:
             prompt = (
@@ -57,6 +59,7 @@ class Debater:
         if max_wordceling is None:
             max_wordceling = 2048
         self.max_wordceling = max_wordceling
+        self.tools = tools
 
 
 class SequentialDebate(Protocol):

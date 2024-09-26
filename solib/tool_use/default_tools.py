@@ -40,6 +40,6 @@ def math_eval(expr: str) -> Union[str, float]:
             raise ValueError(f"Unsupported type {type(node)}")
 
     try:
-        return eval_node(node)
+        return int(eval_node(node))
     except ValueError as e:
         return "Invalid expression"

@@ -26,6 +26,7 @@ from perscache import Cache
 from perscache.serializers import JSONSerializer
 from costly import Costlog, CostlyResponse, costly
 from costly.simulators.llm_simulator_faker import LLM_Simulator_Faker
+import warnings
 
 from langchain_core.messages import HumanMessage, ToolMessage, SystemMessage, BaseMessage, AIMessage
 from langchain_core.runnables import ConfigurableField
@@ -313,9 +314,19 @@ def get_llm(
                 raw_response = solib.tool_use.tool_rendering.render_tool_call_conversation(response)
                 usage = {k: sum([r.usage_metadata[k] for r in response
                                     if hasattr(r, 'usage_metadata')]) for k in response[0].usage_metadata}
-            else:
+            elif isinstance(response, BaseMessage): # handle singleton messages
                 raw_response = response.content
                 usage = response.usage_metadata
+            elif isinstance(response, dict):   # otherwise, we are using structured output
+                raw = response['raw']
+                # probably should do some error handling here if 'parsing_error' is set
+                parsed = response['parsed']
+                if response['parsing_error'] is not None:
+                    print(raw)
+                    raise ValueError(f"Error parsing structured output: {response['parsing_error']}")
+
+                raw_response = parsed
+                usage = raw.usage_metadata
 
             return raw_response, usage
 
@@ -344,7 +355,7 @@ def get_llm(
                 bclient = bclient.bind(top_logprobs=top_logprobs, logprobs=True)
 
             if response_model:
-                bclient = bclient.with_structured_output(response_model)
+                bclient = bclient.with_structured_output(response_model, include_raw=True)
 
             get_response = bclient.ainvoke if use_async else bclient.invoke
 
@@ -360,6 +371,9 @@ def get_llm(
 
 
         def generate_format_and_bind(prompt, messages, system_message, max_tokens, response_model, tools, temperature, **kwargs):
+            if 'words_in_mouth' in kwargs:
+                warnings.warn(f"words_in_mouth is not supported for model type `{model}`", UserWarning)
+
             get_response = apply_client_bindings(tools=tools,
                                                  max_tokens=max_tokens,
                                                  temperature=temperature,
@@ -387,6 +401,8 @@ def get_llm(
             temperature: float = 0.0,
             **kwargs,
         ):
+            if 'words_in_mouth' in kwargs:
+                raise
 
             get_response, messages = generate_format_and_bind(prompt, messages, system_message, max_tokens, response_model, tools, temperature, **kwargs)
             response = get_response(messages)
