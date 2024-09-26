@@ -28,6 +28,7 @@ from costly import Costlog, CostlyResponse, costly
 from costly.simulators.llm_simulator_faker import LLM_Simulator_Faker
 
 from langchain_core.messages import HumanMessage, ToolMessage, SystemMessage, BaseMessage, AIMessage
+from langchain_core.runnables import ConfigurableField
 from langchain_openai import ChatOpenAI
 from langchain_mistralai import ChatMistralAI
 from langchain_anthropic import ChatAnthropic
@@ -145,9 +146,8 @@ def format_prompt(
             them in the `tools` parameter in apply_chat_template if tokenizer is supplied. If False,
             we will use the default tool prompt in tool_use.HuggingFaceToolCaller.TOOLS_PROMPT, and
             we will append it as the first system message to the messages.
-        msg_type: Literal["langchain", "mistral", "dict"]: Type of messages. If "langchain", messages
-            will be langchain.BaseMessages. If "mistral", messages will be in the mistral ChatMessages.
-            If "dict", messages will be in the dictionary format
+        msg_type: Literal["langchain", "dict"]: Type of messages. If "langchain", messages
+            will be langchain.BaseMessages.If "dict", messages will be in the dictionary format
     Returns:
         dict: with keys "messages" and "input_string". "input_string" will be None
             if tokenizer is None.
@@ -185,11 +185,10 @@ def format_prompt(
 def get_llm(
     model: str,
     use_async=False,
-    use_instructor: bool = False,
-    tools: list[callable] = None,
     hf_quantization_config = None
 ):
     if model.startswith("hf:"):  # Hugging Face local models
+        msg_type = 'dict'
         from transformers import AutoTokenizer, AutoModelForCausalLM
 
         api_key = os.getenv("HF_TOKEN")
@@ -200,11 +199,6 @@ def get_llm(
             model, device_map=device_map, token=api_key, quantization_config=hf_quantization_config
         )
 
-        natively_supports_tools = False
-        if tools:
-            model = HuggingFaceToolCaller(tokenizer, model, tools)
-            natively_supports_tools = model.natively_supports_tools()
-
         client = (tokenizer, model)
 
         # TODO: add cost logging for local models
@@ -214,9 +208,17 @@ def get_llm(
             input_string: str = None,
             system_message: str | None = None,
             words_in_mouth: str | None = None,
+            tools: list[callable] = None,
             max_tokens: int = 2048,
             **kwargs,
         ):
+            natively_supports_tools = False
+            if tools:
+                bmodel = HuggingFaceToolCaller(tokenizer, model, tools)
+                natively_supports_tools = bmodel.natively_supports_tools()
+            else:
+                bmodel = model
+
             input_string = format_prompt(
                 prompt=prompt,
                 messages=messages,
@@ -226,13 +228,14 @@ def get_llm(
                 words_in_mouth=words_in_mouth,
                 tools=tools,
                 natively_supports_tools=natively_supports_tools,
+                msg_type=msg_type
             )
 
             input_ids = tokenizer.encode(input_string['input_string'], return_tensors="pt",
-                                         add_special_tokens=False).to(model.device)
+                                         add_special_tokens=False).to(bmodel.device)
 
             input_length = input_ids.shape[1]
-            output = model.generate(input_ids, max_length=max_tokens, do_sample=False, temperature=None, top_p=None)[0]
+            output = bmodel.generate(input_ids, max_length=max_tokens, do_sample=False, temperature=None, top_p=None)[0]
 
             decoded = tokenizer.decode(output[input_length:], skip_special_tokens=True)
             return decoded
@@ -254,6 +257,7 @@ def get_llm(
                 tokenizer=tokenizer,
                 system_message=system_message,
                 words_in_mouth=words_in_mouth,
+                msg_type=msg_type
             )
             input_ids = tokenizer.encode(input_string['input_string'], return_tensors="pt").to(model.device)
             output = model(input_ids).logits[0, -1, :]
@@ -274,27 +278,13 @@ def get_llm(
         }
 
     else:
-        natively_supports_tools = True  # assume all chat API models natively support tools
-        if tools is not None:
-            tool_map, structured_tools = tool_use.get_structured_tools(tools)
-        msg_type = 'dict' if use_instructor else 'langchain'
-        input_name = "input" if msg_type == "langchain" else "messages"   # langchain uses 'input' instead of 'messages'
+        msg_type = 'langchain'
+        natively_supports_tools = True   # assume all chat API models natively support tools
 
         if model.startswith("or:"):  # OpenRouter
-            model_or = model.split("or:")[1]
             api_key = os.getenv("OPENROUTER_API_KEY")
             client = ChatOpenAI(model=model, base_url="https://openrouter.ai/api/v1", api_key=api_key)
 
-            if use_instructor:
-                import instructor
-                from instructor.mode import Mode
-
-                mode = Mode.MD_JSON
-                if model_or.startswith("mistral"):
-                    mode = Mode.MISTRAL_TOOLS
-                elif model_or.startswith("gpt"):
-                    mode = Mode.TOOLS_STRICT
-                client = instructor.from_openai(client, mode=mode)
         else:
             if model.startswith(("gpt", "openai", "babbage", "davinci")):
                 api_key = os.getenv("OPENAI_API_KEY")
@@ -311,59 +301,78 @@ def get_llm(
             else:
                 raise ValueError(f"Model {model} is not supported for now")
 
-            if use_instructor:
-                import instructor
-                from instructor.mode import Mode
+        client = client.configurable_fields(
+            max_tokens=ConfigurableField(id='max_tokens'),
+            temperature=ConfigurableField(id='temperature'),
+        )
 
-                mode = Mode.TOOLS
-                if model.startswith("mistral"):
-                    mode = Mode.MISTRAL_TOOLS
-                    client = instructor.from_mistral(client, mode=mode)
-                elif model.startswith("gpt"):
-                    mode = Mode.TOOLS_STRICT  # use OpenAI structured outputs
-                    client = instructor.from_openai(client, mode=mode)
-                elif model.startswith(("anthropic", "claude")):
-                    mode = Mode.ANTHROPIC_JSON
-                    client = instructor.from_anthropic(client, mode=mode)
 
-        if use_instructor:
-            get_response = client.chat.completions.create_with_completion
-
-            def process_response(response):
-                raw_response, completion = response
-                usage = completion.usage
-                usage = {'input_tokens': usage.prompt_tokens,
-                         'output_tokens': usage.completion_tokens}
-                return raw_response, usage
-
-        else:
-            if tools is not None:
-                client = client.bind_tools(structured_tools)
-                if use_async:
-                    get_response = partial(tool_use.tool_use_loop_generate_async, get_response=client.ainvoke, tool_map=tool_map)
-                else:
-                    get_response = partial(tool_use.tool_use_loop_generate, get_response=client.invoke, tool_map=tool_map)
+        def process_response(response):
+            if isinstance(response, list):   # handle tool calling case, make the output match the hugging face case somewhat
+                raw_response = tool_use.render_tool_call_conversation(response)
+                usage = {k: sum([r.usage_metadata[k] for r in response
+                                    if hasattr(r, 'usage_metadata')]) for k in response[0].usage_metadata}
             else:
-                get_response = client.ainvoke if use_async else client.invoke
+                raw_response = response.content
+                usage = response.usage_metadata
 
-            def process_response(response):
-                if isinstance(response, list):   # handle tool calling case, make the output match the hugging face case somewhat
-                    raw_response = tool_use.render_tool_call_conversation(response)
-                    usage = {k: sum([r.usage_metadata[k] for r in response
-                                     if hasattr(r, 'usage_metadata')]) for k in response[0].usage_metadata}
-                else:
-                    raw_response = response.content
-                    usage = response.usage_metadata
-
-                return raw_response, usage
+            return raw_response, usage
 
 
         _get_messages = lambda kwargs: format_prompt(
             prompt=kwargs.get("prompt"),
             messages=kwargs.get("messages"),
             system_message=kwargs.get("system_message"),
-            msg_type=msg_type
+            msg_type=msg_type,
+            natively_supports_tools=natively_supports_tools
         )["messages"]
+
+        def apply_client_bindings(tools: list[callable]=None,
+                                  max_tokens: int = 2048,
+                                  temperature: float = 0.0,
+                                  response_model: Union["BaseModel", None]=None,
+                                  top_logprobs: int = 5):
+
+            if tools and response_model:
+                raise ValueError("Cannot use tools with response_model")
+
+            bclient = client.with_config(configurable={'max_tokens': max_tokens,
+                                                      'temperature': temperature})
+
+            if top_logprobs:
+                bclient = bclient.bind(top_logprobs=top_logprobs, logprobs=True)
+
+            if response_model:
+                bclient = bclient.with_structured_output(response_model)
+
+            get_response = bclient.ainvoke if use_async else bclient.invoke
+
+            if tools:
+                tool_map, structured_tools = tool_use.get_structured_tools(tools)
+                bclient = bclient.bind_tools(structured_tools)
+                if use_async:
+                    get_response = partial(tool_use.tool_use_loop_generate_async, get_response=bclient.ainvoke, tool_map=tool_map)
+                else:
+                    get_response = partial(tool_use.tool_use_loop_generate, get_response=bclient.invoke, tool_map=tool_map)
+
+            return get_response
+
+
+        def generate_format_and_bind(prompt, messages, system_message, max_tokens, response_model, tools, temperature, **kwargs):
+            get_response = apply_client_bindings(tools=tools,
+                                                 max_tokens=max_tokens,
+                                                 temperature=temperature,
+                                                 response_model=response_model)
+
+            messages = format_prompt(
+                prompt=prompt,
+                messages=messages,
+                system_message=system_message,
+                msg_type=msg_type,
+                natively_supports_tools=natively_supports_tools
+            )["messages"]
+
+            return get_response, messages
 
         @costly(simulator=LLM_Simulator.simulate_llm_call, messages=_get_messages)
         def generate(
@@ -371,28 +380,15 @@ def get_llm(
             prompt: str = None,
             messages: list[dict[str, str]] = None,
             system_message: str | None = None,
-            max_tokens: int | None = None,
+            max_tokens: int = 2048,
             response_model: Union["BaseModel", None] = None,
+            tools: list[callable] = None,
             temperature: float = 0.0,
             **kwargs,
         ):
-            messages = format_prompt(
-                prompt=prompt,
-                messages=messages,
-                system_message=system_message,
-                msg_type=msg_type
-            )["messages"]
 
-            response = apply(
-                get_response,
-                **{
-                    input_name: messages,
-                    "model": model,
-                    "max_tokens": max_tokens,
-                    "response_model": response_model,
-                    "temperature": temperature,
-                },
-            )
+            get_response, messages = generate_format_and_bind(prompt, messages, system_message, max_tokens, response_model, tools, temperature, **kwargs)
+            response = get_response(messages)
 
             raw_response, usage = process_response(response)
             return CostlyResponse(
@@ -406,11 +402,41 @@ def get_llm(
             prompt: str = None,
             messages: list[dict[str, str]] = None,
             system_message: str | None = None,
-            max_tokens: int | None = None,
+            max_tokens: int = 2048,
             response_model: Union["BaseModel", None] = None,
+            tools: list[callable] = None,
             temperature: float = 0.0,
             **kwargs,
         ):
+            get_response, messages = generate_format_and_bind(prompt, messages, system_message, max_tokens, response_model, tools, temperature, **kwargs)
+
+            response = await get_response(messages)
+
+            raw_response, usage = process_response(response)
+            return CostlyResponse(
+                output=raw_response,
+                cost_info=usage,
+            )
+
+
+        def extract_probability(response, return_probs_for):
+            all_logprobs = response.response_metadata['logprobs']['content'][0]['top_logprobs']
+            all_logprobs_dict = {x['token']: x['logprob'] for x in all_logprobs}
+            probs = {token: 0 for token in return_probs_for}
+            for token, prob in all_logprobs_dict.items():
+                if token in probs:
+                    probs[token] = math.exp(prob)
+            total_prob = sum(probs.values())
+            probs_relative = {token: prob / total_prob for token, prob in probs.items()}
+            return probs_relative
+
+        def probability_format_and_bind(prompt, messages, system_message, return_probs_for, top_logprobs, temperature, **kwargs):
+            max_tokens = max(len(token) for token in return_probs_for)
+
+            get_response = apply_client_bindings(max_tokens=max_tokens,
+                                                 temperature=temperature,
+                                                 top_logprobs=top_logprobs)
+
             messages = format_prompt(
                 prompt=prompt,
                 messages=messages,
@@ -418,22 +444,8 @@ def get_llm(
                 msg_type=msg_type
             )["messages"]
 
-            response = await apply_async(
-                get_response,
-                **{
-                    input_name: messages,
-                    "model": model,
-                    "max_tokens": max_tokens,
-                    "response_model": response_model,
-                    "temperature": temperature,
-                },
-            )
+            return get_response, messages
 
-            raw_response, usage = process_response(response)
-            return CostlyResponse(
-                output=raw_response,
-                cost_info=usage,
-            )
 
         @costly(simulator=LLM_Simulator.simulate_llm_probs, messages=_get_messages)
         def return_probs(
@@ -446,35 +458,13 @@ def get_llm(
             temperature: float = 0.0,
             **kwargs,
         ):
-            messages = format_prompt(
-                prompt=prompt,
-                messages=messages,
-                system_message=system_message,
-                msg_type=msg_type
-            )["messages"]
+            get_response, messages = probability_format_and_bind(prompt, messages, system_message, return_probs_for, top_logprobs, temperature, **kwargs)
 
-            max_tokens = max(len(token) for token in return_probs_for)
+            response = get_response(messages)
 
-            response = apply(
-                get_response,
-                **{
-                    input_name: messages,
-                    "model": model,
-                    "max_tokens": max_tokens,
-                    "logprobs": True,
-                    "top_logprobs": top_logprobs,
-                    "temperature": temperature,
-                },
-            )
             raw_response, usage = process_response(response)
-            all_logprobs = response.choices[0].logprobs.content[0].top_logprobs
-            all_logprobs_dict = {x.token: x.logprob for x in all_logprobs}
-            probs = {token: 0 for token in return_probs_for}
-            for token, prob in all_logprobs_dict.items():
-                if token in probs:
-                    probs[token] = math.exp(prob)
-            total_prob = sum(probs.values())
-            probs_relative = {token: prob / total_prob for token, prob in probs.items()}
+            probs_relative = extract_probability(response, return_probs_for)
+
             return CostlyResponse(
                 output=probs_relative,
                 cost_info=usage,
@@ -491,35 +481,13 @@ def get_llm(
             temperature: float = 0.0,
             **kwargs,
         ):
-            messages = format_prompt(
-                prompt=prompt,
-                messages=messages,
-                system_message=system_message,
-                msg_type=msg_type
-            )["messages"]
+            get_response, messages = probability_format_and_bind(prompt, messages, system_message, return_probs_for, top_logprobs, temperature, **kwargs)
 
-            max_tokens = max(len(token) for token in return_probs_for)
+            response = await get_response(messages)
 
-            response = await apply_async(
-                get_response,
-                **{
-                    input_name: messages,
-                    "model": model,
-                    "max_tokens": max_tokens,
-                    "logprobs": True,
-                    "top_logprobs": top_logprobs,
-                    "temperature": temperature,
-                },
-            )
             raw_response, usage = process_response(response)
-            all_logprobs = response.choices[0].logprobs.content[0].top_logprobs
-            all_logprobs_dict = {x.token: x.logprob for x in all_logprobs}
-            probs = {token: 0 for token in return_probs_for}
-            for token, prob in all_logprobs_dict.items():
-                if token in probs:
-                    probs[token] = math.exp(prob)
-            total_prob = sum(probs.values())
-            probs_relative = {token: prob / total_prob for token, prob in probs.items()}
+            probs_relative = extract_probability(response, return_probs_for)
+
             return CostlyResponse(
                 output=probs_relative,
                 cost_info=usage,
@@ -553,8 +521,6 @@ def get_llm_response(
     ai = get_llm(
         model=model,
         use_async=False,
-        use_instructor=(response_model is not None),
-        tools=tools,
         hf_quantization_config=hf_quantization_config
     )
     return ai["generate"](
@@ -566,6 +532,7 @@ def get_llm_response(
         words_in_mouth=words_in_mouth,
         max_tokens=max_tokens,
         response_model=response_model,
+        tools=tools,
         temperature=temperature,
         cost_log=cost_log,
         **kwargs,
@@ -592,8 +559,6 @@ async def get_llm_response_async(
     ai = get_llm(
         model=model,
         use_async=True,
-        use_instructor=(response_model is not None),
-        tools=tools,
         hf_quantization_config=hf_quantization_config
     )
     return await ai["generate_async"](
@@ -605,6 +570,7 @@ async def get_llm_response_async(
         words_in_mouth=words_in_mouth,
         max_tokens=max_tokens,
         response_model=response_model,
+        tools=tools,
         temperature=temperature,
         cost_log=cost_log,
         **kwargs,
@@ -623,7 +589,6 @@ def get_llm_probs(
     top_logprobs: int = 5,
     temperature: float = 0.0,
     cost_log: Costlog = None,  # need to give explicitly b/c cache
-    tools: list[callable] = None,
     hf_quantization_config = None,
     **kwargs,
 ):
@@ -631,8 +596,6 @@ def get_llm_probs(
     ai = get_llm(
         model=model,
         use_async=False,
-        use_instructor=False,
-        tools=tools,
         hf_quantization_config=hf_quantization_config
     )
     return ai["return_probs"](
@@ -661,7 +624,6 @@ async def get_llm_probs_async(
     top_logprobs: int = 5,
     temperature: float = 0.0,
     cost_log: Costlog = None,  # need to give explicitly b/c cache
-    tools: list[callable] = None,
     hf_quantization_config = None,
     **kwargs,
 ):
@@ -669,8 +631,6 @@ async def get_llm_probs_async(
     ai = get_llm(
         model=model,
         use_async=True,
-        use_instructor=False,
-        tools=tools,
         hf_quantization_config=hf_quantization_config
     )
     return await ai["return_probs_async"](
