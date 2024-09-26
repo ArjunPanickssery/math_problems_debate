@@ -61,7 +61,6 @@ class Consultant:
             )
         self.prompt = prompt
         self.model = model
-        self.tools = tools
         if max_wordceling is None:
             max_wordceling = 2048
         self.max_wordceling = max_wordceling
@@ -86,6 +85,7 @@ class Client:
             model=self.model,
             max_tokens=self.max_wordceling,
             words_in_mouth=words_in_mouth,
+            tools=self.tools,
             **kwargs
         )
         return self.TranscriptItem(response=response)
