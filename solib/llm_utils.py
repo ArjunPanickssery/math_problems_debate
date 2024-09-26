@@ -34,10 +34,11 @@ from langchain_mistralai import ChatMistralAI
 from langchain_anthropic import ChatAnthropic
 
 
+import solib.tool_use.tool_rendering
 from solib.utils import apply, apply_async
 from solib.datatypes import Prob
-from solib import tool_use
-from solib.tool_use import ToolStopper, HuggingFaceToolCaller
+from solib.tool_use import tool_use
+from solib.tool_use.tool_use import ToolStopper, HuggingFaceToolCaller
 
 if TYPE_CHECKING:
     from transformers import AutoTokenizer
@@ -170,7 +171,7 @@ def format_prompt(
                 messages.append({"role": "user", "content": prompt})
 
         if tools and not natively_supports_tools:   # technically, we should check msg_type here, but we're assuming all chat API models natively support tools
-            messages.insert(0, {"role": "system", "content": tool_use.get_tool_prompt(tools)})
+            messages.insert(0, {"role": "system", "content": solib.tool_use.tool_rendering.get_tool_prompt(tools)})
 
         if tokenizer is not None:
             if tools and natively_supports_tools:
@@ -309,7 +310,7 @@ def get_llm(
 
         def process_response(response):
             if isinstance(response, list):   # handle tool calling case, make the output match the hugging face case somewhat
-                raw_response = tool_use.render_tool_call_conversation(response)
+                raw_response = solib.tool_use.tool_rendering.render_tool_call_conversation(response)
                 usage = {k: sum([r.usage_metadata[k] for r in response
                                     if hasattr(r, 'usage_metadata')]) for k in response[0].usage_metadata}
             else:
@@ -348,7 +349,7 @@ def get_llm(
             get_response = bclient.ainvoke if use_async else bclient.invoke
 
             if tools:
-                tool_map, structured_tools = tool_use.get_structured_tools(tools)
+                tool_map, structured_tools = solib.tool_use.tool_rendering.get_structured_tools(tools)
                 bclient = bclient.bind_tools(structured_tools)
                 if use_async:
                     get_response = partial(tool_use.tool_use_loop_generate_async, get_response=bclient.ainvoke, tool_map=tool_map)
