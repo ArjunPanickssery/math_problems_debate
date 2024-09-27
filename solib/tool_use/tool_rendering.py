@@ -14,14 +14,23 @@ TOOL_CALL_END_TAG = "</tool_call>"
 TOOL_RESULT_START_TAG = "<tool_result>"
 TOOL_RESULT_END_TAG = "</tool_result>"
 
+TOOL_CALL_TEMPLATE = """
+{call_start_tag}
+{{
+    "name": {name},
+    "args": {arguments}
+}}
+{call_end_tag}
+"""
+
 TOOL_RESULT_TEMPLATE = """
-<tool_result>
+{result_start_tag}
 {{
     "name": {name},
     "result": {result},
     "args": {arguments}
 }}
-</tool_result>
+{result_end_tag}
 """
 
 DEFAULT_TOOL_PROMPT_TEMPLATE = """
@@ -34,15 +43,11 @@ Don\'t make assumptions about what values to plug into functions. Here are the a
 {rendered_tools}
 </tools>
 
-Every tool call should be surrounded by {start_call_tag}{end_call_tag} tags. And should take the form of a JSON object with the following format:
-{start_call_tag}
-{{"name": <function-name>, "args": <args-dict>}}
-{end_call_tag}
+Every tool call should be surrounded by {start_call_tag}{end_call_tag} tags, and should take the form of a JSON object with the following format:
+{call_template}
 
 The result will then be automatically supplied in the form of a JSON object with the following format:
-{start_result_tag}
-{{"name": <function-name>, "result": <result>, "args": <args-dict>}}
-{end_result_tag}
+{result_template}
 """
 
 
@@ -68,8 +73,21 @@ def get_tool_prompt(tools: List[Union[Callable, StructuredTool]]) -> str:
     return DEFAULT_TOOL_PROMPT_TEMPLATE.format(
         start_call_tag=TOOL_CALL_START_TAG,
         end_call_tag=TOOL_CALL_END_TAG,
-        start_result_tag=TOOL_RESULT_START_TAG,
-        end_result_tag=TOOL_RESULT_END_TAG,
+
+        call_template=TOOL_CALL_TEMPLATE.format(
+            call_start_tag=TOOL_CALL_START_TAG,
+            call_end_tag=TOOL_CALL_END_TAG,
+            name="<function-name>",
+            arguments="<args-dict>"
+        ),
+
+        result_template=TOOL_RESULT_TEMPLATE.format(
+            result_start_tag=TOOL_RESULT_START_TAG,
+            result_end_tag=TOOL_RESULT_END_TAG,
+            name="<function-name>",
+            result="<result>",
+            arguments="<args-dict>"),
+
         rendered_tools=rendered_tools)
 
 def render_tool_call(name: str, args: Dict[str, str]) -> str:
@@ -77,13 +95,17 @@ def render_tool_call(name: str, args: Dict[str, str]) -> str:
     happening in API-based models, as these models typically will not give you the actual tokens
     that are generated. Also, this way we can make transcripts of API-based models and
     hugging face models more similar."""
-    return f"{TOOL_CALL_START_TAG}\n{{\"name\": {name}, \"args\": {args}}}\n{TOOL_CALL_END_TAG}"
+    return TOOL_CALL_TEMPLATE.format(name=name, arguments=args,
+                                     call_start_tag=TOOL_CALL_START_TAG,
+                                     call_end_tag=TOOL_CALL_END_TAG)
 
 
 def render_tool_call_result(name: str, result: str, args: Dict[str, str]) -> str:
     """Render a tool call result with the given name, result, and arguments. This is used to represent
     the outputs of tool calls in both API-based models and hugging face models."""
-    return TOOL_RESULT_TEMPLATE.format(name=name, result=result, arguments=args)
+    return TOOL_RESULT_TEMPLATE.format(name=name, result=result, arguments=args,
+                                       result_start_tag=TOOL_RESULT_START_TAG,
+                                       result_end_tag=TOOL_RESULT_END_TAG)
 
 
 def render_tool_call_conversation(response: List[BaseMessage]) -> str:
