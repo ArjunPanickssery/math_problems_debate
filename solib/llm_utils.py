@@ -34,8 +34,23 @@ from solib.tool_use.tool_use import ToolStopper, HuggingFaceToolCaller
 if TYPE_CHECKING:
     from transformers import AutoTokenizer
 
+class PydanticJSONSerializer(JSONSerializer):
+    @staticmethod
+    def default(obj):
+        if isinstance(obj, BaseModel):
+            return obj.model_dump()
+        raise TypeError(f'Object of type {obj.__class__.__name__} is not JSON serializable')
+
+    @classmethod
+    def dumps(cls, data):
+        return json.dumps(data, default=cls.default).encode('utf-8')
+
+    @classmethod
+    def loads(cls, data):
+        return json.loads(data.decode('utf-8'))
+
 load_dotenv()
-cache = Cache(serializer=JSONSerializer())
+cache = Cache(serializer=PydanticJSONSerializer())
 global_cost_log = Costlog(mode="jsonl")
 simulate = os.getenv("SIMULATE", False)
 
