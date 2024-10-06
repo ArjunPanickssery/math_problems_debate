@@ -29,7 +29,7 @@ class Question:
     @property
     def possible_answer_symbols(self) -> list[str]:
         return [answer.symbol for answer in self.possible_answers]
-    
+
     @property
     def possible_answers_dict(self) -> dict[str, Answer]:
         return {answer.symbol: answer for answer in self.possible_answers}

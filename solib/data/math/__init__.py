@@ -1,4 +1,6 @@
 import json
+import os.path as osp
+
 from solib.utils import random
 from solib.datatypes import Question, Answer
 
@@ -26,14 +28,17 @@ def transform(data_item: dict, **kwargs) -> Question:
         correct_answer=correct_answer,
     )
 
-
-def train_data(**kwargs) -> list[Question]:
-    with open("src/data/math/train.json", "r") as file:
+def load_data(path, **kwargs) -> list[Question]:
+    with open(path, "r") as file:
         data = json.load(file)
     return [transform(item, **kwargs) for item in data]
+
+
+def train_data(**kwargs) -> list[Question]:
+    train_path = osp.join(osp.dirname(osp.abspath(__file__)), "train.json")
+    return load_data(train_path, **kwargs)
 
 
 def test_data(**kwargs) -> list[Question]:
-    with open("src/data/math/test.json", "r") as file:
-        data = json.load(file)
-    return [transform(item, **kwargs) for item in data]
+    test_path = osp.join(osp.dirname(osp.abspath(__file__)), "test.json")
+    return load_data(test_path, **kwargs)

@@ -2,6 +2,8 @@ import pytest
 from solib.llm_utils import get_llm_response, get_llm_response_async, get_llm_probs, get_llm_probs_async
 import asyncio
 
+pytest_plugins = ('anyio',)
+
 @pytest.fixture(
     params=[
         "gpt-4o-mini",

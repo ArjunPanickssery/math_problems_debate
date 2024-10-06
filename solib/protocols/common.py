@@ -12,6 +12,7 @@ from solib.llm_utils import (
     parallelized_call,
 )
 from solib.datatypes import Answer, Question
+from solib.tool_use.tool_rendering import TOOL_RESULT_START_TAG, TOOL_RESULT_END_TAG
 
 
 class Transcript:
@@ -82,7 +83,9 @@ class Judge:
         "I want you to give me your most informed judgment on which answer "
         "is correct, based on any information I provide. Your response "
         "should simply be the option symbol (e.g. A, B) of one of the items "
-        "from POSSIBLE ANSWERS, and nothing else.\n\n"
+        "from POSSIBLE ANSWERS, and nothing else. Please note that anything "
+        f"that is included in {TOOL_RESULT_START_TAG}{TOOL_RESULT_END_TAG} "
+        "tags can be guaranteed to be true.\n\n"
         "{transcript}\n\n"
     )
 
