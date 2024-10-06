@@ -4,35 +4,81 @@ from typing import Any
 from pathlib import Path
 from pydantic import BaseModel, field_validator
 
-@dataclass
+
+@dataclass(frozen=True)
 class Answer:
-    symbol: str
-    value: Any
+    short: str
+    long: Any
 
     def __str__(self):
-        return f"{self.symbol}: {self.value}"
+        return f"{self.short}: {self.long}"
 
 
-@dataclass
+@dataclass(frozen=True)
 class Question:
+    """
+    A question with a set of possible answers that may be argued for.
+
+    Arguments:
+        question (str): The question to be answered.
+        answer_cases (dict[Answer, float]): A dictionary of answers that may be argued for, with
+            their associated "values" (e.g. 1 for the true answer, -1 for the false answer).
+            NOTE: self.answer_cases.values() should NEVER be shown to any AI, or bad things will happen.
+    """
+
     question: str
-    possible_answers: list[Answer]
-    correct_answer: Answer  # make sure this doesn't appear in __str__
+    answer_cases: dict[Answer, float]
 
     def __str__(self):
         return (
             f"QUESTION: {self.question}\n"
             + "POSSIBLE ANSWERS:\n"
-            + "\n".join(str(answer) for answer in self.possible_answers)
+            + "\n".join(
+                str(answer) for answer in self.answer_cases
+            )  # DO NOT add .values() here
         )
 
     @property
-    def possible_answer_symbols(self) -> list[str]:
-        return [answer.symbol for answer in self.possible_answers]
+    def answer_cases_short(self) -> list[str]:
+        return [answer.short for answer in self.answer_cases]
 
     @property
-    def possible_answers_dict(self) -> dict[str, Answer]:
-        return {answer.symbol: answer for answer in self.possible_answers}
+    def answer_cases_dict(self) -> dict[str, Answer]:
+        return {answer.short: answer for answer in self.answer_cases}
+
+    def neg(self, answer: Answer) -> Answer:
+        assert (
+            len(self.answer_cases) == 2
+        ), "question must have two answer cases to negate"
+        found_neg = False
+        for a in self.answer_cases:
+            if a != answer:
+                assert not found_neg, "both question.answer_cases different from answer"
+                negated_answer = a
+                found_neg = True
+        assert found_neg, "both question.answer_cases equal to answer"
+        return negated_answer
+
+    @property
+    def answers_by_value(self) -> dict[float, Answer]:
+        return {v: a for a, v in self.answer_cases.items()}
+
+    @property
+    def best_answer(self) -> Answer:
+        return self.answers_by_value[max(self.answer_cases)]
+
+    @property
+    def worst_answer(self) -> Answer:
+        return self.answers_by_value[min(self.answer_cases)]
+
+    @property
+    def true_answer(self) -> Answer:
+        return self.answers_by_value[1.0]
+
+    @property
+    def false_answer(self) -> Answer:
+        return self.answers_by_value[-1.0]
+
 
 class Prob(BaseModel):
     prob: float

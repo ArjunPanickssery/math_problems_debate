@@ -10,6 +10,7 @@ from solib.tool_use.tool_rendering import TOOL_RESULT_START_TAG, TOOL_RESULT_END
 VARIANT JUDGES
 """
 
+
 class JustAskProbabilityJudge(Judge):
     """Instead of asking a judge to make a binary choice and getting the token probabilities,
     we just ask the judge to give probabilities. We will ask it for probabilities for each
@@ -30,14 +31,16 @@ class JustAskProbabilityJudge(Judge):
     async def __call__(self, transcript: Transcript, **kwargs) -> "Self.TranscriptItem":
         probabilities = {}
         for answer in transcript.question.possible_answers:
-            words_in_mouth = f" The probability that the answer is {answer.symbol} is:\n\n"
+            words_in_mouth = (
+                f" The probability that the answer is {answer.symbol} is:\n\n"
+            )
             response = await get_llm_response_async(
                 prompt=self.prompt.format(transcript=transcript, answer=answer),
                 model=self.model,
                 response_model=Prob,
                 max_tokens=20,
                 words_in_mouth=words_in_mouth,
-                **kwargs
+                **kwargs,
             )
             if isinstance(response, dict):
                 prob = response["prob"]
@@ -85,21 +88,22 @@ class COTJudge(Judge):
             prompt=self.cot_prompt.format(transcript=transcript),
             model=self.model,
             max_tokens=2048,
-            **kwargs
+            **kwargs,
         )
         words_in_mouth = " I judge that the answer is:\n\n("
         probabilities = await get_llm_response_async(
             prompt=self.prompt.format(transcript=transcript, cot=cot),
             model=self.model,
-            return_probs_for=transcript.question.possible_answer_symbols,
+            return_probs_for=transcript.question.answer_cases_short,
             max_tokens=max(
                 len(answer_symbol)
-                for answer_symbol in transcript.question.possible_answer_symbols
+                for answer_symbol in transcript.question.answer_cases_short
             ),
             words_in_mouth=words_in_mouth,
-            **kwargs
+            **kwargs,
         )
         return COTJudge.TranscriptItem(probabilities=probabilities, cot=cot)
+
 
 class COTJustAskProbabilityJudge(COTJudge):
     """Judge with chain-of-thought prompting."""
@@ -129,18 +133,22 @@ class COTJustAskProbabilityJudge(COTJudge):
             prompt=self.cot_prompt.format(transcript=transcript),
             model=self.model,
             max_tokens=2048,
-            **kwargs
+            **kwargs,
         )
         probabilities = {}
         for answer in transcript.question.possible_answers:
-            words_in_mouth = f" The probability that the answer is {answer.symbol} is:\n\n"
+            words_in_mouth = (
+                f" The probability that the answer is {answer.symbol} is:\n\n"
+            )
             response = await get_llm_response_async(
-                prompt=self.prompt.format(transcript=transcript, answer=answer, cot=cot),
+                prompt=self.prompt.format(
+                    transcript=transcript, answer=answer, cot=cot
+                ),
                 model=self.model,
                 response_model=Prob,
                 max_tokens=5,
                 words_in_mouth=words_in_mouth,
-                **kwargs
+                **kwargs,
             )
             probabilities[answer.symbol] = response.prob
         # normalize probabilities
@@ -148,6 +156,7 @@ class COTJustAskProbabilityJudge(COTJudge):
         for answer in probabilities:
             probabilities[answer] /= total
         return COTJudge.TranscriptItem(probabilities=probabilities, cot=cot)
+
 
 class HumanJudge(Judge):
     """A human judge that can be used in a protocol. It is not a real judge, but
@@ -158,13 +167,16 @@ class HumanJudge(Judge):
         probabilities = {}
         print(transcript)
         for answer in transcript.question.possible_answers:
-            probability = float(input(f"What is your probability that the answer is {answer.symbol}? "))
+            probability = float(
+                input(f"What is your probability that the answer is {answer.symbol}? ")
+            )
             probabilities[answer.symbol] = probability
         # normalize probabilities
         total = sum(probabilities.values())
         for answer in probabilities:
             probabilities[answer] /= total
         return self.TranscriptItem(probabilities=probabilities)
+
 
 class RandomJudge(Judge):
     """A random judge that can be used in a protocol. It will randomly assign

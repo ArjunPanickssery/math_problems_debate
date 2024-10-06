@@ -62,7 +62,7 @@ class Judge:
         probabilities = await get_llm_probs_async(
             prompt=self.prompt.format(transcript=transcript),
             model=self.model,
-            return_probs_for=transcript.question.possible_answer_symbols,
+            return_probs_for=transcript.question.answer_cases_short,
             words_in_mouth=words_in_mouth,
             **kwargs,
         )
@@ -88,6 +88,11 @@ class Judge:
         "tags can be guaranteed to be true.\n\n"
         "{transcript}\n\n"
     )
+
+
+class Agent:
+    def __call__(self, transcript: Transcript, answer_case: Answer) -> Answer:
+        raise NotImplementedError
 
 
 # ABC
