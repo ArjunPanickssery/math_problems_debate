@@ -35,20 +35,24 @@ from solib.tool_use.tool_use import ToolStopper, HuggingFaceToolCaller
 if TYPE_CHECKING:
     from transformers import AutoTokenizer
 
+
 class PydanticJSONSerializer(JSONSerializer):
     @staticmethod
     def default(obj):
         if isinstance(obj, BaseModel):
             return obj.model_dump()
-        raise TypeError(f'Object of type {obj.__class__.__name__} is not JSON serializable')
+        raise TypeError(
+            f"Object of type {obj.__class__.__name__} is not JSON serializable"
+        )
 
     @classmethod
     def dumps(cls, data):
-        return json.dumps(data, default=cls.default).encode('utf-8')
+        return json.dumps(data, default=cls.default).encode("utf-8")
 
     @classmethod
     def loads(cls, data):
-        return json.loads(data.decode('utf-8'))
+        return json.loads(data.decode("utf-8"))
+
 
 load_dotenv()
 cache = Cache(serializer=PydanticJSONSerializer())
@@ -166,11 +170,15 @@ def format_prompt(
                 messages.append({"role": "user", "content": prompt})
 
         if tools:
-            tool_msg = solib.tool_use.tool_rendering.get_tool_prompt(tools, natively_supports_tools)
+            tool_msg = solib.tool_use.tool_rendering.get_tool_prompt(
+                tools, natively_supports_tools
+            )
             if msg_type == "langchain":
                 messages.insert(0, SystemMessage(content=tool_msg))
-            elif not natively_supports_tools:  # local models (where msg_type="dict") that natively support tools will have the tool prompt added by apply_chat_template
-                messages.insert(   # otherwise, we manually create one
+            elif (
+                not natively_supports_tools
+            ):  # local models (where msg_type="dict") that natively support tools will have the tool prompt added by apply_chat_template
+                messages.insert(  # otherwise, we manually create one
                     0,
                     {
                         "role": "system",
@@ -188,6 +196,25 @@ def format_prompt(
         if words_in_mouth is not None:
             input_string += words_in_mouth
     return {"messages": messages, "input_string": input_string}
+
+
+def convert_langchain_to_dict(
+    messages: list[BaseMessage | dict[str, str]]
+) -> list[dict[str, str]]:
+    # TODO: modify this to support ToolMessage
+    messages_out = []
+    for m in messages:
+        if (
+            isinstance(m, HumanMessage)
+            or isinstance(m, AIMessage)
+            or isinstance(m, SystemMessage)
+        ):
+            messages_out.append({"role": m.type, "content": m.content})
+        elif isinstance(m, ToolMessage):
+            warnings.warn("ToolMessage is not supported yet")
+        elif isinstance(m, dict):
+            messages_out.append(m)
+    return messages_out
 
 
 def get_llm(model: str, use_async=False, hf_quantization_config=None):
@@ -337,7 +364,11 @@ def get_llm(model: str, use_async=False, hf_quantization_config=None):
                         response
                     )
                 )
-                token_types = [k for k,v in response[0].usage_metadata.items() if isinstance(v, int)]
+                token_types = [
+                    k
+                    for k, v in response[0].usage_metadata.items()
+                    if isinstance(v, int)
+                ]
                 usage = defaultdict(int)
                 for token_type in token_types:
                     for r in response:
@@ -365,13 +396,15 @@ def get_llm(model: str, use_async=False, hf_quantization_config=None):
 
             return raw_response, usage
 
-        _get_messages = lambda kwargs: format_prompt(
-            prompt=kwargs.get("prompt"),
-            messages=kwargs.get("messages"),
-            system_message=kwargs.get("system_message"),
-            msg_type=msg_type,
-            natively_supports_tools=natively_supports_tools,
-        )["messages"]
+        _get_messages = lambda kwargs: convert_langchain_to_dict(
+            format_prompt(
+                prompt=kwargs.get("prompt"),
+                messages=kwargs.get("messages"),
+                system_message=kwargs.get("system_message"),
+                msg_type=msg_type,
+                natively_supports_tools=natively_supports_tools,
+            )["messages"]
+        )
 
         def apply_client_bindings(
             tools: list[callable] = None,
