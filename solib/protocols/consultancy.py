@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from solib.utils import random
 from solib.llm_utils import get_llm_response, get_llm_response_async
 from solib.datatypes import Answer, Question
-from solib.protocols.common import Transcript, Judge, Protocol
+from solib.protocols.abstract import Transcript, Judge, Protocol
 
 
 # ABC

@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from solib.datatypes import Prob
 from solib.utils import random
 from solib.llm_utils import get_llm_response, get_llm_response_async
-from solib.protocols.common import Transcript, Judge
+from solib.protocols.abstract import Transcript, Judge
 from solib.tool_use.tool_rendering import TOOL_RESULT_START_TAG, TOOL_RESULT_END_TAG
 
 """

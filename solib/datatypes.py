@@ -61,6 +61,9 @@ class Question:
 
     @property
     def answers_by_value(self) -> dict[float, Answer]:
+        assert len(set(self.answer_cases.values())) == len(
+            self.answer_cases
+        ), "answer_cases must have unique values to invert"
         return {v: a for a, v in self.answer_cases.items()}
 
     @property
