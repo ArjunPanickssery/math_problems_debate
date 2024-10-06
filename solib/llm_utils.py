@@ -57,7 +57,7 @@ class PydanticJSONSerializer(JSONSerializer):
 load_dotenv()
 cache = Cache(serializer=PydanticJSONSerializer())
 global_cost_log = Costlog(mode="jsonl")
-simulate = os.getenv("SIMULATE", False)
+simulate = os.getenv("SIMULATE", "False").lower() == "true"
 
 
 class LLM_Simulator(LLM_Simulator_Faker):

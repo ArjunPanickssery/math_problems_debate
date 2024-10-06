@@ -28,11 +28,11 @@ Throughout this repo, always use `solib.utils.random(*args, **kwargs)` instead o
 
 The only exception to this is `costly` simulators.
 
-# Simulation and cost estimation
+# LLM calls, simulation and cost estimation
 
-We use the [`costly`](https://github.com/abhimanyupallavisudhir/costly) package for cost estimation ahead of making API calls.
+We use the [`costly`](https://github.com/abhimanyupallavisudhir/costly) package for cost estimation ahead of making API calls. Specifically there are global variables `global_cost_log` and `simulate` defined in `solib.llm_utils`. As long as all LLM calls go through `get_llm_response()` from `solib.llm_utils`, stuff will work properly.
 
-In contributing to the repo, ensure that all functions involving API calls allow an unbroken kwarg pathway to the costly functions in `solib.llm_utils`. Actually, we only need `simulate`, `cost_estimation`, `description` to be passed through, so if you need to discriminate between `kwargs` for different purposes, just pass these parameters through all purposes.
+`simulate` is controlled by an environment variable `SIMULATE` (which can be set to `True` or `False`), so you can run any command as `SIMULATE=True python your_script.py` to ensure all LLM calls are simulated.
 
 # Caching
 
