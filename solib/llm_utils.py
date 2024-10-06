@@ -1,3 +1,4 @@
+from collections import defaultdict
 from functools import partial
 import os
 import asyncio
@@ -334,16 +335,14 @@ def get_llm(model: str, use_async=False, hf_quantization_config=None):
                         response
                     )
                 )
-                usage = {
-                    k: sum(
-                        [
-                            r.usage_metadata[k]
-                            for r in response
-                            if hasattr(r, "usage_metadata")
-                        ]
-                    )
-                    for k in response[0].usage_metadata
-                }
+                token_types = [k for k,v in response[0].usage_metadata.items() if isinstance(v, int)]
+                usage = defaultdict(int)
+                for token_type in token_types:
+                    for r in response:
+                        if not hasattr(r, "usage_metadata"):
+                            continue
+                        usage[token_type] += r.usage_metadata[token_type]
+
             elif isinstance(response, BaseMessage):  # handle singleton messages
                 raw_response = response.content
                 usage = response.usage_metadata
@@ -464,9 +463,6 @@ def get_llm(model: str, use_async=False, hf_quantization_config=None):
             simulate: bool = simulate,
             **kwargs,
         ):
-            if "words_in_mouth" in kwargs:
-                raise
-
             get_response, messages = generate_format_and_bind(
                 prompt,
                 messages,
