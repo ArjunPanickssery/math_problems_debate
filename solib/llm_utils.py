@@ -165,16 +165,18 @@ def format_prompt(
             else:
                 messages.append({"role": "user", "content": prompt})
 
-        if (
-            tools and not natively_supports_tools
-        ):  # technically, we should check msg_type here, but we're assuming all chat API models natively support tools
-            messages.insert(
-                0,
-                {
-                    "role": "system",
-                    "content": solib.tool_use.tool_rendering.get_tool_prompt(tools),
-                },
-            )
+        if tools:
+            tool_msg = solib.tool_use.tool_rendering.get_tool_prompt(tools, natively_supports_tools)
+            if msg_type == "langchain":
+                messages.insert(0, SystemMessage(content=tool_msg))
+            elif not natively_supports_tools:  # local models (where msg_type="dict") that natively support tools will have the tool prompt added by apply_chat_template
+                messages.insert(   # otherwise, we manually create one
+                    0,
+                    {
+                        "role": "system",
+                        "content": tool_msg,
+                    },
+                )
 
         if tokenizer is not None:
             if tools and natively_supports_tools:
@@ -443,6 +445,7 @@ def get_llm(model: str, use_async=False, hf_quantization_config=None):
                 prompt=prompt,
                 messages=messages,
                 system_message=system_message,
+                tools=tools,
                 msg_type=msg_type,
                 natively_supports_tools=natively_supports_tools,
             )["messages"]
@@ -473,6 +476,7 @@ def get_llm(model: str, use_async=False, hf_quantization_config=None):
                 temperature,
                 **kwargs,
             )
+            print(messages)
             response = get_response(messages)
 
             raw_response, usage = process_response(response)

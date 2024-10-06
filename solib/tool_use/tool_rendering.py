@@ -9,6 +9,8 @@ from typing import Callable, Dict, List, Tuple, Union
 
 from langchain_core.tools import render_text_description
 
+
+
 TOOL_CALL_START_TAG = "<tool_call>"
 TOOL_CALL_END_TAG = "</tool_call>"
 TOOL_RESULT_START_TAG = "<tool_result>"
@@ -33,7 +35,13 @@ TOOL_RESULT_TEMPLATE = """
 {result_end_tag}
 """
 
-DEFAULT_TOOL_PROMPT_TEMPLATE = """
+# prompt that gets added to system message when tools are available
+DEFAULT_TOOL_PROMPT_NATIVE = """
+You are a tool-calling LLM that has access to the attached tools. The use of the tools will be likely very important for the following task.
+"""
+
+# system message template that gets added when an llm has access to tools but doesn't natively support them
+DEFAULT_TOOL_PROMPT_NONNATIVE = """
 You are a tool calling LLM that has access to the following set of tools.
 You are provided with function signatures within <tools></tools> XML tags.
 You may call one or more functions to assist with the user query.
@@ -66,11 +74,11 @@ def render_tools(tools: List[Union[Callable, StructuredTool]]) -> str:
     return tool_text
 
 
-def get_tool_prompt(tools: List[Union[Callable, StructuredTool]]) -> str:
+def get_tool_prompt_for_nonnative(tools: List[Union[Callable, StructuredTool]]) -> str:
     """Get the tool prompt for the given tools."""
     # prompt format based off of https://huggingface.co/NousResearch/Hermes-2-Pro-Llama-3-8B/tree/main
     rendered_tools = render_tools(tools)
-    return DEFAULT_TOOL_PROMPT_TEMPLATE.format(
+    return DEFAULT_TOOL_PROMPT_NONNATIVE.format(
         start_call_tag=TOOL_CALL_START_TAG,
         end_call_tag=TOOL_CALL_END_TAG,
 
@@ -89,6 +97,18 @@ def get_tool_prompt(tools: List[Union[Callable, StructuredTool]]) -> str:
             arguments="<args-dict>"),
 
         rendered_tools=rendered_tools)
+
+
+def get_tool_prompt_for_native() -> str:
+    """Get the tool prompt for a native tool-calling LLM."""
+    return DEFAULT_TOOL_PROMPT_NATIVE
+
+def get_tool_prompt(tools: List[Union[Callable, StructuredTool]], is_native: bool) -> str:
+    """Get the tool prompt for the given tools."""
+    if is_native:
+        return get_tool_prompt_for_native()
+    else:
+        return get_tool_prompt_for_nonnative(tools)
 
 def render_tool_call(name: str, args: Dict[str, str]) -> str:
     """Render a tool call with the given name and arguments. This is used to represent tool calls
