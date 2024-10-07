@@ -54,6 +54,7 @@ class Agent:
             question (Question_stripped): question.
             answer_case (Answer): answer case to argue for.
         """
+        words_in_mouth = words_in_mouth or self.words_in_mouth
         prompt = prompt.format(
             question=question,
             answer_case=answer_case,
@@ -66,6 +67,8 @@ class Agent:
             tools=self.tools,
             max_tokens=self.max_tokens,
         )
+
+    words_in_mouth = " Sure, here's my response:\n\n"
 
 
 class Protocol:
