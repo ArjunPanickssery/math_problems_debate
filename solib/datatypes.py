@@ -10,8 +10,8 @@ class Answer:
     short: str
     long: Any
 
-    def __str__(self):
-        return f"{self.short}: {self.long}"
+    def to_prompt(self):
+        return f"({self.short}): {self.long}"
 
 
 @dataclass(frozen=True)
@@ -34,8 +34,8 @@ class Question:
             f"QUESTION: {self.question}\n"
             + "POSSIBLE ANSWERS:\n"
             + "\n".join(
-                str(answer) for answer in self.answer_cases
-            )  # DO NOT add .values() here
+                answer.to_prompt() for answer in self.answer_cases
+            )  # DO NOT add self.answer_cases.values() here
         )
 
     @property

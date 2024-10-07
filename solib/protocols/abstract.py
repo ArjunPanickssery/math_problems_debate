@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import numpy as np
 from solib import logger
 from solib.utils import config, AbstractionError
-from solib.llm_utils import parallelized_call
+from solib.llm_utils import parallelized_call, get_llm_response_async
 from solib.datatypes import Answer, Question, Prob
 
 
@@ -15,16 +15,57 @@ class Judge:
     async def __call__(
         self, question: Question, context: str | None = None
     ) -> dict[Answer, Prob]:
-        """Give a probability for a given answer_case is correct, based on any context provided."""
+        """Give a probability for each answer_case, based on any context provided."""
         raise AbstractionError
 
 
 class Agent:
+
+    def __init__(
+        self,
+        model: str,
+        tools: list[callable] | None = None,
+        max_tokens: int | None = None,
+    ):
+        """
+        Args:
+            model (str): e.g. "gpt-4o-mini".
+            tools (list[callable]): tools for the agent.
+            max_tokens (int | None): e.g. 2048.
+        """
+        self.model = model
+        self.tools = tools
+        self.max_tokens = max_tokens
+
     async def __call__(
-        self, question: Question, answer_case: Answer, context: str | None = None
+        self,
+        prompt: str,
+        question: Question,
+        answer_case: Answer,
+        context: str | None = None,
+        words_in_mouth: str | None = None,
     ) -> str:
-        """Simulate an AI arguing to convince the judge in favour of answer_case."""
-        raise AbstractionError
+        """Simulate an AI arguing to convince the judge in favour of answer_case.
+
+        Args:
+            prompt (str): formattable prompt that takes in question, answer_case, and context.
+            words_in_mouth (str | None): e.g. " Sure, here's my response:\n\n"
+            context (str | None): context e.g. transcript of the conversation so far.
+            question (Question): question.
+            answer_case (Answer): answer case to argue for.
+        """
+        prompt = prompt.format(
+            question=question,
+            answer_case=answer_case,
+            context=context,
+        )
+        return await get_llm_response_async(
+            model=self.model,
+            prompt=prompt,
+            words_in_mouth=words_in_mouth,
+            tools=self.tools,
+            max_tokens=self.max_tokens,
+        )
 
 
 class Protocol:
@@ -33,10 +74,21 @@ class Protocol:
     "like accuracy and testing should be implemented here."""
 
     @dataclass
+    class TranscriptItem:
+        answer_case: Answer
+        message: str
+
+        def to_prompt(self):
+            return (
+                f"### (Argument in favour of {self.answer_case.short})\n"
+                f"{self.message}\n"
+            )
+
+    @dataclass
     class Transcript:
         question: Question
         answer_case: Answer
-        transcript: list
+        transcript: list["Protocol.TranscriptItem"]
         judgement: Prob | None = None
 
         def __dict__(self):
@@ -47,17 +99,24 @@ class Protocol:
                 "judgement": self.judgement,
             }
 
-        def __str__(self):
-            raise AbstractionError
+        def to_prompt(self):
+            return "\n".join(item.to_prompt() for item in self.transcript)
 
-    def __init__(self, judge: Judge):
-        raise AbstractionError
+        def append(self, x: "Protocol.TranscriptItem"):
+            self.transcript.append(x)
 
     async def run(
         self, agent: Agent, question: Question, answer_case: Answer, **other_components
     ) -> Self.Transcript:
         """Let agent argue for answer_case, and get the probability for answer_case
-        based on that."""
+        based on that.
+
+        Args:
+            agent (Agent): agent to oversee/judge.
+            question (Question): question.
+            answer_case (Answer): answer case the agent argues for.
+            other_components (dict): other components e.g. adversary, judge.
+        """
         raise AbstractionError
 
     def judge_score(self, question: Question, answer_case: Answer, prob: Prob):
