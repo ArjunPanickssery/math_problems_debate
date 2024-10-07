@@ -7,13 +7,13 @@ import numpy as np
 from solib import logger
 from solib.utils import config, AbstractionError
 from solib.llm_utils import parallelized_call, get_llm_response_async
-from solib.datatypes import Answer, Question, Prob
+from solib.datatypes import Answer, Question, Question_stripped, Prob
 
 
 class Judge:
 
     async def __call__(
-        self, question: Question, context: str | None = None
+        self, question: Question_stripped, context: str | None = None
     ) -> dict[Answer, Prob]:
         """Give a probability for each answer_case, based on any context provided."""
         raise AbstractionError
@@ -40,7 +40,7 @@ class Agent:
     async def __call__(
         self,
         prompt: str,
-        question: Question,
+        question: Question_stripped,
         answer_case: Answer,
         context: str | None = None,
         words_in_mouth: str | None = None,
@@ -51,7 +51,7 @@ class Agent:
             prompt (str): formattable prompt that takes in question, answer_case, and context.
             words_in_mouth (str | None): e.g. " Sure, here's my response:\n\n"
             context (str | None): context e.g. transcript of the conversation so far.
-            question (Question): question.
+            question (Question_stripped): question.
             answer_case (Answer): answer case to argue for.
         """
         prompt = prompt.format(
@@ -70,8 +70,12 @@ class Agent:
 
 class Protocol:
     """General class for a judge endowed with any (multi-agent) protocol for
-    question-answering, e.g. debate, consultancy, blindjudge. Methods for things "
-    "like accuracy and testing should be implemented here."""
+    question-answering, e.g. debate, consultancy, blindjudge.
+
+    NOTE: It is critical that while subclassing, ONLY methods that take in
+    Question_stripped instead of Question are overridden. Otherwise bad things
+    will happen, and your name will go down in infamy.
+    """
 
     @dataclass
     class TranscriptItem:
@@ -84,17 +88,18 @@ class Protocol:
                 f"{self.message}\n"
             )
 
-    @dataclass
     class Transcript:
-        question: Question
-        answer_case: Answer
-        transcript: list["Protocol.TranscriptItem"]
-        judgement: Prob | None = None
+
+        def __init__(
+            self,
+            transcript: list["Protocol.TranscriptItem"] = None,
+            judgement: Prob | None = None,
+        ):
+            self.transcript = transcript or []
+            self.judgement = judgement
 
         def __dict__(self):
             return {
-                "question": self.question,
-                "answer_case": self.answer_case,
                 "transcript": self.transcript,
                 "judgement": self.judgement,
             }
@@ -106,14 +111,18 @@ class Protocol:
             self.transcript.append(x)
 
     async def run(
-        self, agent: Agent, question: Question, answer_case: Answer, **other_components
+        self,
+        agent: Agent,
+        question: Question_stripped,
+        answer_case: Answer,
+        **other_components,
     ) -> Self.Transcript:
         """Let agent argue for answer_case, and get the probability for answer_case
         based on that.
 
         Args:
             agent (Agent): agent to oversee/judge.
-            question (Question): question.
+            question (Question_stripped): question.
             answer_case (Answer): answer case the agent argues for.
             other_components (dict): other components e.g. adversary, judge.
         """
@@ -131,12 +140,14 @@ class Protocol:
         self, agent: Agent, question: Question, answer_case: Answer, **other_components
     ) -> float:
         """Score of the judge after agent has argued for answer_case."""
-        transcript = await self.run(agent, question, answer_case, **other_components)
+        transcript = await self.run(
+            agent, question.strip(), answer_case, **other_components
+        )
         prob = transcript.judgement.prob
         return self.judge_score(question, answer_case, prob)
 
     async def run_on_all_answer_cases(
-        self, agent: Agent, question: Question, **other_components
+        self, agent: Agent, question: Question_stripped, **other_components
     ) -> dict[Answer, Self.Transcript]:
         """Judge probability after hearing each answer case."""
         # we'd like to just do this, but it's less efficient:
@@ -147,7 +158,12 @@ class Protocol:
         #     for answer_case in question.answer_cases
         # }
         transcripts = await parallelized_call(
-            partial(self.run, agent=agent, question=question, **other_components),
+            partial(
+                self.run,
+                agent=agent,
+                question=question,
+                **other_components,
+            ),
             question.answer_cases,
         )
         return {
@@ -165,7 +181,7 @@ class Protocol:
     ) -> float:
         """Reward difference for the agent between arguing for true_answer and false_answer."""
         transcripts = await self.run_on_all_answer_cases(
-            agent, question, **other_components
+            agent, question.strip(), **other_components
         )
         probs = {a: t.judgement.prob for a, t in transcripts.items()}
         return self.reward_difference(question, probs)
@@ -179,9 +195,11 @@ class Protocol:
     ):
         results = []
 
-        async def process_question(question):
+        async def process_question(question: Question):
             transcripts: dict[Answer, Self.Transcript] = (
-                await self.run_on_all_answer_cases(agent, question, **other_components)
+                await self.run_on_all_answer_cases(
+                    agent, question.strip(), **other_components
+                )
             )
             probs: dict[Answer, float] = {
                 a: t.judgement.prob for a, t in transcripts.items()

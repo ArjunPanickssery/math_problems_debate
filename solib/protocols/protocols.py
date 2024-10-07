@@ -1,7 +1,7 @@
 import functools
 from typing import Self
 from dataclasses import dataclass
-from solib.datatypes import Question, Answer, Prob
+from solib.datatypes import Question, Question_stripped, Answer, Prob
 from solib.protocols.abstract import Protocol, Agent, Judge
 
 
@@ -10,7 +10,7 @@ class SimultaneousDebate(Protocol):
     async def run(
         self,
         agent: Agent,
-        question: Question,
+        question: Question_stripped,
         answer_case: Answer,
         adversary: Agent,
         judge: Judge,
@@ -30,43 +30,41 @@ class SimultaneousDebate(Protocol):
             question=question.to_prompt(),
             answer_case=opp_case.to_prompt(),
         )
-        transcript = self.Transcript(
-            question=question, answer_case=answer_case, transcript=[]
-        )
+        transcript = self.Transcript()
         while not self.end_communication(transcript):
             debater_pro_argument = await debater_pro(context=transcript.to_prompt())
             debater_con_argument = await debater_con(context=transcript.to_prompt())
             transcript.append(self.TranscriptItem(answer_case, debater_pro_argument))
             transcript.append(self.TranscriptItem(opp_case, debater_con_argument))
-        judgement = judge(transcript)
+        judgement = judge(question=question, context=transcript.to_prompt())
         transcript.judgement = judgement
         return transcript
 
     async def run_on_all_answer_cases(
         self,
         agent: Agent,
-        question: Question,
+        question: Question_stripped,
         judge: Judge,
         adversary: Agent,
     ) -> dict[Answer, Self.Transcript]:
         """Debate specifically is symmetric, so we can subclass this to only run the
         debate once."""
-        true_answer_transcript = await self.run(
+        answer_0_transcript = await self.run(
             agent=agent,
             question=question,
-            answer_case=question.true_answer,
+            answer_case=question.answer_cases[0],
             adversary=adversary,
             judge=judge,
         )
-        false_answer_transcript = self.Transcript(
+        answer_1_transcript = self.Transcript(
             question=question,
-            answer_case=question.false_answer,
-            transcript=true_answer_transcript.transcript,
-            judgement=Prob(1 - true_answer_transcript.judgement.prob),
+            answer_case=question.answer_cases[1],
+            transcript=answer_0_transcript.transcript,
+            judgement=Prob(1 - answer_0_transcript.judgement.prob),
         )
         return {
-            question.true_answer: true_answer_transcript,
-            question.false_answer: false_answer_transcript,
+            question.answer_cases[0]: answer_0_transcript,
+            question.answer_cases[1]: answer_1_transcript,
         }
 
     def __init__(self, num_turns: int = 2):
@@ -98,7 +96,7 @@ class SequentialDebate(SimultaneousDebate):
     async def run(
         self,
         agent: Agent,
-        question: Question,
+        question: Question_stripped,
         answer_case: Answer,
         adversary: Agent,
         judge: Judge,
@@ -118,14 +116,12 @@ class SequentialDebate(SimultaneousDebate):
             question=question.to_prompt(),
             answer_case=opp_case.to_prompt(),
         )
-        transcript = self.Transcript(
-            question=question, answer_case=answer_case, transcript=[]
-        )
+        transcript = self.Transcript()
         while not self.end_communication(transcript):
             debater_pro_argument = await debater_pro(context=transcript.to_prompt())
             transcript.append(self.TranscriptItem(answer_case, debater_pro_argument))
             debater_con_argument = await debater_con(context=transcript.to_prompt())
             transcript.append(self.TranscriptItem(opp_case, debater_con_argument))
-        judgement = judge(transcript)
+        judgement = judge(question=question, context=transcript.to_prompt())
         transcript.judgement = judgement
         return transcript

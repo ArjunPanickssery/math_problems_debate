@@ -5,7 +5,7 @@ from solib.llm_utils import (
     get_llm_probs_async,
     parallelized_call,
 )
-from solib.datatypes import Question, Answer, Prob
+from solib.datatypes import Question, Question_stripped, Answer, Prob
 from solib.tool_use.tool_rendering import TOOL_RESULT_START_TAG, TOOL_RESULT_END_TAG
 from solib.protocols.abstract import Judge
 
@@ -23,7 +23,7 @@ class TipOfTongueJudge(Judge):
 
     async def __call__(
         self,
-        question: Question,
+        question: Question_stripped,
         context: str,
     ) -> dict[Answer, Prob]:
         words_in_mouth = " The answer is:\n\n("
@@ -72,7 +72,7 @@ class JustAskProbabilityJudge(Judge):
 
     async def __call__(
         self,
-        question: Question,
+        question: Question_stripped,
         context: str,
     ) -> dict[Answer, Prob]:
         async def get_prob(answer_case: Answer) -> Prob:
