@@ -29,7 +29,7 @@ class Question:
     question: str
     answer_cases: dict[Answer, float]
 
-    def __str__(self):
+    def to_prompt(self):
         return (
             f"QUESTION: {self.question}\n"
             + "POSSIBLE ANSWERS:\n"

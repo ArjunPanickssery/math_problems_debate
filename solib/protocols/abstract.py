@@ -6,22 +6,15 @@ from dataclasses import dataclass
 import numpy as np
 from solib import logger
 from solib.utils import config, AbstractionError
-from solib.llm_utils import (
-    get_llm_response,
-    get_llm_response_async,
-    get_llm_probs,
-    get_llm_probs_async,
-    parallelized_call,
-)
+from solib.llm_utils import parallelized_call
 from solib.datatypes import Answer, Question, Prob
-from solib.tool_use.tool_rendering import TOOL_RESULT_START_TAG, TOOL_RESULT_END_TAG
 
 
 class Judge:
 
-    def judge(
-        self, question: Question, answer_case: Answer, context: str | None = None
-    ) -> Prob:
+    async def __call__(
+        self, question: Question, context: str | None = None
+    ) -> dict[Answer, Prob]:
         """Give a probability for a given answer_case is correct, based on any context provided."""
         raise AbstractionError
 

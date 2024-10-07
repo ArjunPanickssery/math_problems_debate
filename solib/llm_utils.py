@@ -58,6 +58,7 @@ load_dotenv()
 cache = Cache(serializer=PydanticJSONSerializer())
 global_cost_log = Costlog(mode="jsonl")
 simulate = os.getenv("SIMULATE", "False").lower() == "true"
+disable_costly = os.getenv("DISABLE_COSTLY", "False").lower() == "true"
 
 
 class LLM_Simulator(LLM_Simulator_Faker):
@@ -485,7 +486,11 @@ def get_llm(model: str, use_async=False, hf_quantization_config=None):
 
             return get_response, messages
 
-        @costly(simulator=LLM_Simulator.simulate_llm_call, messages=_get_messages)
+        @costly(
+            simulator=LLM_Simulator.simulate_llm_call,
+            messages=_get_messages,
+            disable_costly=disable_costly,
+        )
         def generate(
             model: str = model,
             prompt: str = None,
@@ -518,7 +523,11 @@ def get_llm(model: str, use_async=False, hf_quantization_config=None):
                 cost_info=usage,
             )
 
-        @costly(simulator=LLM_Simulator.simulate_llm_call, messages=_get_messages)
+        @costly(
+            simulator=LLM_Simulator.simulate_llm_call,
+            messages=_get_messages,
+            disable_costly=disable_costly,
+        )
         async def generate_async(
             model: str = model,
             prompt: str = None,
@@ -590,7 +599,11 @@ def get_llm(model: str, use_async=False, hf_quantization_config=None):
 
             return get_response, messages
 
-        @costly(simulator=LLM_Simulator.simulate_llm_probs, messages=_get_messages)
+        @costly(
+            simulator=LLM_Simulator.simulate_llm_probs,
+            messages=_get_messages,
+            disable_costly=disable_costly,
+        )
         def return_probs(
             return_probs_for: list[str],
             model: str = model,
@@ -623,7 +636,11 @@ def get_llm(model: str, use_async=False, hf_quantization_config=None):
                 cost_info=usage,
             )
 
-        @costly(simulator=LLM_Simulator.simulate_llm_probs, messages=_get_messages)
+        @costly(
+            simulator=LLM_Simulator.simulate_llm_probs,
+            messages=_get_messages,
+            disable_costly=disable_costly,
+        )
         async def return_probs_async(
             return_probs_for: list[str],
             model: str = model,
