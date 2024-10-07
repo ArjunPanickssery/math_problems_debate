@@ -67,18 +67,21 @@ class Protocol:
         based on that."""
         raise AbstractionError
 
-    async def judge_score(
-        self, agent: Agent, question: Question, answer_case: Answer, **other_components
-    ) -> float:
-        """Score of the judge after agent has argued for answer_case."""
-        transcript = await self.run(agent, question, answer_case, **other_components)
-        prob = transcript.judgement.prob
+    def judge_score(self, question: Question, answer_case: Answer, prob: Prob):
         if answer_case == question.true_answer:
             return np.log(prob)
         elif answer_case == question.false_answer:
             return np.log(1 - prob)
         else:
             return 0.0
+
+    async def run_and_score(
+        self, agent: Agent, question: Question, answer_case: Answer, **other_components
+    ) -> float:
+        """Score of the judge after agent has argued for answer_case."""
+        transcript = await self.run(agent, question, answer_case, **other_components)
+        prob = transcript.judgement.prob
+        return self.judge_score(question, answer_case, prob)
 
     async def run_on_all_answer_cases(
         self, agent: Agent, question: Question, **other_components
@@ -100,18 +103,20 @@ class Protocol:
             for answer_case, transcript in zip(question.answer_cases, transcripts)
         }
 
-    async def reward_difference(
+    def reward_difference(self, question: Question, probs: dict[Answer, Prob]) -> float:
+        return sum(
+            np.log(probs[a]) * question.answer_cases[a] for a in question.answer_cases
+        )
+
+    async def run_and_reward_difference(
         self, agent: Agent, question: Question, **other_components
     ) -> float:
         """Reward difference for the agent between arguing for true_answer and false_answer."""
         transcripts = await self.run_on_all_answer_cases(
             agent, question, **other_components
         )
-        # return the dot product of the log probabilities and the answer values
-        return sum(
-            np.log(transcripts[a].judgement.prob) * question.answer_cases[a]
-            for a in question.answer_cases
-        )
+        probs = {a: t.judgement.prob for a, t in transcripts.items()}
+        return self.reward_difference(question, probs)
 
     async def test(
         self,
@@ -123,29 +128,34 @@ class Protocol:
         results = []
 
         async def process_question(question):
-            transcripts = await self.run_on_all_answer_cases(
-                agent, question, **other_components
+            transcripts: dict[Answer, Self.Transcript] = (
+                await self.run_on_all_answer_cases(agent, question, **other_components)
             )
-
-            probabilities = transcript.judgement.probabilities
-            score = await self.score(question, probabilities, **kwargs)
-            result = {
-                "transcript": transcript,
-                "score": score,
+            probs: dict[Answer, float] = {
+                a: t.judgement.prob for a, t in transcripts.items()
             }
-            if verbose:
-                print(result)
+            logger.info(probs)
+            judge_scores: dict[Answer, float] = {
+                a: self.judge_score(question, a, probs[a])
+                for a in question.answer_cases
+            }
+            logger.info(judge_scores)
+            reward_difference: float = self.reward_difference(question, probs)
+            logger.info(reward_difference)
+            result = {
+                "question": question,
+                "transcripts": transcripts,
+                "probs": probs,
+                "judge_scores": judge_scores,
+                "reward_difference": reward_difference,
+            }
             return result
 
         results = await parallelized_call(process_question, questions)
+        stats = self.compute_stats(results)
 
-        scores = [result["score"] for result in results]
-        stats = {
-            "mean_score": np.mean(scores),
-            "std_score": np.std(scores),
-        }
-        if verbose:
-            print(stats)
+        logger.info(stats)
+
         if write:
             with open(write, "w") as f:
                 json.dump(
@@ -154,38 +164,16 @@ class Protocol:
 
         return results, stats
 
-
-# ABC
-class TipOfTongueJudge(Judge):
-
-    async def get_probabilities(self, context: str, **kwargs) -> "Self.TranscriptItem":
-        words_in_mouth = " I judge that the answer is:\n\n("
-        probabilities = await get_llm_probs_async(
-            prompt=self.prompt.format(context=context),
-            model=self.model,
-            return_probs_for=transcript.question.answer_cases_short,
-            words_in_mouth=words_in_mouth,
-            **kwargs,
-        )
-        return self.TranscriptItem(probabilities=probabilities)
-
-    def __init__(self, prompt: str = None, model: str = None):
-        """Initialize basic / default Judge. Can be overriden in subclasses.
-
-        Args:
-            prompt (str): prompt for the judge. Default None.
-            model (str): model for the judge. Default None.
-        """
-        if prompt is not None:
-            self.prompt = prompt
-        self.model = model
-
-    prompt = (
-        "I want you to give me your most informed judgment on which answer "
-        "is correct, based on any information I provide. Your response "
-        "should simply be the option symbol (e.g. A, B) of one of the items "
-        "from POSSIBLE ANSWERS, and nothing else. Please note that anything "
-        f"that is included in {TOOL_RESULT_START_TAG}{TOOL_RESULT_END_TAG} "
-        "tags can be guaranteed to be true.\n\n"
-        "{transcript}\n\n"
-    )
+    def compute_stats(self, results: list[dict[str, Any]]) -> dict[str, Any]:
+        reward_differences = [r["reward_difference"] for r in results]
+        mean_reward_difference = np.mean(reward_differences)
+        std_reward_difference = np.std(reward_differences)
+        avg_judge_scores = [np.mean(r["judge_scores"].values()) for r in results]
+        mean_avg_judge_score = np.mean(avg_judge_scores)
+        std_avg_judge_score = np.std(avg_judge_scores)
+        return {
+            "mean_reward_difference": mean_reward_difference,
+            "std_reward_difference": std_reward_difference,
+            "mean_avg_judge_score": mean_avg_judge_score,
+            "std_avg_judge_score": std_avg_judge_score,
+        }
