@@ -20,6 +20,8 @@ class Judge:
 
 
 class Agent:
+    """A generally convenient wrapper around an LLM, that answers a given prompt,
+    optionally formatted with a context, question and answer case."""
 
     def __init__(
         self,
@@ -40,8 +42,8 @@ class Agent:
     async def __call__(
         self,
         prompt: str,
-        question: Question_stripped,
-        answer_case: Answer,
+        question: Question_stripped = None,
+        answer_case: Answer = None,
         context: str | None = None,
         words_in_mouth: str | None = None,
     ) -> str:
