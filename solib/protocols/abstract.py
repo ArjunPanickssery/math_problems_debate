@@ -1,13 +1,15 @@
+import logging
 import json
 import asyncio
 from functools import partial
-from typing import Self, Any
+from typing import Self, Any, Literal
 from dataclasses import dataclass
 import numpy as np
-from solib import logger
 from solib.utils import config, AbstractionError
 from solib.llm_utils import parallelized_call, get_llm_response_async
 from solib.datatypes import Answer, Question, Question_stripped, Prob
+
+logger = logging.getLogger(__name__)
 
 
 class Judge:
@@ -27,17 +29,20 @@ class Agent:
         self,
         model: str,
         tools: list[callable] | None = None,
+        mode: Literal["default", "cot"] = "default",
         max_tokens: int | None = None,
     ):
         """
         Args:
             model (str): e.g. "gpt-4o-mini".
             tools (list[callable]): tools for the agent.
+            mode (Literal["default", "cot"]): default, chain-of-thought etc.
             max_tokens (int | None): e.g. 2048.
         """
         self.model = model
         self.tools = tools
         self.max_tokens = max_tokens
+        self.mode = mode
 
     async def __call__(
         self,
