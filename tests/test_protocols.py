@@ -4,7 +4,7 @@ from copy import deepcopy
 from solib.utils import *
 from solib.llm_utils import *
 from solib.datatypes import Answer, Question
-from solib.protocols.common import Protocol, Judge
+from solib.protocols.abstract import Protocol, Judge
 from solib.protocols.debate import Debater, SequentialDebate
 from solib.protocols.consultancy import Consultant, Client, Consultancy
 from solib.protocols.blind import BlindJudgement

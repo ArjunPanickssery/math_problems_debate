@@ -58,6 +58,7 @@ load_dotenv()
 cache = Cache(serializer=PydanticJSONSerializer())
 global_cost_log = Costlog(mode="jsonl")
 simulate = os.getenv("SIMULATE", "False").lower() == "true"
+disable_costly = os.getenv("DISABLE_COSTLY", "False").lower() == "true"
 
 
 class LLM_Simulator(LLM_Simulator_Faker):
@@ -485,7 +486,11 @@ def get_llm(model: str, use_async=False, hf_quantization_config=None):
 
             return get_response, messages
 
-        @costly(simulator=LLM_Simulator.simulate_llm_call, messages=_get_messages)
+        @costly(
+            simulator=LLM_Simulator.simulate_llm_call,
+            messages=_get_messages,
+            disable_costly=disable_costly,
+        )
         def generate(
             model: str = model,
             prompt: str = None,
@@ -518,7 +523,11 @@ def get_llm(model: str, use_async=False, hf_quantization_config=None):
                 cost_info=usage,
             )
 
-        @costly(simulator=LLM_Simulator.simulate_llm_call, messages=_get_messages)
+        @costly(
+            simulator=LLM_Simulator.simulate_llm_call,
+            messages=_get_messages,
+            disable_costly=disable_costly,
+        )
         async def generate_async(
             model: str = model,
             prompt: str = None,
@@ -590,7 +599,11 @@ def get_llm(model: str, use_async=False, hf_quantization_config=None):
 
             return get_response, messages
 
-        @costly(simulator=LLM_Simulator.simulate_llm_probs, messages=_get_messages)
+        @costly(
+            simulator=LLM_Simulator.simulate_llm_probs,
+            messages=_get_messages,
+            disable_costly=disable_costly,
+        )
         def return_probs(
             return_probs_for: list[str],
             model: str = model,
@@ -623,7 +636,11 @@ def get_llm(model: str, use_async=False, hf_quantization_config=None):
                 cost_info=usage,
             )
 
-        @costly(simulator=LLM_Simulator.simulate_llm_probs, messages=_get_messages)
+        @costly(
+            simulator=LLM_Simulator.simulate_llm_probs,
+            messages=_get_messages,
+            disable_costly=disable_costly,
+        )
         async def return_probs_async(
             return_probs_for: list[str],
             model: str = model,
@@ -665,6 +682,144 @@ def get_llm(model: str, use_async=False, hf_quantization_config=None):
         }
 
 
+class LLM_Agent:
+
+    def __init__(
+        self,
+        model: str = "gpt-4o-mini",
+        tools: list[callable] = None,
+        hf_quantization_config=None,
+    ):
+        self.model = model
+        self.tools = tools
+        self.hf_quantization_config = hf_quantization_config
+        self.ai = get_llm(
+            model=model, use_async=False, hf_quantization_config=hf_quantization_config
+        )
+        self.ai_async = get_llm(
+            model=model, use_async=True, hf_quantization_config=hf_quantization_config
+        )
+
+    @cache(ignore=["self", "cost_log"])
+    def get_response(
+        self,
+        response_model: Union["BaseModel", None] = None,
+        prompt: str = None,
+        messages: list[dict[str, str]] = None,
+        input_string: str = None,
+        system_message: str | None = None,
+        words_in_mouth: str | None = None,
+        max_tokens: int = 2048,
+        temperature: float = 0.0,
+        cost_log: Costlog = global_cost_log,
+        simulate: bool = simulate,
+        **kwargs,
+    ):
+        return self.ai["generate"](
+            model=self.model,
+            tools=self.tools,
+            response_model=response_model,
+            prompt=prompt,
+            messages=messages,
+            input_string=input_string,
+            system_message=system_message,
+            words_in_mouth=words_in_mouth,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            cost_log=cost_log,
+            simulate=simulate,
+            **kwargs,
+        )
+
+    @cache(ignore=["self", "cost_log"])
+    async def get_response_async(
+        self,
+        response_model: Union["BaseModel", None] = None,
+        prompt: str = None,
+        messages: list[dict[str, str]] = None,
+        input_string: str = None,
+        system_message: str | None = None,
+        words_in_mouth: str | None = None,
+        max_tokens: int = 2048,
+        temperature: float = 0.0,
+        cost_log: Costlog = global_cost_log,
+        simulate: bool = simulate,
+        **kwargs,
+    ):
+        return await self.ai_async["generate_async"](
+            model=self.model,
+            tools=self.tools,
+            response_model=response_model,
+            prompt=prompt,
+            messages=messages,
+            input_string=input_string,
+            system_message=system_message,
+            words_in_mouth=words_in_mouth,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            cost_log=cost_log,
+            simulate=simulate,
+            **kwargs,
+        )
+
+    @cache(ignore=["self", "cost_log"])
+    def get_probs(
+        self,
+        return_probs_for: list[str],
+        prompt: str = None,
+        messages: list[dict[str, str]] = None,
+        input_string: str = None,
+        system_message: str | None = None,
+        top_logprobs: int = 5,
+        temperature: float = 0.0,
+        cost_log: Costlog = global_cost_log,
+        simulate: bool = simulate,
+        **kwargs,
+    ):
+        return self.ai["return_probs"](
+            model=self.model,
+            tools=self.tools,
+            return_probs_for=return_probs_for,
+            prompt=prompt,
+            messages=messages,
+            input_string=input_string,
+            system_message=system_message,
+            top_logprobs=top_logprobs,
+            temperature=temperature,
+            cost_log=cost_log,
+            simulate=simulate,
+            **kwargs,
+        )
+
+    @cache(ignore=["self", "cost_log"])
+    async def get_probs_async(
+        self,
+        return_probs_for: list[str],
+        prompt: str = None,
+        messages: list[dict[str, str]] = None,
+        input_string: str = None,
+        system_message: str | None = None,
+        top_logprobs: int = 5,
+        temperature: float = 0.0,
+        cost_log: Costlog = global_cost_log,
+        simulate: bool = simulate,
+        **kwargs,
+    ):
+        return await self.ai_async["return_probs_async"](
+            model=self.model,
+            tools=self.tools,
+            return_probs_for=return_probs_for,
+            prompt=prompt,
+            messages=messages,
+            input_string=input_string,
+            system_message=system_message,
+            top_logprobs=top_logprobs,
+            temperature=temperature,
+            cost_log=cost_log,
+            simulate=simulate,
+            **kwargs,
+        )
+
 @cache(ignore="cost_log")
 def get_llm_response(
     model: str = "gpt-4o-mini",
@@ -682,6 +837,9 @@ def get_llm_response(
     simulate: bool = simulate,
     **kwargs,  # kwargs necessary for costly
 ):
+    """NOTE: you should generally use the LLM_Agent class instead of this function.
+    This is deprecated, or maybe we can just use it for one-time calls etc.
+    """
     model = model or "gpt-4o-mini"
     ai = get_llm(
         model=model, use_async=False, hf_quantization_config=hf_quantization_config
@@ -720,6 +878,9 @@ async def get_llm_response_async(
     simulate: bool = simulate,
     **kwargs,
 ):
+    """NOTE: you should generally use the LLM_Agent class instead of this function.
+    This is deprecated, or maybe we can just use it for one-time calls etc.
+    """
     model = model or "gpt-4o-mini"
     ai = get_llm(
         model=model, use_async=True, hf_quantization_config=hf_quantization_config
@@ -757,6 +918,9 @@ def get_llm_probs(
     simulate: bool = simulate,
     **kwargs,
 ):
+    """NOTE: you should generally use the LLM_Agent class instead of this function.
+    This is deprecated, or maybe we can just use it for one-time calls etc.
+    """
     model = model or "gpt-4o-mini"
     ai = get_llm(
         model=model, use_async=False, hf_quantization_config=hf_quantization_config
@@ -793,6 +957,9 @@ async def get_llm_probs_async(
     simulate: bool = simulate,
     **kwargs,
 ):
+    """NOTE: you should generally use the LLM_Agent class instead of this function.
+    This is deprecated, or maybe we can just use it for one-time calls etc.
+    """
     model = model or "gpt-4o-mini"
     ai = get_llm(
         model=model, use_async=True, hf_quantization_config=hf_quantization_config

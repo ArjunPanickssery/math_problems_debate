@@ -1,5 +1,5 @@
 from solib.datatypes import Question
-from solib.protocols.common import Transcript, Judge, Protocol
+from solib.protocols.abstract import Transcript, Judge, Protocol
 
 
 class BlindJudgement(Protocol):
