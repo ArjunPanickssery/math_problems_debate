@@ -26,33 +26,42 @@ class TipOfTongueJudge(Judge):
         question: Question_stripped,
         context: str,
     ) -> dict[Answer, Prob]:
-        words_in_mouth = " The answer is:\n\n("
+
         prompt = self.prompt.format(
             question=question.to_prompt(),
             context=context,
             answer_cases_short=", ".join(f"({a})" for a in question.answer_cases_short),
         )
-        probs = await get_llm_probs_async(
+        probs = await self.get_probs_async(
             prompt=prompt,
-            model=self.model,
             return_probs_for=question.answer_cases_short,
-            words_in_mouth=words_in_mouth,
+            words_in_mouth=self.words_in_mouth,
         )
         return {
             answer_case: Prob(probs[answer_case.short])
             for answer_case in question.answer_cases
         }
 
-    def __init__(self, prompt: str = None, model: str = None):
+    def __init__(
+        self,
+        model: str = None,
+        tools: list[callable] | None = None,
+        hf_quantization_config=None,
+        prompt: str = None,
+        words_in_mouth: str = None,
+    ):
         """Initialize basic / default Judge. Can be overriden in subclasses.
 
         Args:
             prompt (str): prompt for the judge. Default None.
             model (str): model for the judge. Default None.
         """
-        if prompt is not None:
-            self.prompt = prompt
-        self.model = model
+
+        self.prompt = prompt or self.prompt
+        self.words_in_mouth = words_in_mouth or self.words_in_mouth
+        super().__init__(
+            model=model, tools=tools, hf_quantization_config=hf_quantization_config
+        )
 
     prompt = (
         "{question}\n\n"
@@ -63,6 +72,8 @@ class TipOfTongueJudge(Judge):
         f"{TRUST_TOOL_USE_PROMPT}\n\n"
         "{context}\n\n"
     )
+
+    words_in_mouth = " The answer is:\n\n("
 
 
 class JustAskProbabilityJudge(Judge):
@@ -76,17 +87,14 @@ class JustAskProbabilityJudge(Judge):
         context: str,
     ) -> dict[Answer, Prob]:
         async def get_prob(answer_case: Answer) -> Prob:
-            words_in_mouth = (
-                f" The probability that the answer is {answer_case.short} is:\n\n"
-            )
+            words_in_mouth = self.words_in_mouth.format(answer_case=answer_case.short)
             prompt = self.prompt.format(
                 question=question.to_prompt(),
                 context=context,
                 answer_case=answer_case.short,
             )
-            response = await get_llm_response_async(
+            response = await self.get_response_async(
                 prompt=prompt,
-                model=self.model,
                 response_model=Prob,
                 max_tokens=20,
                 words_in_mouth=words_in_mouth,
@@ -97,16 +105,25 @@ class JustAskProbabilityJudge(Judge):
         total = sum(p.prob for p in probs_)  # for normalization
         return {a: Prob(p.prob / total) for a, p in zip(question.answer_cases, probs_)}
 
-    def __init__(self, prompt: str = None, model: str = None):
+    def __init__(
+        self,
+        model: str = None,
+        tools: list[callable] | None = None,
+        hf_quantization_config=None,
+        prompt: str = None,
+        words_in_mouth: str = None,
+    ):
         """Initialize basic / default Judge. Can be overriden in subclasses.
 
         Args:
             prompt (str): prompt for the judge. Default None.
             model (str): model for the judge. Default None.
         """
-        if prompt is not None:
-            self.prompt = prompt
-        self.model = model
+        self.prompt = prompt or self.prompt
+        self.words_in_mouth = words_in_mouth or self.words_in_mouth
+        super().__init__(
+            model=model, tools=tools, hf_quantization_config=hf_quantization_config
+        )
 
     prompt = (
         "{question}\n\n"
@@ -117,3 +134,5 @@ class JustAskProbabilityJudge(Judge):
         f"{TRUST_TOOL_USE_PROMPT}\n\n"
         "{context}"
     )
+
+    words_in_mouth = " The probability that the answer is {answer_case} is:\n\n"

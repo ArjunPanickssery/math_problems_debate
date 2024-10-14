@@ -686,11 +686,11 @@ class LLM_Agent:
 
     def __init__(
         self,
-        model: str = "gpt-4o-mini",
+        model: str = None,
         tools: list[callable] = None,
         hf_quantization_config=None,
     ):
-        self.model = model
+        self.model = model or "gpt-4o-mini"
         self.tools = tools
         self.hf_quantization_config = hf_quantization_config
         self.ai = get_llm(
@@ -770,6 +770,7 @@ class LLM_Agent:
         messages: list[dict[str, str]] = None,
         input_string: str = None,
         system_message: str | None = None,
+        words_in_mouth: str | None = None,
         top_logprobs: int = 5,
         temperature: float = 0.0,
         cost_log: Costlog = global_cost_log,
@@ -784,6 +785,7 @@ class LLM_Agent:
             messages=messages,
             input_string=input_string,
             system_message=system_message,
+            words_in_mouth=words_in_mouth,
             top_logprobs=top_logprobs,
             temperature=temperature,
             cost_log=cost_log,
@@ -799,6 +801,7 @@ class LLM_Agent:
         messages: list[dict[str, str]] = None,
         input_string: str = None,
         system_message: str | None = None,
+        words_in_mouth: str | None = None,
         top_logprobs: int = 5,
         temperature: float = 0.0,
         cost_log: Costlog = global_cost_log,
@@ -813,6 +816,7 @@ class LLM_Agent:
             messages=messages,
             input_string=input_string,
             system_message=system_message,
+            words_in_mouth=words_in_mouth,
             top_logprobs=top_logprobs,
             temperature=temperature,
             cost_log=cost_log,
@@ -820,9 +824,10 @@ class LLM_Agent:
             **kwargs,
         )
 
+
 @cache(ignore="cost_log")
 def get_llm_response(
-    model: str = "gpt-4o-mini",
+    model: str = None,
     response_model: Union["BaseModel", None] = None,
     prompt: str = None,
     messages: list[dict[str, str]] = None,
@@ -863,7 +868,7 @@ def get_llm_response(
 
 @cache(ignore="cost_log")
 async def get_llm_response_async(
-    model: str = "gpt-4o-mini",
+    model: str = None,
     response_model: Union["BaseModel", None] = None,
     prompt: str = None,
     messages: list[dict[str, str]] = None,
@@ -905,7 +910,7 @@ async def get_llm_response_async(
 @cache(ignore="cost_log")
 def get_llm_probs(
     return_probs_for: list[str],
-    model: str = "gpt-4o-mini",
+    model: str = None,
     prompt: str = None,
     messages: list[dict[str, str]] = None,
     input_string: str = None,
@@ -944,7 +949,7 @@ def get_llm_probs(
 @cache(ignore="cost_log")
 async def get_llm_probs_async(
     return_probs_for: list[str],
-    model: str = "gpt-4o-mini",
+    model: str = None,
     prompt: str = None,
     messages: list[dict[str, str]] = None,
     input_string: str = None,
