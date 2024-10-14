@@ -1,8 +1,10 @@
 import json
 import os.path as osp
-
+import logging
 from solib.utils import random
 from solib.datatypes import Question, Answer
+
+logger = logging.getLogger(__name__)
 
 
 def transform(data_item: dict, **kwargs) -> Question:
@@ -27,6 +29,7 @@ def transform(data_item: dict, **kwargs) -> Question:
         possible_answers=[correct_answer, incorrect_answer],
         correct_answer=correct_answer,
     )
+
 
 def load_data(path, **kwargs) -> list[Question]:
     with open(path, "r") as file:

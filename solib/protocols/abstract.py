@@ -1,9 +1,9 @@
 import logging
 import json
-import asyncio
 import functools
-from typing import Self, Any, Literal
+from typing import Any
 from dataclasses import dataclass
+from pathlib import Path
 import numpy as np
 from solib.utils import config, AbstractionError
 from solib.llm_utils import parallelized_call, LLM_Agent
@@ -140,8 +140,9 @@ class Protocol:
         agent: QA_Agent,
         question: Question_stripped,
         answer_case: Answer,
+        judge: Judge,
         **other_components,
-    ) -> Self.Transcript:
+    ) -> "Protocol.Transcript":
         """Let agent argue for answer_case, and get the probability for answer_case
         based on that.
 
@@ -149,7 +150,8 @@ class Protocol:
             agent (QA_Agent): agent to oversee/judge.
             question (Question_stripped): question.
             answer_case (Answer): answer case the agent argues for.
-            other_components (dict): other components e.g. adversary, judge.
+            judge (Judge): judge to elicit a probability.
+            other_components (dict): other components e.g. adversary.
         """
         raise AbstractionError
 
@@ -166,18 +168,23 @@ class Protocol:
         agent: QA_Agent,
         question: Question,
         answer_case: Answer,
+        judge: Judge,
         **other_components,
     ) -> float:
         """Score of the judge after agent has argued for answer_case."""
         transcript = await self.run(
-            agent, question.strip(), answer_case, **other_components
+            agent, question.strip(), answer_case, judge, **other_components
         )
         prob = transcript.judgement.prob
         return self.judge_score(question, answer_case, prob)
 
     async def run_on_all_answer_cases(
-        self, agent: QA_Agent, question: Question_stripped, **other_components
-    ) -> dict[Answer, Self.Transcript]:
+        self,
+        agent: QA_Agent,
+        question: Question_stripped,
+        judge: Judge,
+        **other_components,
+    ) -> dict[Answer, "Protocol.Transcript"]:
         """Judge probability after hearing each answer case."""
         # we'd like to just do this, but it's less efficient:
         # return {
@@ -191,6 +198,7 @@ class Protocol:
                 self.run,
                 agent=agent,
                 question=question,
+                judge=judge,
                 **other_components,
             ),
             question.answer_cases,
@@ -206,11 +214,11 @@ class Protocol:
         )
 
     async def run_and_reward_difference(
-        self, agent: QA_Agent, question: Question, **other_components
+        self, agent: QA_Agent, question: Question, judge: Judge, **other_components
     ) -> float:
         """Reward difference for the agent between arguing for true_answer and false_answer."""
         transcripts = await self.run_on_all_answer_cases(
-            agent, question.strip(), **other_components
+            agent, question.strip(), judge, **other_components
         )
         probs = {a: t.judgement.prob for a, t in transcripts.items()}
         return self.reward_difference(question, probs)
@@ -219,15 +227,16 @@ class Protocol:
         self,
         agent: QA_Agent,
         questions: list[Question],
-        write: str = None,
+        judge: Judge,
+        write: Path | None = None,
         **other_components,
-    ):
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         results = []
 
         async def process_question(question: Question):
-            transcripts: dict[Answer, Self.Transcript] = (
+            transcripts: dict[Answer, "Protocol.Transcript"] = (
                 await self.run_on_all_answer_cases(
-                    agent, question.strip(), **other_components
+                    agent, question.strip(), judge, **other_components
                 )
             )
             probs: dict[Answer, float] = {
