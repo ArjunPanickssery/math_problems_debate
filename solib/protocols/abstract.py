@@ -1,7 +1,7 @@
 import logging
 import json
 import asyncio
-from functools import partial
+import functools
 from typing import Self, Any, Literal
 from dataclasses import dataclass
 import numpy as np
@@ -187,7 +187,7 @@ class Protocol:
         #     for answer_case in question.answer_cases
         # }
         transcripts = await parallelized_call(
-            partial(
+            functools.partial(
                 self.run,
                 agent=agent,
                 question=question,
@@ -215,7 +215,7 @@ class Protocol:
         probs = {a: t.judgement.prob for a, t in transcripts.items()}
         return self.reward_difference(question, probs)
 
-    async def test(
+    async def experiment(
         self,
         agent: QA_Agent,
         questions: list[Question],
