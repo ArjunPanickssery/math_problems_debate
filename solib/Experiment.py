@@ -174,26 +174,28 @@ class Experiment:
         for k, v in config["init_kwargs"].items():
             if k == "num_turns":
                 k_ = "n"
+                v_ = v
             elif k in ["simultaneous", "consultant_goes_first"]:
                 k_ = "t"
                 v_ = int(v)
             else:
                 k_ = k
-            v_ = str(v)
+                v_ = v
+            v_ = str(v_)
             init_kwargs_str += f"{k_}{v_}_"
         init_kwargs_str = init_kwargs_str[:-1]
         call_kwargs_str = ""
         for k, v in config["call_kwargs"].items():
             if k in ["agent", "adversary"]:
-                k_ = "a"
+                k_ = "A"
                 v_ = v.model
             elif k == "judge":
-                k_ = "j"
+                k_ = "J"
                 v_ = v.model
             else:
                 k_ = k
                 v_ = v
-            call_kwargs_str += f"{k_}{v_}_"
+            call_kwargs_str += f"{k_}_{v_}_"
         call_kwargs_str = call_kwargs_str[:-1]
         path = (
             self.write_path

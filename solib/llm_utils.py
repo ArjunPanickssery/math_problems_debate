@@ -694,10 +694,14 @@ class LLM_Agent:
         self.tools = tools
         self.hf_quantization_config = hf_quantization_config
         self.ai = get_llm(
-            model=model, use_async=False, hf_quantization_config=hf_quantization_config
+            model=self.model,
+            use_async=False,
+            hf_quantization_config=hf_quantization_config,
         )
         self.ai_async = get_llm(
-            model=model, use_async=True, hf_quantization_config=hf_quantization_config
+            model=self.model,
+            use_async=True,
+            hf_quantization_config=hf_quantization_config,
         )
 
     @cache(ignore=["self", "cost_log"])
