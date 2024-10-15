@@ -641,7 +641,6 @@ def get_llm(model: str, use_async=False, hf_quantization_config=None):
                 cost_info=usage,
             )
 
-
         @cache(ignore=["cost_log"])
         @costly(
             simulator=LLM_Simulator.simulate_llm_probs,
