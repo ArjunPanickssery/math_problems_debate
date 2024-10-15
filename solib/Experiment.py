@@ -152,6 +152,9 @@ class Experiment:
                 write=self.get_path(config),
             )
 
+        confirm = input(f"Run {len(self.filtered_configs)} experiments? (y/N)")
+        if confirm.lower() != "y":
+            return
         await parallelized_call(run_experiment, self.filtered_configs)
 
     def _filter_trivial(self, config: dict):
