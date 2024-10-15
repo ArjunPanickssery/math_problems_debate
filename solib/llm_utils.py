@@ -237,6 +237,7 @@ def get_llm(model: str, use_async=False, hf_quantization_config=None):
         client = (tokenizer, model)
 
         # TODO: add cost logging for local models
+        @cache(ignore=["cost_log"])
         def generate(
             prompt: str = None,
             messages: list[dict[str, str]] = None,
@@ -285,6 +286,7 @@ def get_llm(model: str, use_async=False, hf_quantization_config=None):
             return decoded
 
         # TODO: add cost logging for local models
+        @cache(ignore=["cost_log"])
         def return_probs(
             return_probs_for: list[str],
             prompt: str = None,
@@ -486,6 +488,7 @@ def get_llm(model: str, use_async=False, hf_quantization_config=None):
 
             return get_response, messages
 
+        @cache(ignore=["cost_log"])
         @costly(
             simulator=LLM_Simulator.simulate_llm_call,
             messages=_get_messages,
@@ -523,6 +526,7 @@ def get_llm(model: str, use_async=False, hf_quantization_config=None):
                 cost_info=usage,
             )
 
+        @cache(ignore=["cost_log"])
         @costly(
             simulator=LLM_Simulator.simulate_llm_call,
             messages=_get_messages,
@@ -599,6 +603,7 @@ def get_llm(model: str, use_async=False, hf_quantization_config=None):
 
             return get_response, messages
 
+        @cache(ignore=["cost_log"])
         @costly(
             simulator=LLM_Simulator.simulate_llm_probs,
             messages=_get_messages,
@@ -636,6 +641,8 @@ def get_llm(model: str, use_async=False, hf_quantization_config=None):
                 cost_info=usage,
             )
 
+
+        @cache(ignore=["cost_log"])
         @costly(
             simulator=LLM_Simulator.simulate_llm_probs,
             messages=_get_messages,
@@ -704,7 +711,6 @@ class LLM_Agent:
             hf_quantization_config=hf_quantization_config,
         )
 
-    @cache(ignore=["self", "cost_log"])
     def get_response(
         self,
         response_model: Union["BaseModel", None] = None,
@@ -735,7 +741,6 @@ class LLM_Agent:
             **kwargs,
         )
 
-    @cache(ignore=["self", "cost_log"])
     async def get_response_async(
         self,
         response_model: Union["BaseModel", None] = None,
@@ -766,7 +771,6 @@ class LLM_Agent:
             **kwargs,
         )
 
-    @cache(ignore=["self", "cost_log"])
     def get_probs(
         self,
         return_probs_for: list[str],
@@ -797,7 +801,6 @@ class LLM_Agent:
             **kwargs,
         )
 
-    @cache(ignore=["self", "cost_log"])
     async def get_probs_async(
         self,
         return_probs_for: list[str],
