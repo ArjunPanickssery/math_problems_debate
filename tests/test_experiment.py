@@ -27,7 +27,6 @@ def test_get_path():
         }
     )
     path = str(path)
-    print(path)
     assert path.startswith("experiments/results_")
     assert path.endswith(
         "/Debate_t1_n4/J_gpt-4o-mini_A_gpt-4o-mini_A_gpt-4o-mini/results.json"

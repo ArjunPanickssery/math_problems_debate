@@ -88,6 +88,10 @@ class BetterCache(Cache):
                     value.__name__
                 )  # Use type name instead of the actual type object
 
+        # Include global variables in the cache hash because Python handles default
+        # variables a bit differently than you might expect
+        arg_dict["simulate"] = simulate  # Add to the hash key
+
         # Hash the function source, serializer type, and the argument dictionary
         return hash_it(inspect.getsource(fn), type(serializer).__name__, arg_dict)
 
@@ -97,6 +101,7 @@ cache = BetterCache(serializer=PydanticJSONSerializer())
 global_cost_log = Costlog(mode="jsonl")
 simulate = os.getenv("SIMULATE", "False").lower() == "true"
 disable_costly = os.getenv("DISABLE_COSTLY", "False").lower() == "true"
+
 
 # HACK. I have no idea why this works but just manually adding 'self' to
 # @cache(ignore=...) doesn't.
@@ -116,6 +121,7 @@ def method_cache(ignore=None):
 
     return decorator
 
+
 class LLM_Simulator(LLM_Simulator_Faker):
     @classmethod
     def _fake_custom(cls, t: type):
@@ -123,6 +129,7 @@ class LLM_Simulator(LLM_Simulator_Faker):
         import random
 
         return t(prob=random.random())
+
 
 async def parallelized_call(
     func: Coroutine,
