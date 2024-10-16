@@ -6,6 +6,8 @@ from solib.datatypes import Question, Answer
 
 logger = logging.getLogger(__name__)
 
+# NOTE: **kwargs are passed everywhere to allow the random seed to be broken (see project README)
+
 
 def transform(data_item: dict, **kwargs) -> Question:
     question, answer_correct, answer_incorrect = (
@@ -18,16 +20,16 @@ def transform(data_item: dict, **kwargs) -> Question:
     if not isinstance(answer_incorrect, str):
         answer_incorrect = f"{answer_incorrect['numeric']}\n{answer_incorrect['proof']}"
 
-    correct_answer = Answer(symbol="A", value=answer_correct)
-    incorrect_answer = Answer(symbol="B", value=answer_incorrect)
-
     if random(data_item, **kwargs) > 0.5:
-        correct_answer.symbol, incorrect_answer.symbol = "B", "A"
+        correct_answer = Answer(short="A", long=answer_correct)
+        incorrect_answer = Answer(short="B", long=answer_incorrect)
+    else:
+        correct_answer = Answer(short="B", long=answer_incorrect)
+        incorrect_answer = Answer(short="A", long=answer_correct)
 
     return Question(
         question=question,
-        possible_answers=[correct_answer, incorrect_answer],
-        correct_answer=correct_answer,
+        answer_cases={correct_answer: 1.0, incorrect_answer: -1.0},
     )
 
 

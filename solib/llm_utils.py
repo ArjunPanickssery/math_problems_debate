@@ -587,6 +587,10 @@ def get_llm(model: str, use_async=False, hf_quantization_config=None):
             response = get_response(messages)
 
             raw_response, usage = process_response(response)
+
+            if response_model is not None and isinstance(raw_response, dict):
+                raw_response = response_model(**raw_response)
+
             return CostlyResponse(
                 output=raw_response,
                 cost_info=usage,
@@ -624,6 +628,10 @@ def get_llm(model: str, use_async=False, hf_quantization_config=None):
             response = await get_response(messages)
 
             raw_response, usage = process_response(response)
+
+            if response_model is not None and isinstance(raw_response, dict):
+                raw_response = response_model(**raw_response)
+
             return CostlyResponse(
                 output=raw_response,
                 cost_info=usage,

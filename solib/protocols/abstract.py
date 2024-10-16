@@ -54,7 +54,6 @@ class QA_Agent(LLM_Agent):
         return await self.get_response_async(
             prompt=prompt,
             words_in_mouth=words_in_mouth,
-            tools=self.tools,
             max_tokens=max_tokens,
         )
 
@@ -155,13 +154,10 @@ class Protocol:
         """
         raise AbstractionError
 
-    def judge_score(self, question: Question, answer_case: Answer, prob: Prob):
-        if answer_case == question.true_answer:
-            return np.log(prob)
-        elif answer_case == question.false_answer:
-            return np.log(1 - prob)
-        else:
-            return 0.0
+    def judge_score(self, question: Question, probs: dict[Answer, Prob]) -> float:
+        return sum(
+            np.log(probs[a]) * question.answer_cases[a] for a in question.answer_cases
+        )
 
     async def run_and_score(
         self,
@@ -173,10 +169,14 @@ class Protocol:
     ) -> float:
         """Score of the judge after agent has argued for answer_case."""
         transcript = await self.run(
-            agent, question.strip(), answer_case, judge, **other_components
+            agent=agent,
+            question=question.strip(),
+            answer_case=answer_case,
+            judge=judge,
+            **other_components,
         )
-        prob = transcript.judgement.prob
-        return self.judge_score(question, answer_case, prob)
+        probs = transcript.judgement
+        return self.judge_score(question, answer_case, probs)
 
     async def run_on_all_answer_cases(
         self,
@@ -193,6 +193,7 @@ class Protocol:
         #     )
         #     for answer_case in question.answer_cases
         # }
+
         transcripts = await parallelized_call(
             functools.partial(
                 self.run,
@@ -208,9 +209,12 @@ class Protocol:
             for answer_case, transcript in zip(question.answer_cases, transcripts)
         }
 
-    def reward_difference(self, question: Question, probs: dict[Answer, Prob]) -> float:
+    def reward_difference(
+        self, question: Question, probss: dict[Answer, dict[Answer, Prob]]
+    ) -> float:
         return sum(
-            np.log(probs[a]) * question.answer_cases[a] for a in question.answer_cases
+            self.judge_score(question, probss[a]) * question.answer_cases[a]
+            for a in question.answer_cases
         )
 
     async def run_and_reward_difference(
@@ -220,8 +224,8 @@ class Protocol:
         transcripts = await self.run_on_all_answer_cases(
             agent, question.strip(), judge, **other_components
         )
-        probs = {a: t.judgement.prob for a, t in transcripts.items()}
-        return self.reward_difference(question, probs)
+        probss = {a: t.judgement for a, t in transcripts.items()}
+        return self.reward_difference(question, probss)
 
     async def experiment(
         self,
@@ -233,27 +237,36 @@ class Protocol:
     ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         results = []
 
+        logger.debug(
+            f"protocol: {self.__class__.__name__}; agent: {agent.model}; questions: {len(questions)}; judge: {judge.model}; write: {write}; other_components: {other_components.keys()}"
+        )
+
         async def process_question(question: Question):
             transcripts: dict[Answer, "Protocol.Transcript"] = (
                 await self.run_on_all_answer_cases(
-                    agent, question.strip(), judge, **other_components
+                    agent=agent,
+                    question=question.strip(),
+                    judge=judge,
+                    **other_components,
                 )
             )
-            probs: dict[Answer, float] = {
-                a: t.judgement.prob for a, t in transcripts.items()
+            probss: dict[Answer, dict[Answer, Prob]] = {
+                a: t.judgement for a, t in transcripts.items()
             }
-            logger.info(probs)
+            logger.info(probss)
             judge_scores: dict[Answer, float] = {
-                a: self.judge_score(question, a, probs[a])
+                a: self.judge_score(question=question, probs=probss[a])
                 for a in question.answer_cases
             }
             logger.info(judge_scores)
-            reward_difference: float = self.reward_difference(question, probs)
+            reward_difference: float = self.reward_difference(
+                question=question, probss=probss
+            )
             logger.info(reward_difference)
             result = {
                 "question": question,
                 "transcripts": transcripts,
-                "probs": probs,
+                "probss": probss,
                 "judge_scores": judge_scores,
                 "reward_difference": reward_difference,
             }
@@ -276,7 +289,7 @@ class Protocol:
         reward_differences = [r["reward_difference"] for r in results]
         mean_reward_difference = np.mean(reward_differences)
         std_reward_difference = np.std(reward_differences)
-        avg_judge_scores = [np.mean(r["judge_scores"].values()) for r in results]
+        avg_judge_scores = [np.mean(list(r["judge_scores"].values())) for r in results]
         mean_avg_judge_score = np.mean(avg_judge_scores)
         std_avg_judge_score = np.std(avg_judge_scores)
         return {

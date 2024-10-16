@@ -28,7 +28,7 @@ class TipOfTongueJudge(Judge):
             words_in_mouth=self.words_in_mouth,
         )
         return {
-            answer_case: Prob(probs[answer_case.short])
+            answer_case: Prob(prob=probs[answer_case.short])
             for answer_case in question.answer_cases
         }
 

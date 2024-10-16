@@ -54,6 +54,9 @@ class Question_stripped:
         assert found_neg, "both question.answer_cases equal to answer"
         return negated_answer
 
+    def strip(self) -> "Question_stripped":
+        return self
+
 
 @dataclass(frozen=True)
 class Question(Question_stripped):
@@ -95,7 +98,7 @@ class Question(Question_stripped):
 
     def strip(self) -> Question_stripped:
         return Question_stripped(
-            question=self.question, answer_cases=self.answer_cases.keys()
+            question=self.question, answer_cases=list(self.answer_cases.keys())
         )
 
 
@@ -107,3 +110,26 @@ class Prob(BaseModel):
     def validate_prob(cls, v):
         assert 0.0 <= v <= 1.0, "Probability must be between 0 and 1."
         return v
+
+    def __float__(self):
+        return self.prob
+
+    def __add__(self, other):
+        return float(self) + float(other)
+
+    def __mul__(self, other):
+        return float(self) * float(other)
+
+    def __truediv__(self, other):
+        return float(self) / float(other)
+
+    def __sub__(self, other):
+        return float(self) - float(other)
+
+    def __neg__(self):
+        return -float(self)
+
+    def __array__(self):
+        import numpy as np
+
+        return np.array(float(self))

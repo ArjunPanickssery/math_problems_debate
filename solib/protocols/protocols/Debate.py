@@ -48,6 +48,7 @@ class Debate(Protocol):
                 transcript.append(self.TranscriptItem(opp_case, debater_con_arg))
         judgement = await judge(question=question, context=transcript.to_prompt())
         transcript.judgement = judgement
+        logger.debug(f"transcript.judgement: {transcript.judgement}")
         return transcript
 
     async def run_on_all_answer_cases(
@@ -59,22 +60,16 @@ class Debate(Protocol):
     ) -> dict[Answer, "Debate.Transcript"]:
         """Debate specifically is symmetric, so we can subclass this to only run the
         debate once."""
-        answer_0_transcript = await self.run(
+        transcript = await self.run(
             agent=agent,
             question=question,
             answer_case=question.answer_cases[0],
             adversary=adversary,
             judge=judge,
         )
-        answer_1_transcript = self.Transcript(
-            question=question,
-            answer_case=question.answer_cases[1],
-            transcript=answer_0_transcript.transcript,
-            judgement=Prob(1 - answer_0_transcript.judgement.prob),
-        )
         return {
-            question.answer_cases[0]: answer_0_transcript,
-            question.answer_cases[1]: answer_1_transcript,
+            question.answer_cases[0]: transcript,
+            question.answer_cases[1]: transcript,
         }
 
     def end_communication(self, transcript: "Debate.Transcript"):

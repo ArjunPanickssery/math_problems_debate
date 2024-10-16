@@ -1,6 +1,7 @@
 import logging
 from datetime import datetime
 from pathlib import Path
+from solib.datatypes import Question
 from solib.llm_utils import parallelized_call
 from solib.protocols.protocols import *
 from solib.protocols.judges import *
@@ -36,6 +37,7 @@ class Experiment:
 
     def __init__(
         self,
+        questions: list[Question],
         agent_models: list[str],
         agent_toolss: list[list[callable]],
         judge_models: list[str],
@@ -46,6 +48,7 @@ class Experiment:
     ):
         """
         Args:
+            questions: Data to experiment on.
             agent_models: List of models for the agents.
             agent_toolss: List of tools for the agents.
             judge_models: List of models for the judges.
@@ -53,10 +56,18 @@ class Experiment:
             num_turnss: List of number of turns for the protocols.
             write_path: Folder directory to write the results to.
         """
+        self.questions = questions
         self.agent_models = agent_models
         self.agent_toolss = agent_toolss
         self.judge_models = judge_models
-        self.protocols = protocols or self.protocols
+        if protocols is None:
+            pass
+        elif isinstance(protocols, list):
+            self.protocols = {k: v for k, v in self.protocols.items() if k in protocols}
+        elif isinstance(protocols, dict):
+            self.protocols = protocols
+        else:
+            raise ValueError(f"protocols must be a list or dict, got {type(protocols)}")
         if num_turnss is None:
             num_turnss = [2, 4]
         self.num_turnss = num_turnss
@@ -148,6 +159,7 @@ class Experiment:
         async def run_experiment(config: dict):
             setup = config["protocol"](**config["init_kwargs"])
             await setup.experiment(
+                questions=self.questions,
                 **config["call_kwargs"],
                 write=self.get_path(config),
             )
@@ -155,6 +167,7 @@ class Experiment:
         confirm = input(f"Run {len(self.filtered_configs)} experiments? (y/N)")
         if confirm.lower() != "y":
             return
+        logger.debug(self.filtered_configs)
         await parallelized_call(run_experiment, self.filtered_configs)
 
     def _filter_trivial(self, config: dict):

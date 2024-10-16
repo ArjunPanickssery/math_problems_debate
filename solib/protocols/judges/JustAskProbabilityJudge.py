@@ -33,8 +33,11 @@ class JustAskProbabilityJudge(Judge):
             return response
 
         probs_ = await parallelized_call(get_prob, question.answer_cases)
+        logger.debug(f"probs_: {probs_}")
         total = sum(p.prob for p in probs_)  # for normalization
-        return {a: Prob(p.prob / total) for a, p in zip(question.answer_cases, probs_)}
+        return {
+            a: Prob(prob=p.prob / total) for a, p in zip(question.answer_cases, probs_)
+        }
 
     def __init__(
         self,
