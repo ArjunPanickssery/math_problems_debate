@@ -30,6 +30,8 @@ class JustAskProbabilityJudge(Judge):
                 max_tokens=20,
                 words_in_mouth=words_in_mouth,
             )
+
+            logger.debug(f"response: {response}")
             return response
 
         probs_ = await parallelized_call(get_prob, question.answer_cases)

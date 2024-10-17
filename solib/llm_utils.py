@@ -47,12 +47,16 @@ class PydanticJSONSerializer(JSONSerializer):
     def default(obj):
         if isinstance(obj, BaseModel):
             return obj.model_dump()
-        if isinstance(obj, type) and issubclass(obj, BaseModel):
+        elif isinstance(obj, type) and issubclass(obj, BaseModel):
             # If it's a Pydantic model class, return its name for serialization
-            return f"{obj.__module__}.{obj.__name__}"
-        raise TypeError(
-            f"Object of type {obj.__class__.__name__} is not JSON serializable"
-        )
+            return f"{obj.__module__}.{obj.__class__.__name__}"
+        else:
+            try:
+                return dict(obj)
+            except:
+                raise TypeError(
+                    f"Object of type {obj.__class__.__name__} is not JSON serializable"
+                )
 
     @classmethod
     def dumps(cls, data):
@@ -588,8 +592,12 @@ def get_llm(model: str, use_async=False, hf_quantization_config=None):
 
             raw_response, usage = process_response(response)
 
+            logger.debug(f"raw_response: {raw_response}")
+
             if response_model is not None and isinstance(raw_response, dict):
                 raw_response = response_model(**raw_response)
+
+            logger.debug(f"raw_response: {raw_response}")
 
             return CostlyResponse(
                 output=raw_response,
@@ -629,8 +637,12 @@ def get_llm(model: str, use_async=False, hf_quantization_config=None):
 
             raw_response, usage = process_response(response)
 
+            logger.debug(f"raw_response: {raw_response}")
+
             if response_model is not None and isinstance(raw_response, dict):
                 raw_response = response_model(**raw_response)
+
+            logger.debug(f"raw_response: {raw_response}")
 
             return CostlyResponse(
                 output=raw_response,

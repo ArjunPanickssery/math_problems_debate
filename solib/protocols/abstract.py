@@ -195,11 +195,11 @@ class Protocol:
         # }
 
         transcripts = await parallelized_call(
-            functools.partial(
-                self.run,
+            lambda answer_case: self.run(
                 agent=agent,
                 question=question,
                 judge=judge,
+                answer_case=answer_case,
                 **other_components,
             ),
             question.answer_cases,
