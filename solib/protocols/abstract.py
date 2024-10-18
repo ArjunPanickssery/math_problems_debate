@@ -1,13 +1,13 @@
 import logging
 import json
 import functools
-from typing import Any
+from typing import Any, Literal
 from dataclasses import dataclass
 from pathlib import Path
 import numpy as np
 from solib.utils import config, AbstractionError
 from solib.llm_utils import parallelized_call, LLM_Agent
-from solib.datatypes import Answer, Question, Question_stripped, Prob
+from solib.datatypes import Answer, Question, Question_stripped, Prob, BetterJSONEncoder
 
 logger = logging.getLogger(__name__)
 
@@ -154,17 +154,60 @@ class Protocol:
         """
         raise AbstractionError
 
-    def judge_score(self, question: Question, probs: dict[Answer, Prob]) -> float:
-        return sum(
-            np.log(probs[a]) * question.answer_cases[a] for a in question.answer_cases
-        )
+    def judge_score(
+        self,
+        question: Question,
+        probs: dict[Answer, Prob] = None,
+        method: Literal["log", "logodds", "accuracy"] = "logodds",
+    ) -> float:
+        """
+        Score the judge based on ground truth. Methods:
 
-    async def run_and_score(
+            log: log(probs[question.true_answer])
+            logodds: log(probs[question.true_answer]) - log(probs[question.false_answer])
+            accuracy: probs[question.true_answer] > probs[question.false_answer]
+        """
+        if method == "log":
+            return np.log(probs[question.true_answer])
+        elif method == "logodds":
+            return sum(
+                np.log(probs[a]) * question.values_by_answer[a]
+                for a in question.values_by_answer
+            )
+        elif method == "accuracy":
+            return probs[question.true_answer] > probs[question.false_answer]
+        else:
+            raise ValueError(f"Unknown method: {method}")
+
+    def agent_score(
+        self,
+        question: Question,
+        answer_case: Answer,
+        probs: dict[Answer, Prob],
+        method: Literal["log", "logodds", "accuracy"] = "logodds",
+    ) -> float:
+        """Score the agent based on judge persuasion. Methods:
+
+        log: log(probs[answer_case])
+        logodds: log(probs[answer_case]) - log(1 - probs[answer_case])
+        accuracy: probs[answer_case] > probs[question.neg(answer_case)]
+        """
+        if method == "log":
+            return np.log(probs[answer_case])
+        elif method == "logodds":
+            return np.log(probs[answer_case]) - np.log(1 - probs[answer_case])
+        elif method == "accuracy":
+            return probs[answer_case] > probs[question.neg(answer_case)]
+        else:
+            raise ValueError(f"Unknown method: {method}")
+
+    async def run_and_judge_score(
         self,
         agent: QA_Agent,
         question: Question,
         answer_case: Answer,
         judge: Judge,
+        method: Literal["log", "logodds", "accuracy"] = "logodds",
         **other_components,
     ) -> float:
         """Score of the judge after agent has argued for answer_case."""
@@ -176,7 +219,7 @@ class Protocol:
             **other_components,
         )
         probs = transcript.judgement
-        return self.judge_score(question, answer_case, probs)
+        return self.judge_score(question=question, probs=probs, method=method)
 
     async def run_on_all_answer_cases(
         self,
@@ -209,23 +252,38 @@ class Protocol:
             for answer_case, transcript in zip(question.answer_cases, transcripts)
         }
 
-    def reward_difference(
-        self, question: Question, probss: dict[Answer, dict[Answer, Prob]]
+    def agent_score_diff(
+        self,
+        question: Question,
+        probss: dict[Answer, dict[Answer, Prob]],
+        method: Literal["log", "logodds", "accuracy"] = "logodds",
     ) -> float:
+        """Reward difference for the agent between arguing for true_answer and false_answer."""
         return sum(
-            self.judge_score(question, probss[a]) * question.answer_cases[a]
-            for a in question.answer_cases
+            self.agent_score(
+                question=question,
+                answer_case=a,
+                probs=probss[a],
+                method=method,
+            )
+            * question.values_by_answer[a]
+            for a in question.values_by_answer
         )
 
-    async def run_and_reward_difference(
-        self, agent: QA_Agent, question: Question, judge: Judge, **other_components
+    async def run_and_agent_score_diff(
+        self,
+        agent: QA_Agent,
+        question: Question,
+        judge: Judge,
+        method: Literal["log", "logodds", "accuracy"] = "logodds",
+        **other_components,
     ) -> float:
         """Reward difference for the agent between arguing for true_answer and false_answer."""
         transcripts = await self.run_on_all_answer_cases(
-            agent, question.strip(), judge, **other_components
+            agent=agent, question=question.strip(), judge=judge, **other_components
         )
         probss = {a: t.judgement for a, t in transcripts.items()}
-        return self.reward_difference(question, probss)
+        return self.agent_score_diff(question=question, probss=probss, method=method)
 
     async def experiment(
         self,
@@ -236,10 +294,6 @@ class Protocol:
         **other_components,
     ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         results = []
-
-        logger.debug(
-            f"protocol: {self.__class__.__name__}; agent: {agent.model}; questions: {len(questions)}; judge: {judge.model}; write: {write}; other_components: {other_components.keys()}"
-        )
 
         async def process_question(question: Question):
             transcripts: dict[Answer, "Protocol.Transcript"] = (
@@ -253,48 +307,70 @@ class Protocol:
             probss: dict[Answer, dict[Answer, Prob]] = {
                 a: t.judgement for a, t in transcripts.items()
             }
-            logger.info(probss)
-            judge_scores: dict[Answer, float] = {
-                a: self.judge_score(question=question, probs=probss[a])
-                for a in question.answer_cases
+            judge_scores: dict[
+                Literal["log", "logodds", "accuracy"], dict[Answer, float]
+            ] = {
+                method: {
+                    a: self.judge_score(
+                        question=question, probs=probss[a], method=method
+                    )
+                    for a in question.values_by_answer
+                }
+                for method in ["log", "logodds", "accuracy"]
             }
-            logger.info(judge_scores)
-            reward_difference: float = self.reward_difference(
-                question=question, probss=probss
-            )
-            logger.info(reward_difference)
+            agent_scores: dict[
+                Literal["log", "logodds", "accuracy"], dict[Answer, float]
+            ] = {
+                method: {
+                    a: self.agent_score(
+                        question=question, answer_case=a, probs=probss[a], method=method
+                    )
+                    for a in question.values_by_answer
+                }
+                for method in ["log", "logodds", "accuracy"]
+            }
+            agent_score_difference: dict[
+                Literal["log", "logodds", "accuracy"], float
+            ] = {
+                method: self.agent_score_diff(
+                    question=question, probss=probss, method=method
+                )
+                for method in ["log", "logodds", "accuracy"]
+            }
             result = {
                 "question": question,
                 "transcripts": transcripts,
                 "probss": probss,
                 "judge_scores": judge_scores,
-                "reward_difference": reward_difference,
+                "agent_scores": agent_scores,
+                "agent_score_difference": agent_score_difference,
             }
             return result
 
         results = await parallelized_call(process_question, questions)
         stats = self.compute_stats(results)
 
-        logger.info(stats)
-
         if write:
             with open(write, "w") as f:
                 json.dump(
-                    {"results": results, "stats": stats, "config": config(self)}, f
+                    {"results": results, "stats": stats, "config": config(self)},
+                    f,
+                    cls=BetterJSONEncoder,
                 )
 
         return results, stats
 
     def compute_stats(self, results: list[dict[str, Any]]) -> dict[str, Any]:
-        reward_differences = [r["reward_difference"] for r in results]
-        mean_reward_difference = np.mean(reward_differences)
-        std_reward_difference = np.std(reward_differences)
-        avg_judge_scores = [np.mean(list(r["judge_scores"].values())) for r in results]
-        mean_avg_judge_score = np.mean(avg_judge_scores)
-        std_avg_judge_score = np.std(avg_judge_scores)
+        agent_score_differences = [r["agent_score_difference"] for r in results]
+        mean_agent_score_difference = {
+            method: np.mean([d[method] for d in agent_score_differences])
+            for method in agent_score_differences[0]
+        }
+        std_agent_score_difference = {
+            method: np.std([d[method] for d in agent_score_differences])
+            for method in agent_score_differences[0]
+        }
         return {
-            "mean_reward_difference": mean_reward_difference,
-            "std_reward_difference": std_reward_difference,
-            "mean_avg_judge_score": mean_avg_judge_score,
-            "std_avg_judge_score": std_avg_judge_score,
+            "mean_agent_score_difference": mean_agent_score_difference,
+            "std_agent_score_difference": std_agent_score_difference,
         }

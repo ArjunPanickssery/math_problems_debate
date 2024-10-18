@@ -29,7 +29,10 @@ def transform(data_item: dict, **kwargs) -> Question:
 
     return Question(
         question=question,
-        answer_cases={correct_answer: 1.0, incorrect_answer: -1.0},
+        answer_cases_and_values=[
+            (correct_answer, 1.0),
+            (incorrect_answer, -1.0),
+        ],
     )
 
 

@@ -42,10 +42,13 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+# for cache
 class PydanticJSONSerializer(JSONSerializer):
     @staticmethod
     def default(obj):
-        if isinstance(obj, BaseModel):
+        if hasattr(obj, "to_dict"):
+            return obj.to_dict()
+        elif isinstance(obj, BaseModel):
             return obj.model_dump()
         elif isinstance(obj, type) and issubclass(obj, BaseModel):
             # If it's a Pydantic model class, return its name for serialization
