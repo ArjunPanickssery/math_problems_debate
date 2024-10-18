@@ -1,6 +1,6 @@
 import logging
 from solib.llm_utils import parallelized_call
-from solib.datatypes import Question_stripped, Answer, Prob
+from solib.datatypes import Question, Answer, Prob
 from solib.tool_use.tool_rendering import TRUST_TOOL_USE_PROMPT
 from solib.protocols.abstract import Judge
 
@@ -14,9 +14,9 @@ class JustAskProbabilityJudge(Judge):
 
     async def __call__(
         self,
-        question: Question_stripped,
+        question: Question,
         context: str,
-    ) -> dict[Answer, Prob]:
+    ) -> Question:
         async def get_prob(answer_case: Answer) -> Prob:
             words_in_mouth = self.words_in_mouth.format(answer_case=answer_case.short)
             prompt = self.prompt.format(
@@ -37,9 +37,13 @@ class JustAskProbabilityJudge(Judge):
         probs_ = await parallelized_call(get_prob, question.answer_cases)
         logger.debug(f"probs_: {probs_}")
         total = sum(p.prob for p in probs_)  # for normalization
-        return {
-            a: Prob(prob=p.prob / total) for a, p in zip(question.answer_cases, probs_)
-        }
+        return Question(
+            question=question.question,
+            answer_cases=[
+                Answer(**(a.model_dump() | {"judge_prob": p.prob / total}))
+                for a, p in zip(question.answer_cases, probs_)
+            ],
+        )
 
     def __init__(
         self,

@@ -2,12 +2,12 @@ import logging
 import json
 import functools
 from typing import Any, Literal
-from dataclasses import dataclass
+from pydantic import BaseModel, Field
 from pathlib import Path
 import numpy as np
 from solib.utils import config, AbstractionError
 from solib.llm_utils import parallelized_call, LLM_Agent
-from solib.datatypes import Answer, Question, Question_stripped, Prob, BetterJSONEncoder
+from solib.datatypes import Answer, Question, Prob, censor
 
 logger = logging.getLogger(__name__)
 
@@ -15,9 +15,9 @@ logger = logging.getLogger(__name__)
 class Judge(LLM_Agent):
 
     async def __call__(
-        self, question: Question_stripped, context: str | None = None
-    ) -> dict[Answer, Prob]:
-        """Give a probability for each answer_case, based on any context provided."""
+        self, question: Question, context: str | None = None
+    ) -> Question:
+        """Add probabilities to each answer_case."""
         raise AbstractionError
 
 
@@ -28,7 +28,7 @@ class QA_Agent(LLM_Agent):
     async def __call__(
         self,
         prompt: str = None,
-        question: Question_stripped = None,
+        question: Question = None,
         answer_case: Answer = None,
         context: str | None = None,
         words_in_mouth: str | None = None,
@@ -40,7 +40,7 @@ class QA_Agent(LLM_Agent):
             prompt (str): formattable prompt that takes in question, answer_case, and context.
             words_in_mouth (str | None): e.g. " Sure, here's my response:\n\n"
             context (str | None): context e.g. transcript of the conversation so far.
-            question (Question_stripped): question.
+            question (Question): question.
             answer_case (Answer): answer case to argue for.
             max_tokens (int): max tokens for the LLM.
         """
@@ -90,38 +90,21 @@ class QA_Agent(LLM_Agent):
 class Protocol:
     """General class for a judge endowed with any (multi-agent) protocol for
     question-answering, e.g. debate, consultancy, blindjudge.
-
-    NOTE: It is critical that while subclassing, ONLY methods that take in
-    Question_stripped instead of Question are overridden. Otherwise bad things
-    will happen, and your name will go down in infamy.
     """
 
-    @dataclass
-    class TranscriptItem:
-        answer_case: Answer
+    class TranscriptItem(BaseModel):
+        answer_case_short: str
         message: str
 
         def to_prompt(self):
             return (
-                f"### (Argument in favour of {self.answer_case.short})\n"
+                f"### (Argument in favour of {self.answer_case_short})\n"
                 f"{self.message}\n"
             )
 
-    class Transcript:
-
-        def __init__(
-            self,
-            transcript: list["Protocol.TranscriptItem"] = None,
-            judgement: Prob | None = None,
-        ):
-            self.transcript = transcript or []
-            self.judgement = judgement
-
-        def __dict__(self):
-            return {
-                "transcript": self.transcript,
-                "judgement": self.judgement,
-            }
+    class Transcript(BaseModel):
+        transcript: list["Protocol.TranscriptItem"] = Field(default_factory=list)
+        judgement: Prob | None = None
 
         def to_prompt(self):
             return "\n".join(item.to_prompt() for item in self.transcript)
@@ -137,7 +120,7 @@ class Protocol:
     async def run(
         self,
         agent: QA_Agent,
-        question: Question_stripped,
+        question: Question,
         answer_case: Answer,
         judge: Judge,
         **other_components,
@@ -147,84 +130,17 @@ class Protocol:
 
         Args:
             agent (QA_Agent): agent to oversee/judge.
-            question (Question_stripped): question.
+            question (Question): question.
             answer_case (Answer): answer case the agent argues for.
             judge (Judge): judge to elicit a probability.
             other_components (dict): other components e.g. adversary.
         """
         raise AbstractionError
 
-    def judge_score(
-        self,
-        question: Question,
-        probs: dict[Answer, Prob] = None,
-        method: Literal["log", "logodds", "accuracy"] = "logodds",
-    ) -> float:
-        """
-        Score the judge based on ground truth. Methods:
-
-            log: log(probs[question.true_answer])
-            logodds: log(probs[question.true_answer]) - log(probs[question.false_answer])
-            accuracy: probs[question.true_answer] > probs[question.false_answer]
-        """
-        if method == "log":
-            return np.log(probs[question.true_answer])
-        elif method == "logodds":
-            return sum(
-                np.log(probs[a]) * question.values_by_answer[a]
-                for a in question.values_by_answer
-            )
-        elif method == "accuracy":
-            return probs[question.true_answer] > probs[question.false_answer]
-        else:
-            raise ValueError(f"Unknown method: {method}")
-
-    def agent_score(
-        self,
-        question: Question,
-        answer_case: Answer,
-        probs: dict[Answer, Prob],
-        method: Literal["log", "logodds", "accuracy"] = "logodds",
-    ) -> float:
-        """Score the agent based on judge persuasion. Methods:
-
-        log: log(probs[answer_case])
-        logodds: log(probs[answer_case]) - log(1 - probs[answer_case])
-        accuracy: probs[answer_case] > probs[question.neg(answer_case)]
-        """
-        if method == "log":
-            return np.log(probs[answer_case])
-        elif method == "logodds":
-            return np.log(probs[answer_case]) - np.log(1 - probs[answer_case])
-        elif method == "accuracy":
-            return probs[answer_case] > probs[question.neg(answer_case)]
-        else:
-            raise ValueError(f"Unknown method: {method}")
-
-    async def run_and_judge_score(
-        self,
-        agent: QA_Agent,
-        question: Question,
-        answer_case: Answer,
-        judge: Judge,
-        method: Literal["log", "logodds", "accuracy"] = "logodds",
-        **other_components,
-    ) -> float:
-        """Score of the judge after agent has argued for answer_case."""
-        transcript = await self.run(
-            agent=agent,
-            question=question.strip(),
-            answer_case=answer_case,
-            judge=judge,
-            **other_components,
-        )
-        probs = transcript.judgement
-        return self.judge_score(question=question, probs=probs, method=method)
-
     async def run_on_all_answer_cases(
         self,
         agent: QA_Agent,
-        question: Question_stripped,
+        question: Question,
         judge: Judge,
         **other_components,
     ) -> dict[Answer, "Protocol.Transcript"]:

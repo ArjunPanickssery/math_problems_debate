@@ -1,5 +1,5 @@
 import logging
-from solib.datatypes import Question_stripped, Answer, Prob
+from solib.datatypes import Question, Answer, Prob
 from solib.tool_use.tool_rendering import TRUST_TOOL_USE_PROMPT
 from solib.protocols.abstract import Judge
 
@@ -13,9 +13,9 @@ class TipOfTongueJudge(Judge):
 
     async def __call__(
         self,
-        question: Question_stripped,
+        question: Question,
         context: str,
-    ) -> dict[Answer, Prob]:
+    ) -> Question:
 
         prompt = self.prompt.format(
             question=question.to_prompt(),
@@ -27,10 +27,13 @@ class TipOfTongueJudge(Judge):
             return_probs_for=question.answer_cases_short,
             words_in_mouth=self.words_in_mouth,
         )
-        return {
-            answer_case: Prob(prob=probs[answer_case.short])
-            for answer_case in question.answer_cases
-        }
+        return Question(
+            question=question.question,
+            answer_cases=[
+                Answer(**(a.model_dump() | {"judge_prob": probs[a.short]}))
+                for a in question.answer_cases
+            ],
+        )
 
     def __init__(
         self,
