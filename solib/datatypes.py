@@ -152,18 +152,45 @@ class Score(BaseModel):
 
 class Answer(BaseModel):
     """
-    A potential answer, meant to be included inside a Question. Can optionally contain
-    a `value` (e.g. 1.0 for true, -1.0 for false), which hidden via the .censor() method
-    (which in particular is used in .to_prompt()).
+    Generally only found as an item of a Question object.
 
-    Can also be used to store an elicited `judge_prob`.
+    The Answer class may be used for the following purposes.
 
-    Can also be used to store `case_probs`, indicating the probabilities elicited from a
-    judge for each answer_case in a question after an agent argues for this answer.
+    ## `Answer.is_censored`
+    To store a potential answer, with no indicator of whether it is true or not.
+    Nothing else must be provided.
+
+    ## `Answer.is_grounded`
+    To store an answer, including its "value" (e.g. 1.0 for true, -1.0 for false).
+    Additional attributes in this case:
+        value (float): must be provided.
+
+    ## `Answer.is_elicited`
+    To store an answer and an elicited probability for it.
+    Additional attributes in this case:
+        judge_prob (Prob): must be provided.
+
+    ## `Answer.is_argued`
+    To store an answer, and some elicited probabilities for _all answers_ after
+    "hearing an argument for this answer".
+    Additional attributes in this case:
+        case_probs (Question): must be provided. Should be a Question that is .is_elicited.
+        agent_score (Score): computed. Measures how much the case_probs seem to be
+            convinced by this answer.
+
+    Attributes in all circumstances:
+        short (str): must be provided.
+        long (str): must be provided.
+
+    Methods in all circumstances:
+        censor() -> Answer: converts any Answer into the censored form. This is necessary
+            before showing anything to an AI.
+        to_prompt() -> str: a prompt representation of an Answer, containing only its censored
+            form
     """
 
     short: str
-    long: Any
+    long: str
     value: float | None = None
     judge_prob: Prob | None = None
     case_probs: "Question" | None = None
@@ -196,19 +223,69 @@ class Answer(BaseModel):
     @property
     def agent_score(self) -> Score:
         """Score for this answer case according to self.case_probs."""
+        assert self.is_argued
         return Score.calc(self.case_probs, self)
 
 
 class Question(BaseModel):
-    """Question.
+    """
+    The Question class may be used for the following purposes. (These purposes are
+    inferred from the purposes of the question's answer_cases).
 
-    Arguments:
-        question (str): The question to be answered.
-        answer_cases (list[Answer]): A list of answers that may be argued for.
+    ## `Question.is_censored`
+    To store a question and its answer choices, with no info about ground truth.
+
+    ## `Question.is_grounded`
+    To store a question and its answer choices, each of which has a value (e.g. 1.0
+    for the true answer, -1.0 for the false answer)
+    Additional attributes in this case:
+        true_answer: the answer_case with value = 1.0
+        false_answer: the answer_case with value = -1.0
+        best_answer: the answer_case with the highest value, generally same as true_answer
+        worst_answer: the answer_case with the lowest value, generally same as false_answer
+
+    ## `Question.is_elicited`
+    To store a question and its answer choices, each with some elicited probability from
+    the judge.
+    Additional attributes in this case:
+        total_prob (float): total probability of all answer cases.
+        is_normalized (bool): checks if total_prob = 1.0.
+        judge_score (Score): computed. Scores the elicited probabilities against the true answer.
+    Additional methods in this case:
+        normalize_probs() -> Question: normalizes the probabilities so that they sum to 1.0.
+            Not in-place.
+
+    ## `Question.is_argued`
+    To stores answers that are .is_argued, i.e. for each answer, store elicited probs after arguing
+    for that answer.
+    Additional attributes in this case:
+        agent_score_diff (Score): computed. Measures how much more the agent can convince the judge
+            by arguing for the true answer compared to the false answer.
+
+    ## `Question.has_transcript`
+    To store a transcript en route to eliciting a probability.
+    Additional attributes in this case:
+        transcript (list[TranscriptItem]): must be provided / appended via .append()
+
+    Attributes in all circumstances:
+        question (str): must be provided.
+        answer_cases (list[Answer]): must be provided.
+        answer_cases_short (list[str]): calculated.
+        answer_cases_dict (dict[str, Answer]): calculated.
+
+    Methods in all circumstances:
+        neg(a: Answer) -> Answer: return the other answer.
+        append(t: TranscriptItem), inplace: adds a transcript item (creating
+            the transcript for the first time if necessary)
+        to_prompt() -> str: a prompt representation of a Question. Note: contains only
+            question and answer cases; to promptify the transcript, make your own method
+            in the Protocol.
+
     """
 
     question: str
     answer_cases: list[Answer]
+    transcript: list["TranscriptItem"] | None = None
 
     def censor(self) -> "Question":
         return Question(
@@ -232,7 +309,14 @@ class Question(BaseModel):
     def is_argued(self) -> bool:
         return all(answer.is_argued for answer in self.answer_cases)
 
+    @property
+    def has_transcript(self) -> bool:
+        return self.transcript is not None
+
     def to_prompt(self):
+        """Note: this only includes the question and answer cases,
+        not the transcript. Implement a method in the Protocol for
+        promptifying the transcript."""
         return (
             f"QUESTION: {self.question}\n"
             + "POSSIBLE ANSWERS:\n"
@@ -253,47 +337,49 @@ class Question(BaseModel):
         ans_index = self.answer_cases.index(answer)
         return self.answer_cases[1 - ans_index]
 
-    # following methods only applies for value not None
-
     @property
     def best_answer(self) -> Answer:
+        assert self.is_grounded
         return max(self.answer_cases, key=lambda x: x.value)
 
     @property
     def worst_answer(self) -> Answer:
+        assert self.is_grounded
         return min(self.answer_cases, key=lambda x: x.value)
 
     @property
     def true_answer(self) -> Answer:
+        assert self.is_grounded
         true_answers = [answer for answer in self.answer_cases if answer.value == 1.0]
         assert len(true_answers) == 1
         return true_answers[0]
 
     @property
     def false_answer(self) -> Answer:
+        assert self.is_grounded
         false_answers = [answer for answer in self.answer_cases if answer.value == -1.0]
         assert len(false_answers) == 1
         return false_answers[0]
 
-    # following methods only apply for judge_prob not None
-
     @property
     def total_prob(self) -> float:
+        assert self.is_elicited
         return sum(answer.judge_prob for answer in self.answer_cases)
 
     @property
     def is_normalized(self) -> bool:
+        assert self.is_elicited
         return abs(self.total_prob - 1.0) < 1e-3
 
-    def normalize_probs(self):
-        total = self.total_prob
+    def normalize_probs(self) -> "Question":
+        assert self.is_elicited
         return Question(
             question=self.question,
             answer_cases=[
                 Answer(
                     short=answer.short,
                     long=answer.long,
-                    judge_prob=answer.judge_prob / total,
+                    judge_prob=answer.judge_prob / self.total_prob,
                 )
                 for answer in self.answer_cases
             ],
@@ -305,13 +391,115 @@ class Question(BaseModel):
         """
         Score judge_probs based on ground truth
         """
+        if not self.is_elicited:
+            return None
         return Score.calc(self, self.true_answer)
 
     @computed_field
     @property
     def agent_score_diff(self) -> Score:
         """Advantage in answering for the truth."""
+        if not self.is_argued:
+            return None
         return self.true_answer.agent_score - self.false_answer.agent_score
+
+    def judge_score_expected(
+        self,
+        agent_arguing_for: (
+            callable[[Answer], Prob] | list[float] | Literal["max", "min", "uniform"]
+        ),
+    ) -> Score:
+        """Expected judge score given how likely an agent is to argue for each answer.
+
+        Args:
+            agent_arguing_for (callable[[Answer], Prob] | list[float] | Literal["max", "min", "uniform"]):
+                callable: function mapping answer to probability of arguing for it.
+                list[float]: list of probabilities of the agent arguing for each answer, in ascending order
+                    of value (i.e. false first, true last)
+                Literal["max", "min", "uniform"]: shortcut for most common distributions.
+        """
+        assert self.is_argued
+        if agent_arguing_for == "max":
+            agent_arguing_for = [0.0] * (len(self.answer_cases) - 1) + [1.0]
+        elif agent_arguing_for == "min":
+            agent_arguing_for = [1.0] + [0.0] * (len(self.answer_cases) - 1)
+        elif agent_arguing_for == "uniform":
+            agent_arguing_for = [1.0 / len(self.answer_cases)] * len(self.answer_cases)
+
+        if isinstance(agent_arguing_for, list):
+            assert len(agent_arguing_for) == len(self.answer_cases)
+            agent_arguing_for = lambda a: agent_arguing_for[
+                self.answer_cases.sort(key=lambda x: x.value).index(a)
+            ]
+        return sum(
+            agent_arguing_for(answer) * answer.case_probs.judge_score
+            for answer in self.answer_cases
+        )
+
+    @computed_field
+    @property
+    def judge_score_max(self) -> Score:
+        if not self.is_elicited:
+            return None
+        return self.judge_score_expected("max")
+
+    @computed_field
+    @property
+    def judge_score_min(self) -> Score:
+        if not self.is_elicited:
+            return None
+        return self.judge_score_expected("min")
+
+    @computed_field
+    @property
+    def judge_score_uniform(self) -> Score:
+        if not self.is_elicited:
+            return None
+        return self.judge_score_expected("uniform")
+
+    @staticmethod
+    def compute_stats(questions: list["Question"]) -> dict[str, Any]:
+        """Compute stats for a list of .is_argued Questions."""
+        assert all(question.is_argued for question in questions)
+        asds = [question.agent_score_diff for question in questions]
+        jsmaxs = [question.judge_score_max for question in questions]
+        jsmins = [question.judge_score_min for question in questions]
+        jsunis = [question.judge_score_uniform for question in questions]
+        asd_mean = np.mean(asds)
+        asd_std = np.std(asds)
+        jsmax_mean = np.mean(jsmaxs)
+        jsmax_std = np.std(jsmaxs)
+        jsmins_mean = np.mean(jsmins)
+        jsmins_std = np.std(jsmins)
+        jsuni_mean = np.mean(jsunis)
+        jsuni_std = np.std(jsunis)
+        return {
+            "asd_mean": asd_mean,
+            "asd_std": asd_std,
+            "jsmax_mean": jsmax_mean,
+            "jsmax_std": jsmax_std,
+            "jsmins_mean": jsmins_mean,
+            "jsmins_std": jsmins_std,
+            "jsuni_mean": jsuni_mean,
+            "jsuni_std": jsuni_std,
+        }
+
+    # following methods apply for treating Question as a transcript
+
+    def append(self, item: "TranscriptItem") -> None:
+        if self.transcript is None:
+            self.transcript = []
+        self.transcript.append(item)
+
+
+class TranscriptItem(BaseModel):
+    """
+    Transcript item.
+    """
+
+    role: str  # e.g. answer_case_short, or "client"
+    content: str
+    metadata: dict | None = None
 
 
 class BetterJSONEncoder(json.JSONEncoder):
@@ -324,6 +512,9 @@ class BetterJSONEncoder(json.JSONEncoder):
 
 
 def censor(*args_to_censor):
+    """Apply .censor() to specified arguments, to hide truth values and
+    similar info."""
+
     def decorator(func):
         @wraps(func)
         async def async_wrapper(*args, **kwargs):

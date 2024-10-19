@@ -1,5 +1,5 @@
 import logging
-from solib.datatypes import Question_stripped, Answer
+from solib.datatypes import Question, Answer, censor
 from solib.protocols.abstract import Protocol, QA_Agent, Judge
 
 logger = logging.getLogger(__name__)
@@ -8,14 +8,13 @@ logger = logging.getLogger(__name__)
 class Blind(Protocol):
     """Absolute baseline: Judge unassisted by AI."""
 
+    @censor("question", "answer_case")
     async def run(
         self,
         agent: QA_Agent,
-        question: Question_stripped,
+        question: Question,
         answer_case: Answer,
         judge: Judge,
-    ) -> "Blind.Transcript":
-        transcript = self.Transcript()
-        judgement = await judge(question=question, context=transcript.to_prompt())
-        transcript.judgement = judgement
-        return transcript
+    ) -> Question:
+        result = await judge(question=question, context=self.ts_to_prompt(question))
+        return result

@@ -17,6 +17,8 @@ class JustAskProbabilityJudge(Judge):
         question: Question,
         context: str,
     ) -> Question:
+        """Returns a .is_elicited Question."""
+
         async def get_prob(answer_case: Answer) -> Prob:
             words_in_mouth = self.words_in_mouth.format(answer_case=answer_case.short)
             prompt = self.prompt.format(
@@ -35,15 +37,15 @@ class JustAskProbabilityJudge(Judge):
             return response
 
         probs_ = await parallelized_call(get_prob, question.answer_cases)
-        logger.debug(f"probs_: {probs_}")
-        total = sum(p.prob for p in probs_)  # for normalization
-        return Question(
+        result = Question(
             question=question.question,
             answer_cases=[
-                Answer(**(a.model_dump() | {"judge_prob": p.prob / total}))
+                Answer.model_validate(a.model_dump() | {"judge_prob": p})
                 for a, p in zip(question.answer_cases, probs_)
             ],
         )
+        assert result.is_elicited
+        return result.normalize_probs()
 
     def __init__(
         self,

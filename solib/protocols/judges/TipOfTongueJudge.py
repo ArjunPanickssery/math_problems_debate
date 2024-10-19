@@ -27,13 +27,18 @@ class TipOfTongueJudge(Judge):
             return_probs_for=question.answer_cases_short,
             words_in_mouth=self.words_in_mouth,
         )
-        return Question(
+        result = Question(
             question=question.question,
             answer_cases=[
-                Answer(**(a.model_dump() | {"judge_prob": probs[a.short]}))
+                Answer.model_validate(
+                    a.model_dump() | {"judge_prob": Prob(prob=probs[a.short])}
+                )
                 for a in question.answer_cases
             ],
         )
+        assert result.is_elicited
+        assert result.is_normalized
+        return result
 
     def __init__(
         self,

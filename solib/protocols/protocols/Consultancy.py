@@ -1,20 +1,12 @@
 import functools
 import logging
-from dataclasses import dataclass
-from solib.datatypes import Question_stripped, Answer
+from solib.datatypes import Question, Answer, TranscriptItem, censor
 from solib.protocols.abstract import Protocol, QA_Agent, Judge
 
 logger = logging.getLogger(__name__)
 
 
 class Consultancy(Protocol):
-
-    @dataclass
-    class ClientTranscriptItem:
-        message: str
-
-        def to_prompt(self):
-            return f"### Enquiry from judge:\n{self.message}\n"
 
     def __init__(
         self,
@@ -28,15 +20,22 @@ class Consultancy(Protocol):
         self.num_turns = num_turns
         self.consultant_goes_first = consultant_goes_first
 
-    def end_communication(self, transcript: "Consultancy.Transcript"):
+    def end_communication(self, question: Question) -> bool:
         """Default end_communication method: return True when consultancy transcript
         exceeds length num_turns. Override in subclass."""
-        return len(transcript.transcript) >= self.num_turns
+        return len(question.transcript) >= self.num_turns
 
+    def tsitem_to_prompt(self, item: TranscriptItem) -> str:
+        if item.role == "client":
+            return f"### Enquiry from judge:\n{item.content}\n"
+        else:
+            return super().tsitem_to_prompt(item)
+
+    @censor("question", "answer_case")
     async def run(
         self,
         agent: QA_Agent,
-        question: Question_stripped,
+        question: Question,
         answer_case: Answer,
         judge: Judge,
     ):
@@ -56,20 +55,20 @@ class Consultancy(Protocol):
             prompt=self.client_prompt,
             question=question.to_prompt(),
         )
-        transcript = self.Transcript()
+
         if self.consultant_goes_first:
-            consultant_message = await consultant(context=transcript.to_prompt())
-            transcript.append(self.ClientTranscriptItem(consultant_message))
-        while not self.end_communication(transcript):
-            client_message = await client(context=transcript.to_prompt())
-            transcript.append(self.ClientTranscriptItem(client_message))
-            consultant_message = await consultant(
-                answer_case=answer_case.to_prompt(), context=transcript.to_prompt()
+            cons_resp = await consultant(context=self.ts_to_prompt(question))
+            question.append(TranscriptItem(role=answer_case.short, content=cons_resp))
+        while not self.end_communication(question):
+            client_resp = await client(context=self.ts_to_prompt(question))
+            question.append(TranscriptItem(role="client", content=client_resp))
+            cons_resp = await consultant(
+                answer_case=answer_case.to_prompt(),
+                context=self.ts_to_prompt(question),
             )
-            transcript.append(self.TranscriptItem(answer_case, consultant_message))
-        judgement = await judge(question=question, context=transcript.to_prompt())
-        transcript.judgement = judgement
-        return transcript
+            question.append(TranscriptItem(role=answer_case.short, content=cons_resp))
+        result = await judge(question=question, context=self.ts_to_prompt(question))
+        return result
 
     consultant_prompt = (
         "You are a consultant trying to convince the judge of the following answer "

@@ -5,9 +5,9 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 from pathlib import Path
 import numpy as np
-from solib.utils import config, AbstractionError
+from solib.utils import config, AbstractionError, write_jsonl_async, write_json
 from solib.llm_utils import parallelized_call, LLM_Agent
-from solib.datatypes import Answer, Question, Prob, censor
+from solib.datatypes import Answer, Question, Prob, TranscriptItem, censor
 
 logger = logging.getLogger(__name__)
 
@@ -90,33 +90,27 @@ class QA_Agent(LLM_Agent):
 class Protocol:
     """General class for a judge endowed with any (multi-agent) protocol for
     question-answering, e.g. debate, consultancy, blindjudge.
+
+    NOTE: while subclassing, maintain the @censor decorator on run() and run_on_all_answer_cases().
+    Do not subclass .experiment()
     """
-
-    class TranscriptItem(BaseModel):
-        answer_case_short: str
-        message: str
-
-        def to_prompt(self):
-            return (
-                f"### (Argument in favour of {self.answer_case_short})\n"
-                f"{self.message}\n"
-            )
-
-    class Transcript(BaseModel):
-        transcript: list["Protocol.TranscriptItem"] = Field(default_factory=list)
-        judgement: Prob | None = None
-
-        def to_prompt(self):
-            return "\n".join(item.to_prompt() for item in self.transcript)
-
-        def append(self, x: "Protocol.TranscriptItem"):
-            self.transcript.append(x)
 
     prompt = None  # by default we default to QA_Agent.prompt for this protocol
 
     def __init__(self, prompt: str = None):
         self.prompt = prompt or self.prompt
 
+    def tsitem_to_prompt(self, item: TranscriptItem) -> str:
+        return f"## Argument in favour of {item.role}\n{item.content}\n"
+
+    def ts_to_prompt(self, transcript: list[TranscriptItem] | Question | None) -> str:
+        if isinstance(transcript, Question):
+            transcript = transcript.transcript
+        if transcript is None:
+            return ""
+        return "\n".join(self.tsitem_to_prompt(item) for item in transcript)
+
+    @censor("question", "answer_case")
     async def run(
         self,
         agent: QA_Agent,
@@ -124,7 +118,7 @@ class Protocol:
         answer_case: Answer,
         judge: Judge,
         **other_components,
-    ) -> "Protocol.Transcript":
+    ) -> Question:
         """Let agent argue for answer_case, and get the probability for answer_case
         based on that.
 
@@ -134,17 +128,22 @@ class Protocol:
             answer_case (Answer): answer case the agent argues for.
             judge (Judge): judge to elicit a probability.
             other_components (dict): other components e.g. adversary.
+
+        Returns:
+            Question with added transcript + probs for each answer_case.
         """
         raise AbstractionError
 
+    @censor("question")
     async def run_on_all_answer_cases(
         self,
         agent: QA_Agent,
         question: Question,
         judge: Judge,
         **other_components,
-    ) -> dict[Answer, "Protocol.Transcript"]:
-        """Judge probability after hearing each answer case."""
+    ) -> Question:
+        """For each answer_case in Question, run the protocol with that answer_case,
+        and update that answer_case with the Question produced by Protocol.run()"""
         # we'd like to just do this, but it's less efficient:
         # return {
         #     answer_case: await self.run(
@@ -153,7 +152,7 @@ class Protocol:
         #     for answer_case in question.answer_cases
         # }
 
-        transcripts = await parallelized_call(
+        case_probss = await parallelized_call(
             lambda answer_case: self.run(
                 agent=agent,
                 question=question,
@@ -163,130 +162,49 @@ class Protocol:
             ),
             question.answer_cases,
         )
-        return {
-            answer_case: transcript
-            for answer_case, transcript in zip(question.answer_cases, transcripts)
-        }
-
-    def agent_score_diff(
-        self,
-        question: Question,
-        probss: dict[Answer, dict[Answer, Prob]],
-        method: Literal["log", "logodds", "accuracy"] = "logodds",
-    ) -> float:
-        """Reward difference for the agent between arguing for true_answer and false_answer."""
-        return sum(
-            self.agent_score(
-                question=question,
-                answer_case=a,
-                probs=probss[a],
-                method=method,
-            )
-            * question.values_by_answer[a]
-            for a in question.values_by_answer
+        result = Question(
+            question=question.question,
+            answer_cases=[
+                Answer(**(a.model_dump() | {"case_probs": case_probs}))
+                for a, case_probs in zip(question.answer_cases, case_probss)
+            ],
         )
-
-    async def run_and_agent_score_diff(
-        self,
-        agent: QA_Agent,
-        question: Question,
-        judge: Judge,
-        method: Literal["log", "logodds", "accuracy"] = "logodds",
-        **other_components,
-    ) -> float:
-        """Reward difference for the agent between arguing for true_answer and false_answer."""
-        transcripts = await self.run_on_all_answer_cases(
-            agent=agent, question=question.strip(), judge=judge, **other_components
-        )
-        probss = {a: t.judgement for a, t in transcripts.items()}
-        return self.agent_score_diff(question=question, probss=probss, method=method)
+        assert result.is_argued
+        return result
 
     async def experiment(
         self,
         agent: QA_Agent,
         questions: list[Question],
         judge: Judge,
-        write: Path | None = None,
+        write: Path | str | None = None,
         **other_components,
-    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    ) -> tuple[list[Question], dict]:
         results = []
 
+        if write:
+            write_results = Path(write) / "results.jsonl"
+            write_stats = Path(write) / "stats.json"
+            write_config = Path(write) / "config.json"
+        else:
+            write_results = write_stats = write_config = None
+
         async def process_question(question: Question):
-            transcripts: dict[Answer, "Protocol.Transcript"] = (
-                await self.run_on_all_answer_cases(
-                    agent=agent,
-                    question=question.strip(),
-                    judge=judge,
-                    **other_components,
-                )
+            result = await self.run_on_all_answer_cases(
+                agent=agent,
+                question=question,
+                judge=judge,
+                **other_components,
             )
-            probss: dict[Answer, dict[Answer, Prob]] = {
-                a: t.judgement for a, t in transcripts.items()
-            }
-            judge_scores: dict[
-                Literal["log", "logodds", "accuracy"], dict[Answer, float]
-            ] = {
-                method: {
-                    a: self.judge_score(
-                        question=question, probs=probss[a], method=method
-                    )
-                    for a in question.values_by_answer
-                }
-                for method in ["log", "logodds", "accuracy"]
-            }
-            agent_scores: dict[
-                Literal["log", "logodds", "accuracy"], dict[Answer, float]
-            ] = {
-                method: {
-                    a: self.agent_score(
-                        question=question, answer_case=a, probs=probss[a], method=method
-                    )
-                    for a in question.values_by_answer
-                }
-                for method in ["log", "logodds", "accuracy"]
-            }
-            agent_score_difference: dict[
-                Literal["log", "logodds", "accuracy"], float
-            ] = {
-                method: self.agent_score_diff(
-                    question=question, probss=probss, method=method
-                )
-                for method in ["log", "logodds", "accuracy"]
-            }
-            result = {
-                "question": question,
-                "transcripts": transcripts,
-                "probss": probss,
-                "judge_scores": judge_scores,
-                "agent_scores": agent_scores,
-                "agent_score_difference": agent_score_difference,
-            }
+            await write_jsonl_async(
+                result.model_dump(), path=write_results, append=True
+            )
             return result
 
         results = await parallelized_call(process_question, questions)
-        stats = self.compute_stats(results)
+        stats = Question.compute_stats(results)
 
-        if write:
-            with open(write, "w") as f:
-                json.dump(
-                    {"results": results, "stats": stats, "config": config(self)},
-                    f,
-                    cls=BetterJSONEncoder,
-                )
+        await write_json(stats, path=write_stats)
+        await write_json(config(self), path=write_config)
 
         return results, stats
-
-    def compute_stats(self, results: list[dict[str, Any]]) -> dict[str, Any]:
-        agent_score_differences = [r["agent_score_difference"] for r in results]
-        mean_agent_score_difference = {
-            method: np.mean([d[method] for d in agent_score_differences])
-            for method in agent_score_differences[0]
-        }
-        std_agent_score_difference = {
-            method: np.std([d[method] for d in agent_score_differences])
-            for method in agent_score_differences[0]
-        }
-        return {
-            "mean_agent_score_difference": mean_agent_score_difference,
-            "std_agent_score_difference": std_agent_score_difference,
-        }
