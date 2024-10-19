@@ -223,7 +223,8 @@ class Answer(BaseModel):
     @property
     def agent_score(self) -> Score:
         """Score for this answer case according to self.case_probs."""
-        assert self.is_argued
+        if not self.is_argued:
+            return None
         return Score.calc(self.case_probs, self)
 
 
@@ -379,7 +380,7 @@ class Question(BaseModel):
                 Answer(
                     short=answer.short,
                     long=answer.long,
-                    judge_prob=answer.judge_prob / self.total_prob,
+                    judge_prob=Prob(prob=answer.judge_prob / self.total_prob),
                 )
                 for answer in self.answer_cases
             ],
@@ -438,22 +439,22 @@ class Question(BaseModel):
 
     @computed_field
     @property
-    def judge_score_max(self) -> Score:
-        if not self.is_elicited:
+    def judge_score_max(self) -> Score | None:
+        if not self.is_argued:
             return None
         return self.judge_score_expected("max")
 
     @computed_field
     @property
-    def judge_score_min(self) -> Score:
-        if not self.is_elicited:
+    def judge_score_min(self) -> Score | None:
+        if not self.is_argued:
             return None
         return self.judge_score_expected("min")
 
     @computed_field
     @property
-    def judge_score_uniform(self) -> Score:
-        if not self.is_elicited:
+    def judge_score_uniform(self) -> Score | None:
+        if not self.is_argued:
             return None
         return self.judge_score_expected("uniform")
 
