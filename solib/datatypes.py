@@ -4,7 +4,7 @@ import inspect
 import warnings
 import numpy as np
 from functools import wraps
-from typing import Any, Literal
+from typing import Any, Literal, Optional, Union, Callable
 from pydantic import BaseModel, field_validator, computed_field
 
 logger = logging.getLogger(__name__)
@@ -78,7 +78,7 @@ class Score(BaseModel):
     accuracy: float | None = None
 
     @classmethod
-    def calc(cls, question: "Question", answer_case: "Answer") -> "Score" | None:
+    def calc(cls, question: "Question", answer_case: "Answer") -> Optional["Score"]:
         """Score for answer_case based on probability assigned to it."""
         assert answer_case in question.answer_cases
         if not all(a.judge_prob is not None for a in question.answer_cases):
@@ -191,9 +191,9 @@ class Answer(BaseModel):
 
     short: str
     long: str
-    value: float | None = None
-    judge_prob: Prob | None = None
-    case_probs: "Question" | None = None
+    value: Optional[float] = None
+    judge_prob: Optional[Prob] = None
+    case_probs: Optional["Question"] = None
 
     def censor(self) -> "Answer":
         return Answer(short=self.short, long=self.long)
@@ -405,15 +405,15 @@ class Question(BaseModel):
 
     def judge_score_expected(
         self,
-        agent_arguing_for: (
-            callable[[Answer], Prob] | list[float] | Literal["max", "min", "uniform"]
-        ),
+        agent_arguing_for: Union[
+            Callable[[Answer], Prob], list[float], Literal["max", "min", "uniform"]
+        ],
     ) -> Score:
         """Expected judge score given how likely an agent is to argue for each answer.
 
         Args:
-            agent_arguing_for (callable[[Answer], Prob] | list[float] | Literal["max", "min", "uniform"]):
-                callable: function mapping answer to probability of arguing for it.
+            agent_arguing_for (Callable[[Answer], Prob] | list[float] | Literal["max", "min", "uniform"]):
+                Callable: function mapping answer to probability of arguing for it.
                 list[float]: list of probabilities of the agent arguing for each answer, in ascending order
                     of value (i.e. false first, true last)
                 Literal["max", "min", "uniform"]: shortcut for most common distributions.

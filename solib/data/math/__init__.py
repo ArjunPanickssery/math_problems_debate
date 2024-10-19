@@ -21,19 +21,13 @@ def transform(data_item: dict, **kwargs) -> Question:
         answer_incorrect = f"{answer_incorrect['numeric']}\n{answer_incorrect['proof']}"
 
     if random(data_item, **kwargs) > 0.5:
-        correct_answer = Answer(short="A", long=answer_correct)
-        incorrect_answer = Answer(short="B", long=answer_incorrect)
+        correct_answer = Answer(short="A", long=answer_correct, value=1.0)
+        incorrect_answer = Answer(short="B", long=answer_incorrect, value=-1.0)
     else:
-        correct_answer = Answer(short="B", long=answer_incorrect)
-        incorrect_answer = Answer(short="A", long=answer_correct)
+        correct_answer = Answer(short="B", long=answer_correct, value=1.0)
+        incorrect_answer = Answer(short="A", long=answer_incorrect, value=-1.0)
 
-    return Question(
-        question=question,
-        answer_cases_and_values=[
-            (correct_answer, 1.0),
-            (incorrect_answer, -1.0),
-        ],
-    )
+    return Question(question=question, answer_cases=[correct_answer, incorrect_answer])
 
 
 def load_data(path, **kwargs) -> list[Question]:
