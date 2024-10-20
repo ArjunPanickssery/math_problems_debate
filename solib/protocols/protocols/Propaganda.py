@@ -7,7 +7,7 @@ logger = logging.getLogger(__name__)
 
 class Propaganda(Protocol):
 
-    @censor("question", "answer_case")
+    @censor("question", "answer_case", reattach_from="question")
     async def run(
         self,
         agent: QA_Agent,

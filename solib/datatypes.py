@@ -3,6 +3,7 @@ import logging
 import inspect
 import warnings
 import numpy as np
+import copy
 from functools import wraps
 from typing import Any, Literal, Optional, Union, Callable
 from pydantic import BaseModel, field_validator, computed_field
@@ -185,6 +186,8 @@ class Answer(BaseModel):
     Methods in all circumstances:
         censor() -> Answer: converts any Answer into the censored form. This is necessary
             before showing anything to an AI.
+        uncensor(grounded: float | "Answer" | "Question") -> Answer: reattaches a value
+            from a grounded float, Answer, or Question.
         to_prompt() -> str: a prompt representation of an Answer, containing only its censored
             form
     """
@@ -197,6 +200,20 @@ class Answer(BaseModel):
 
     def censor(self) -> "Answer":
         return Answer(short=self.short, long=self.long)
+
+    def uncensor(self, grounded: Union[float, "Answer", "Question"]) -> "Answer":
+        # assert self.is_censored
+        # # ^^we don't assert this because we still want to transfer values when
+        # # self has some other attributes non-None
+        # # could do this though:
+        # assert self.value is None
+        if isinstance(grounded, Answer):
+            assert grounded.is_grounded
+            grounded = grounded.value
+        elif isinstance(grounded, Question):
+            assert grounded.is_grounded
+            grounded = grounded.answer_cases_dict[self.short].value
+        return Answer.model_validate(self.model_dump() | {"value": grounded})
 
     @property
     def is_censored(self) -> bool:
@@ -275,6 +292,10 @@ class Question(BaseModel):
         answer_cases_dict (dict[str, Answer]): calculated.
 
     Methods in all circumstances:
+        censor() -> Question: converts any Question into the censored form. This is
+            necessary before showing anything to an AI.
+        uncensor(grounded: Question) -> Question: reattaches values from a grounded
+            Question.
         neg(a: Answer) -> Answer: return the other answer.
         append(t: TranscriptItem), inplace: adds a transcript item (creating
             the transcript for the first time if necessary)
@@ -292,6 +313,20 @@ class Question(BaseModel):
         return Question(
             question=self.question,
             answer_cases=[answer.censor() for answer in self.answer_cases],
+        )
+
+    def uncensor(self, grounded: "Question") -> "Question":
+        # assert self.is_censored
+        # # ^^we don't assert this because we still want to transfer values when
+        # # self has some other attributes non-None
+        assert grounded.is_grounded
+        return Question.model_validate(
+            self.model_dump()
+            | {
+                "answer_cases": [
+                    answer.uncensor(grounded) for answer in self.answer_cases
+                ]
+            }
         )
 
     @property
@@ -512,9 +547,14 @@ class BetterJSONEncoder(json.JSONEncoder):
         return super().default(obj)
 
 
-def censor(*args_to_censor):
+def censor(*args_to_censor, reattach_from: str | None = None):
     """Apply .censor() to specified arguments, to hide truth values and
-    similar info."""
+    similar info, then reattach them after the function call.
+
+    Args:
+        reattach_from (str | None): if provided, reattach the values to the output
+            from this argument.
+    """
 
     def decorator(func):
         @wraps(func)
@@ -524,17 +564,29 @@ def censor(*args_to_censor):
             bound_args = sig.bind_partial(*args, **kwargs)
             bound_args.apply_defaults()
 
+            if reattach_from is not None:
+                for_reattachment = copy.copy(bound_args.arguments[reattach_from])
+                # deepcopy doesn't work for async for some reason
+
             # Apply censor() to specified arguments
-            for arg_name in args_to_censor:
-                if arg_name in bound_args.arguments and hasattr(
-                    bound_args.arguments[arg_name], "censor"
-                ):
-                    bound_args.arguments[arg_name] = bound_args.arguments[
-                        arg_name
-                    ].censor()
+            for a in args_to_censor:
+                # if a in bound_args.arguments and hasattr(bound_args.arguments[a], "censor"):
+                bound_args.arguments[a] = bound_args.arguments[a].censor()
 
             # Call the original async function
-            return await func(*bound_args.args, **bound_args.kwargs)
+            output = await func(*bound_args.args, **bound_args.kwargs)
+
+            # Reattach the values
+            if reattach_from is not None:
+                if not for_reattachment.is_grounded:
+                    warnings.warn(
+                        f"{reattach_from} has no ground truth values to reattach "
+                        "in {func.__name__}. This is probably fine; happens e.g. "
+                        "when calling run through run_on_all_answer_cases."
+                    )
+                else:
+                    output = output.uncensor(for_reattachment)
+            return output
 
         @wraps(func)
         def sync_wrapper(*args, **kwargs):
@@ -543,17 +595,28 @@ def censor(*args_to_censor):
             bound_args = sig.bind_partial(*args, **kwargs)
             bound_args.apply_defaults()
 
+            if reattach_from is not None:
+                for_reattachment = copy.copy(bound_args.arguments[reattach_from])
+
             # Apply censor() to specified arguments
-            for arg_name in args_to_censor:
-                if arg_name in bound_args.arguments and hasattr(
-                    bound_args.arguments[arg_name], "censor"
-                ):
-                    bound_args.arguments[arg_name] = bound_args.arguments[
-                        arg_name
-                    ].censor()
+            for a in args_to_censor:
+                # if a in bound_args.arguments and hasattr(bound_args.arguments[a], "censor"):
+                bound_args.arguments[a] = bound_args.arguments[a].censor()
 
             # Call the original sync function
-            return func(*bound_args.args, **bound_args.kwargs)
+            output = func(*bound_args.args, **bound_args.kwargs)
+
+            # Reattach the values
+            if reattach_from is not None:
+                if not for_reattachment.is_grounded:
+                    warnings.warn(
+                        f"{reattach_from} has no ground truth values to reattach "
+                        "in {func.__name__}. This is probably fine; happens e.g. "
+                        "when calling run through run_on_all_answer_cases."
+                    )
+                else:
+                    output = output.uncensor(for_reattachment)
+            return output
 
         # Determine if the function is async or not and choose the appropriate wrapper
         if inspect.iscoroutinefunction(func):

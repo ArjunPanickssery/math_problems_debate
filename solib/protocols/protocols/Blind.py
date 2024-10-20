@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 class Blind(Protocol):
     """Absolute baseline: Judge unassisted by AI."""
 
-    @censor("question", "answer_case")
+    @censor("question", "answer_case", reattach_from="question")
     async def run(
         self,
         agent: QA_Agent,

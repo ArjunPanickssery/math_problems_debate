@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 class Judge(LLM_Agent):
 
+    @censor("question")
     async def __call__(
         self, question: Question, context: str | None = None
     ) -> Question:
@@ -25,6 +26,7 @@ class QA_Agent(LLM_Agent):
     """A generally convenient wrapper around an LLM, that answers a given prompt,
     optionally formatted with a context, question and answer case."""
 
+    @censor("question", "answer_case")
     async def __call__(
         self,
         prompt: str = None,
@@ -110,7 +112,7 @@ class Protocol:
             return ""
         return "\n".join(self.tsitem_to_prompt(item) for item in transcript)
 
-    @censor("question", "answer_case")
+    @censor("question", "answer_case", reattach_from="question")
     async def run(
         self,
         agent: QA_Agent,
@@ -134,7 +136,7 @@ class Protocol:
         """
         raise AbstractionError
 
-    @censor("question")
+    @censor("question", reattach_from="question")
     async def run_on_all_answer_cases(
         self,
         agent: QA_Agent,

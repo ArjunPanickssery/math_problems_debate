@@ -1,5 +1,5 @@
 import logging
-from solib.datatypes import Question, Answer, Prob
+from solib.datatypes import Question, Answer, Prob, censor
 from solib.tool_use.tool_rendering import TRUST_TOOL_USE_PROMPT
 from solib.protocols.abstract import Judge
 
@@ -11,6 +11,7 @@ class TipOfTongueJudge(Judge):
     answer is and extracting the probability of it answering each option from the logits
     layer of the LLM."""
 
+    @censor("question")
     async def __call__(
         self,
         question: Question,

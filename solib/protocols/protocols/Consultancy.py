@@ -31,7 +31,7 @@ class Consultancy(Protocol):
         else:
             return super().tsitem_to_prompt(item)
 
-    @censor("question", "answer_case")
+    @censor("question", "answer_case", reattach_from="question")
     async def run(
         self,
         agent: QA_Agent,
