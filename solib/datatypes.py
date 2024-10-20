@@ -5,8 +5,8 @@ import warnings
 import numpy as np
 import copy
 from functools import wraps
-from typing import Any, Literal, Optional, Union, Callable
-from pydantic import BaseModel, field_validator, computed_field
+from typing import Any, Literal, Optional, Union, Callable, Self
+from pydantic import BaseModel, field_validator, computed_field, model_validator
 
 logger = logging.getLogger(__name__)
 
@@ -80,18 +80,26 @@ class Score(BaseModel):
 
     @classmethod
     def calc(cls, question: "Question", answer_case: "Answer") -> Optional["Score"]:
-        """Score for answer_case based on probability assigned to it."""
-        assert answer_case in question.answer_cases
+        """Score for answer_case based on probability assigned to it in Question."""
+        # .censor() because e.g. question might be answer_case.case_probs, so
+        # question.answer_cases will have probabilities while answer_case would not
+        assert answer_case.censor() in question.censor().answer_cases
+        assert question.is_elicited
         if not all(a.judge_prob is not None for a in question.answer_cases):
             return None
         if not question.is_normalized:
             warnings.warn("Calculating score based on unnormalized probabilities.")
-        score_log = np.log(answer_case.judge_prob)
-        score_logodds = np.log(answer_case.judge_prob) - np.log(
-            question.neg(answer_case).judge_prob
+
+        # find answer case in question
+        answer_case_in_question = question.answer_cases_dict[answer_case.short]
+
+        score_log = np.log(answer_case_in_question.judge_prob)
+        score_logodds = np.log(answer_case_in_question.judge_prob) - np.log(
+            question.neg(answer_case_in_question).judge_prob
         )
         score_accuracy = float(
-            answer_case.judge_prob > question.neg(answer_case).judge_prob
+            answer_case_in_question.judge_prob
+            > question.neg(answer_case_in_question).judge_prob
         )
         return Score(log=score_log, logodds=score_logodds, accuracy=score_accuracy)
 
@@ -198,6 +206,15 @@ class Answer(BaseModel):
     judge_prob: Optional[Prob] = None
     case_probs: Optional["Question"] = None
 
+    @model_validator(mode="after")
+    def makes_sense(self) -> Self:
+        if self.is_argued:
+            assert self.case_probs.is_elicited
+            assert not self.case_probs.is_argued
+        if self.is_elicited:
+            assert not self.is_argued
+        return self
+
     def censor(self) -> "Answer":
         return Answer(short=self.short, long=self.long)
 
@@ -268,7 +285,8 @@ class Question(BaseModel):
     Additional attributes in this case:
         total_prob (float): total probability of all answer cases.
         is_normalized (bool): checks if total_prob = 1.0.
-        judge_score (Score): computed. Scores the elicited probabilities against the true answer.
+        judge_score (Score): computed. Also requires .is_grounded. Scores the elicited
+            probabilities against the true answer.
     Additional methods in this case:
         normalize_probs() -> Question: normalizes the probabilities so that they sum to 1.0.
             Not in-place.
@@ -277,8 +295,23 @@ class Question(BaseModel):
     To stores answers that are .is_argued, i.e. for each answer, store elicited probs after arguing
     for that answer.
     Additional attributes in this case:
-        agent_score_diff (Score): computed. Measures how much more the agent can convince the judge
-            by arguing for the true answer compared to the false answer.
+        agent_score_diff (Score): computed. Also requires .is_grounded. Measures how much more the
+            agent can convince the judge by arguing for the true answer compared to the false answer.
+        judge_score_max (Score): computed. Also requires .is_grounded. Judge score if agent argues for
+            the best answer.
+        judge_score_min (Score): computed. Also requires .is_grounded. Judge score if agent argues for
+            the worst answer.
+        judge_score_uniform (Score): computed. Also requires .is_grounded. Judge score if agent argues for
+            any answer with equal probability.
+    Additional methods in this case:
+        judge_score_expected(
+            agent_arguing_for:
+                Callable[[Answer], Prob] 
+                | list[float] 
+                | Literal["max", "min", "uniform"]
+            ) -> Score: 
+            computed. Also requires .is_grounded. Scores the elicited probabilities against the true answer,
+                given how likely the agent is to argue for each answer.
 
     ## `Question.has_transcript`
     To store a transcript en route to eliciting a probability.
@@ -308,6 +341,15 @@ class Question(BaseModel):
     question: str
     answer_cases: list[Answer]
     transcript: list["TranscriptItem"] | None = None
+
+    # not necessary, it's enough to validate this in Answer
+    # @model_validator(mode="after")
+    # def makes_sense(self) -> Self:
+    #     if self.is_argued:
+    #         assert not self.is_elicited
+    #     if self.is_elicited:
+    #         assert not self.is_argued
+    #     return self
 
     def censor(self) -> "Question":
         return Question(
@@ -369,6 +411,7 @@ class Question(BaseModel):
 
     def neg(self, answer: Answer) -> Answer:
         assert len(self.answer_cases) == 2
+        # NOTE this is fine for now, but could become a problem one day
         assert answer in self.answer_cases
         ans_index = self.answer_cases.index(answer)
         return self.answer_cases[1 - ans_index]
@@ -427,7 +470,7 @@ class Question(BaseModel):
         """
         Score judge_probs based on ground truth
         """
-        if not self.is_elicited:
+        if not (self.is_elicited and self.is_grounded):
             return None
         return Score.calc(self, self.true_answer)
 
@@ -435,7 +478,7 @@ class Question(BaseModel):
     @property
     def agent_score_diff(self) -> Score:
         """Advantage in answering for the truth."""
-        if not self.is_argued:
+        if not (self.is_argued and self.is_grounded):
             return None
         return self.true_answer.agent_score - self.false_answer.agent_score
 
@@ -454,7 +497,7 @@ class Question(BaseModel):
                     of value (i.e. false first, true last)
                 Literal["max", "min", "uniform"]: shortcut for most common distributions.
         """
-        assert self.is_argued
+        assert self.is_argued and self.is_grounded
         if agent_arguing_for == "max":
             agent_arguing_for = [0.0] * (len(self.answer_cases) - 1) + [1.0]
         elif agent_arguing_for == "min":
@@ -475,21 +518,21 @@ class Question(BaseModel):
     @computed_field
     @property
     def judge_score_max(self) -> Score | None:
-        if not self.is_argued:
+        if not (self.is_argued and self.is_grounded):
             return None
         return self.judge_score_expected("max")
 
     @computed_field
     @property
     def judge_score_min(self) -> Score | None:
-        if not self.is_argued:
+        if not (self.is_argued and self.is_grounded):
             return None
         return self.judge_score_expected("min")
 
     @computed_field
     @property
     def judge_score_uniform(self) -> Score | None:
-        if not self.is_argued:
+        if not (self.is_argued and self.is_grounded):
             return None
         return self.judge_score_expected("uniform")
 
