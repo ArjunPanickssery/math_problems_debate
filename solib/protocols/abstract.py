@@ -179,8 +179,11 @@ class Protocol:
 
         if write:
             write_results = Path(write) / "results.jsonl"
+            write_results.parent.mkdir(parents=True, exist_ok=True)
             write_stats = Path(write) / "stats.json"
+            write_stats.parent.mkdir(parents=True, exist_ok=True)
             write_config = Path(write) / "config.json"
+            write_config.parent.mkdir(parents=True, exist_ok=True)
         else:
             write_results = write_stats = write_config = None
 

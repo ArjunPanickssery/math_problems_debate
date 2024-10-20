@@ -218,7 +218,7 @@ class Experiment:
             / (config["protocol"].__name__ + "_" + init_kwargs_str)
             / call_kwargs_str
         )
-        path.mkdir(parents=True, exist_ok=True)
+        # path.mkdir(parents=True, exist_ok=True)
         i = 0
         while path.exists():
             i += 1
