@@ -194,7 +194,7 @@ class Answer(BaseModel):
     Methods in all circumstances:
         censor() -> Answer: converts any Answer into the censored form. This is necessary
             before showing anything to an AI.
-        uncensor(grounded: float | "Answer" | "Question") -> Answer: reattaches a value
+        uncensor(grounded: "Answer" | "Question") -> Answer: reattaches a value
             from a grounded float, Answer, or Question.
         to_prompt() -> str: a prompt representation of an Answer, containing only its censored
             form
@@ -218,19 +218,14 @@ class Answer(BaseModel):
     def censor(self) -> "Answer":
         return Answer(short=self.short, long=self.long)
 
-    def uncensor(self, grounded: Union[float, "Answer", "Question"]) -> "Answer":
+    def uncensor(self, grounded: Union["Answer", "Question"]) -> "Answer":
         # assert self.is_censored
         # # ^^we don't assert this because we still want to transfer values when
         # # self has some other attributes non-None
         # # could do this though:
         # assert self.value is None
-        if isinstance(grounded, Answer):
-            assert grounded.is_grounded
-            grounded = grounded.value
-        elif isinstance(grounded, Question):
-            assert grounded.is_grounded
-            grounded = grounded.answer_cases_dict[self.short].value
-        return Answer.model_validate(self.model_dump() | {"value": grounded})
+        assert grounded.is_grounded
+        return Answer.model_validate(self.model_dump() | grounded.model_dump())
 
     @property
     def is_censored(self) -> bool:
@@ -306,10 +301,10 @@ class Question(BaseModel):
     Additional methods in this case:
         judge_score_expected(
             agent_arguing_for:
-                Callable[[Answer], Prob] 
-                | list[float] 
+                Callable[[Answer], Prob]
+                | list[float]
                 | Literal["max", "min", "uniform"]
-            ) -> Score: 
+            ) -> Score:
             computed. Also requires .is_grounded. Scores the elicited probabilities against the true answer,
                 given how likely the agent is to argue for each answer.
 
@@ -362,14 +357,7 @@ class Question(BaseModel):
         # # ^^we don't assert this because we still want to transfer values when
         # # self has some other attributes non-None
         assert grounded.is_grounded
-        return Question.model_validate(
-            self.model_dump()
-            | {
-                "answer_cases": [
-                    answer.uncensor(grounded) for answer in self.answer_cases
-                ]
-            }
-        )
+        return Question.model_validate(self.model_dump() | grounded.model_dump())
 
     @property
     def is_censored(self) -> bool:
