@@ -1,6 +1,6 @@
 import functools
 import logging
-from solib.datatypes import Question, Answer, TranscriptItem, censor
+from solib.datatypes import Question, Answer, TranscriptItem
 from solib.protocols.abstract import Protocol, QA_Agent, Judge
 
 logger = logging.getLogger(__name__)
@@ -13,7 +13,6 @@ class Debate(Protocol):
         self.simultaneous = simultaneous
         super().__init__(prompt=prompt)
 
-    @censor("question", "answer_case", reattach_from="question")
     async def run(
         self,
         agent: QA_Agent,
@@ -57,7 +56,6 @@ class Debate(Protocol):
         result = await judge(question=question, context=self.ts_to_prompt(question))
         return result
 
-    @censor("question", reattach_from="question")
     async def run_on_all_answer_cases(
         self,
         agent: QA_Agent,

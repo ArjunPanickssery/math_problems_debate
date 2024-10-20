@@ -1,6 +1,6 @@
 import logging
 from solib.llm_utils import parallelized_call
-from solib.datatypes import Question, Answer, Prob, censor
+from solib.datatypes import Question, Answer, Prob
 from solib.tool_use.tool_rendering import TRUST_TOOL_USE_PROMPT
 from solib.protocols.abstract import Judge
 
@@ -12,7 +12,6 @@ class JustAskProbabilityJudge(Judge):
     we just ask the judge to give probabilities. We will ask it for probabilities for each
     possible answer separately, and then we will normalize them."""
 
-    @censor("question")
     async def __call__(
         self,
         question: Question,

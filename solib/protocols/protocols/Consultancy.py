@@ -1,6 +1,6 @@
 import functools
 import logging
-from solib.datatypes import Question, Answer, TranscriptItem, censor
+from solib.datatypes import Question, Answer, TranscriptItem
 from solib.protocols.abstract import Protocol, QA_Agent, Judge
 
 logger = logging.getLogger(__name__)
@@ -31,7 +31,6 @@ class Consultancy(Protocol):
         else:
             return super().tsitem_to_prompt(item)
 
-    @censor("question", "answer_case", reattach_from="question")
     async def run(
         self,
         agent: QA_Agent,

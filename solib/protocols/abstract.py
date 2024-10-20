@@ -7,14 +7,13 @@ from pathlib import Path
 import numpy as np
 from solib.utils import config, AbstractionError, write_jsonl_async, write_json
 from solib.llm_utils import parallelized_call, LLM_Agent
-from solib.datatypes import Answer, Question, Prob, TranscriptItem, censor
+from solib.datatypes import Answer, Question, Prob, TranscriptItem
 
 logger = logging.getLogger(__name__)
 
 
 class Judge(LLM_Agent):
 
-    @censor("question")
     async def __call__(
         self, question: Question, context: str | None = None
     ) -> Question:
@@ -26,7 +25,6 @@ class QA_Agent(LLM_Agent):
     """A generally convenient wrapper around an LLM, that answers a given prompt,
     optionally formatted with a context, question and answer case."""
 
-    @censor("question", "answer_case")
     async def __call__(
         self,
         prompt: str = None,
@@ -92,9 +90,6 @@ class QA_Agent(LLM_Agent):
 class Protocol:
     """General class for a judge endowed with any (multi-agent) protocol for
     question-answering, e.g. debate, consultancy, blindjudge.
-
-    NOTE: while subclassing, maintain the @censor decorator on run() and run_on_all_answer_cases().
-    Do not subclass .experiment()
     """
 
     prompt = None  # by default we default to QA_Agent.prompt for this protocol
@@ -112,7 +107,6 @@ class Protocol:
             return ""
         return "\n".join(self.tsitem_to_prompt(item) for item in transcript)
 
-    @censor("question", "answer_case", reattach_from="question")
     async def run(
         self,
         agent: QA_Agent,
@@ -136,7 +130,6 @@ class Protocol:
         """
         raise AbstractionError
 
-    @censor("question", reattach_from="question")
     async def run_on_all_answer_cases(
         self,
         agent: QA_Agent,
@@ -192,12 +185,20 @@ class Protocol:
             write_results = write_stats = write_config = None
 
         async def process_question(question: Question):
+
+            # censor question before sending to any AI
+            question_censored = question.censor()
+
             result = await self.run_on_all_answer_cases(
                 agent=agent,
-                question=question,
+                question=question_censored,
                 judge=judge,
                 **other_components,
             )
+
+            # reattach ground truth values to trigger computation of scores
+            result.uncensor(question)
+
             await write_jsonl_async(
                 result.model_dump(), path=write_results, append=True
             )
