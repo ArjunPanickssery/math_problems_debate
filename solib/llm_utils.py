@@ -1,14 +1,18 @@
 from collections import defaultdict
-from functools import partial
+from functools import partial, wraps
+from typing import Callable, Iterable
+import inspect
 import os
 import asyncio
 import json
 import math
+import logging
 from dotenv import load_dotenv
 from typing import Literal, Union, Coroutine, TYPE_CHECKING
 from pydantic import BaseModel
 from perscache import Cache
-from perscache.serializers import JSONSerializer
+from perscache.cache import hash_it
+from perscache.serializers import JSONSerializer, Serializer
 from costly import Costlog, CostlyResponse, costly
 from costly.simulators.llm_simulator_faker import LLM_Simulator_Faker
 import warnings
@@ -21,10 +25,6 @@ from langchain_core.messages import (
     AIMessage,
 )
 from langchain_core.runnables import ConfigurableField
-from langchain_openai import ChatOpenAI
-from langchain_mistralai import ChatMistralAI
-from langchain_anthropic import ChatAnthropic
-
 
 import solib.tool_use.tool_rendering
 from solib.utils import apply, apply_async
@@ -35,15 +35,31 @@ from solib.tool_use.tool_use import ToolStopper, HuggingFaceToolCaller
 if TYPE_CHECKING:
     from transformers import AutoTokenizer
 
+    # from langchain_openai import ChatOpenAI
+    # from langchain_mistralai import ChatMistralAI
+    # from langchain_anthropic import ChatAnthropic
 
+logger = logging.getLogger(__name__)
+
+
+# for cache
 class PydanticJSONSerializer(JSONSerializer):
     @staticmethod
     def default(obj):
-        if isinstance(obj, BaseModel):
+        if hasattr(obj, "to_dict"):
+            return obj.to_dict()
+        elif isinstance(obj, BaseModel):
             return obj.model_dump()
-        raise TypeError(
-            f"Object of type {obj.__class__.__name__} is not JSON serializable"
-        )
+        elif isinstance(obj, type) and issubclass(obj, BaseModel):
+            # If it's a Pydantic model class, return its name for serialization
+            return f"{obj.__module__}.{obj.__class__.__name__}"
+        else:
+            try:
+                return dict(obj)
+            except:
+                raise TypeError(
+                    f"Object of type {obj.__class__.__name__} is not JSON serializable"
+                )
 
     @classmethod
     def dumps(cls, data):
@@ -54,10 +70,63 @@ class PydanticJSONSerializer(JSONSerializer):
         return json.loads(data.decode("utf-8"))
 
 
+class BetterCache(Cache):
+    """A subclass of Cache that hashes types by their names."""
+
+    @staticmethod
+    def _get_hash(
+        fn: Callable,
+        args: tuple,
+        kwargs: dict,
+        serializer: Serializer,
+        ignore: Iterable[str],
+    ) -> str:
+        # Get the argument dictionary by binding the function signature with args and kwargs
+        arg_dict = inspect.signature(fn).bind(*args, **kwargs).arguments
+
+        # Remove ignored arguments from the argument dictionary
+        if ignore is not None:
+            arg_dict = {k: v for k, v in arg_dict.items() if k not in ignore}
+
+        # Convert types in the argument dictionary to their names
+        for key, value in arg_dict.items():
+            if isinstance(value, type):
+                arg_dict[key] = (
+                    value.__name__
+                )  # Use type name instead of the actual type object
+
+        # Include global variables in the cache hash because Python handles default
+        # variables a bit differently than you might expect
+        arg_dict["simulate"] = simulate  # Add to the hash key
+
+        # Hash the function source, serializer type, and the argument dictionary
+        return hash_it(inspect.getsource(fn), type(serializer).__name__, arg_dict)
+
+
 load_dotenv()
-cache = Cache(serializer=PydanticJSONSerializer())
+cache = BetterCache(serializer=PydanticJSONSerializer())
 global_cost_log = Costlog(mode="jsonl")
 simulate = os.getenv("SIMULATE", "False").lower() == "true"
+disable_costly = os.getenv("DISABLE_COSTLY", "False").lower() == "true"
+
+
+# HACK. I have no idea why this works but just manually adding 'self' to
+# @cache(ignore=...) doesn't.
+def method_cache(ignore=None):
+    if ignore is None:
+        ignore = []
+    # Ensure 'self' is always ignored
+    if "self" not in ignore:
+        ignore = ["self"] + ignore
+
+    def decorator(method):
+        @wraps(method)
+        def wrapper(self, *args, **kwargs):
+            return cache(ignore=ignore)(method)(self, *args, **kwargs)
+
+        return wrapper
+
+    return decorator
 
 
 class LLM_Simulator(LLM_Simulator_Faker):
@@ -84,7 +153,7 @@ async def parallelized_call(
     """
 
     if os.getenv("SINGLE_THREAD"):
-        print(f"Running {func} on {len(data)} datapoints sequentially")
+        logger.info(f"Running {func} on {len(data)} datapoints sequentially")
         return [await func(d) for d in data]
 
     max_concurrent_queries = min(
@@ -92,7 +161,7 @@ async def parallelized_call(
         int(os.getenv("MAX_CONCURRENT_QUERIES", max_concurrent_queries)),
     )
 
-    print(
+    logger.info(
         f"Running {func} on {len(data)} datapoints with {max_concurrent_queries} concurrent queries"
     )
 
@@ -103,7 +172,7 @@ async def parallelized_call(
         async with sem:
             return await func(datapoint)
 
-    print("Calling call_func")
+    logger.info("Calling call_func")
     tasks = [call_func(local_semaphore, func, d) for d in data]
     return await asyncio.gather(*tasks)
 
@@ -329,6 +398,8 @@ def get_llm(model: str, use_async=False, hf_quantization_config=None):
         )
 
         if model.startswith("or:"):  # OpenRouter
+            from langchain_openai import ChatOpenAI
+
             api_key = os.getenv("OPENROUTER_API_KEY")
             client = ChatOpenAI(
                 model=model, base_url="https://openrouter.ai/api/v1", api_key=api_key
@@ -336,14 +407,20 @@ def get_llm(model: str, use_async=False, hf_quantization_config=None):
 
         else:
             if model.startswith(("gpt", "openai", "babbage", "davinci")):
+                from langchain_openai import ChatOpenAI
+
                 api_key = os.getenv("OPENAI_API_KEY")
                 client = ChatOpenAI(model=model, api_key=api_key)
 
             elif model.startswith(("claude", "anthropic")):
+                from langchain_anthropic import ChatAnthropic
+
                 api_key = os.getenv("ANTHROPIC_API_KEY")
                 client = ChatAnthropic(model=model, api_key=api_key)
 
             elif model.startswith("mistral"):
+                from langchain_mistralai import ChatMistralAI
+
                 api_key = os.getenv("MISTRAL_API_KEY")
                 client = ChatMistralAI(model=model, api_key=api_key)
 
@@ -386,7 +463,7 @@ def get_llm(model: str, use_async=False, hf_quantization_config=None):
                 # probably should do some error handling here if 'parsing_error' is set
                 parsed = response["parsed"]
                 if response["parsing_error"] is not None:
-                    print(raw)
+                    logger.error(raw)
                     raise ValueError(
                         f"Error parsing structured output: {response['parsing_error']}"
                     )
@@ -485,7 +562,11 @@ def get_llm(model: str, use_async=False, hf_quantization_config=None):
 
             return get_response, messages
 
-        @costly(simulator=LLM_Simulator.simulate_llm_call, messages=_get_messages)
+        @costly(
+            simulator=LLM_Simulator.simulate_llm_call,
+            messages=_get_messages,
+            disable_costly=disable_costly,
+        )
         def generate(
             model: str = model,
             prompt: str = None,
@@ -509,16 +590,28 @@ def get_llm(model: str, use_async=False, hf_quantization_config=None):
                 temperature,
                 **kwargs,
             )
-            print(messages)
+            logger.debug(messages)
             response = get_response(messages)
 
             raw_response, usage = process_response(response)
+
+            logger.debug(f"raw_response: {raw_response}")
+
+            if response_model is not None and isinstance(raw_response, dict):
+                raw_response = response_model(**raw_response)
+
+            logger.debug(f"raw_response: {raw_response}")
+
             return CostlyResponse(
                 output=raw_response,
                 cost_info=usage,
             )
 
-        @costly(simulator=LLM_Simulator.simulate_llm_call, messages=_get_messages)
+        @costly(
+            simulator=LLM_Simulator.simulate_llm_call,
+            messages=_get_messages,
+            disable_costly=disable_costly,
+        )
         async def generate_async(
             model: str = model,
             prompt: str = None,
@@ -546,6 +639,14 @@ def get_llm(model: str, use_async=False, hf_quantization_config=None):
             response = await get_response(messages)
 
             raw_response, usage = process_response(response)
+
+            logger.debug(f"raw_response: {raw_response}")
+
+            if response_model is not None and isinstance(raw_response, dict):
+                raw_response = response_model(**raw_response)
+
+            logger.debug(f"raw_response: {raw_response}")
+
             return CostlyResponse(
                 output=raw_response,
                 cost_info=usage,
@@ -590,7 +691,11 @@ def get_llm(model: str, use_async=False, hf_quantization_config=None):
 
             return get_response, messages
 
-        @costly(simulator=LLM_Simulator.simulate_llm_probs, messages=_get_messages)
+        @costly(
+            simulator=LLM_Simulator.simulate_llm_probs,
+            messages=_get_messages,
+            disable_costly=disable_costly,
+        )
         def return_probs(
             return_probs_for: list[str],
             model: str = model,
@@ -623,7 +728,11 @@ def get_llm(model: str, use_async=False, hf_quantization_config=None):
                 cost_info=usage,
             )
 
-        @costly(simulator=LLM_Simulator.simulate_llm_probs, messages=_get_messages)
+        @costly(
+            simulator=LLM_Simulator.simulate_llm_probs,
+            messages=_get_messages,
+            disable_costly=disable_costly,
+        )
         async def return_probs_async(
             return_probs_for: list[str],
             model: str = model,
@@ -665,9 +774,156 @@ def get_llm(model: str, use_async=False, hf_quantization_config=None):
         }
 
 
+class LLM_Agent:
+
+    def __init__(
+        self,
+        model: str = None,
+        tools: list[callable] = None,
+        hf_quantization_config=None,
+    ):
+        self.model = model or "gpt-4o-mini"
+        self.tools = tools
+        self.hf_quantization_config = hf_quantization_config
+        self.ai = get_llm(
+            model=self.model,
+            use_async=False,
+            hf_quantization_config=hf_quantization_config,
+        )
+        self.ai_async = get_llm(
+            model=self.model,
+            use_async=True,
+            hf_quantization_config=hf_quantization_config,
+        )
+
+    @method_cache(ignore=["cost_log"])
+    def get_response(
+        self,
+        response_model: Union["BaseModel", None] = None,
+        prompt: str = None,
+        messages: list[dict[str, str]] = None,
+        input_string: str = None,
+        system_message: str | None = None,
+        words_in_mouth: str | None = None,
+        max_tokens: int = 2048,
+        temperature: float = 0.0,
+        cost_log: Costlog = global_cost_log,
+        simulate: bool = simulate,
+        **kwargs,
+    ):
+        return self.ai["generate"](
+            model=self.model,
+            tools=self.tools,
+            response_model=response_model,
+            prompt=prompt,
+            messages=messages,
+            input_string=input_string,
+            system_message=system_message,
+            words_in_mouth=words_in_mouth,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            cost_log=cost_log,
+            simulate=simulate,
+            **kwargs,
+        )
+
+    @method_cache(ignore=["cost_log"])
+    async def get_response_async(
+        self,
+        response_model: Union["BaseModel", None] = None,
+        prompt: str = None,
+        messages: list[dict[str, str]] = None,
+        input_string: str = None,
+        system_message: str | None = None,
+        words_in_mouth: str | None = None,
+        max_tokens: int = 2048,
+        temperature: float = 0.0,
+        cost_log: Costlog = global_cost_log,
+        simulate: bool = simulate,
+        **kwargs,
+    ):
+        return await self.ai_async["generate_async"](
+            model=self.model,
+            tools=self.tools,
+            response_model=response_model,
+            prompt=prompt,
+            messages=messages,
+            input_string=input_string,
+            system_message=system_message,
+            words_in_mouth=words_in_mouth,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            cost_log=cost_log,
+            simulate=simulate,
+            **kwargs,
+        )
+
+    @method_cache(ignore=["cost_log"])
+    def get_probs(
+        self,
+        return_probs_for: list[str],
+        prompt: str = None,
+        messages: list[dict[str, str]] = None,
+        input_string: str = None,
+        system_message: str | None = None,
+        words_in_mouth: str | None = None,
+        top_logprobs: int = 5,
+        temperature: float = 0.0,
+        cost_log: Costlog = global_cost_log,
+        simulate: bool = simulate,
+        **kwargs,
+    ):
+        return self.ai["return_probs"](
+            model=self.model,
+            tools=self.tools,
+            return_probs_for=return_probs_for,
+            prompt=prompt,
+            messages=messages,
+            input_string=input_string,
+            system_message=system_message,
+            words_in_mouth=words_in_mouth,
+            top_logprobs=top_logprobs,
+            temperature=temperature,
+            cost_log=cost_log,
+            simulate=simulate,
+            **kwargs,
+        )
+
+    @method_cache(ignore=["cost_log"])
+    async def get_probs_async(
+        self,
+        return_probs_for: list[str],
+        prompt: str = None,
+        messages: list[dict[str, str]] = None,
+        input_string: str = None,
+        system_message: str | None = None,
+        words_in_mouth: str | None = None,
+        top_logprobs: int = 5,
+        temperature: float = 0.0,
+        cost_log: Costlog = global_cost_log,
+        simulate: bool = simulate,
+        **kwargs,
+    ):
+        return await self.ai_async["return_probs_async"](
+            model=self.model,
+            tools=self.tools,
+            return_probs_for=return_probs_for,
+            prompt=prompt,
+            messages=messages,
+            input_string=input_string,
+            system_message=system_message,
+            words_in_mouth=words_in_mouth,
+            top_logprobs=top_logprobs,
+            temperature=temperature,
+            cost_log=cost_log,
+            simulate=simulate,
+            **kwargs,
+        )
+
+
 @cache(ignore="cost_log")
 def get_llm_response(
-    model: str = "gpt-4o-mini",
+    model: str = None,
     response_model: Union["BaseModel", None] = None,
     prompt: str = None,
     messages: list[dict[str, str]] = None,
@@ -682,6 +938,9 @@ def get_llm_response(
     simulate: bool = simulate,
     **kwargs,  # kwargs necessary for costly
 ):
+    """NOTE: you should generally use the LLM_Agent class instead of this function.
+    This is deprecated, or maybe we can just use it for one-time calls etc.
+    """
     model = model or "gpt-4o-mini"
     ai = get_llm(
         model=model, use_async=False, hf_quantization_config=hf_quantization_config
@@ -705,7 +964,7 @@ def get_llm_response(
 
 @cache(ignore="cost_log")
 async def get_llm_response_async(
-    model: str = "gpt-4o-mini",
+    model: str = None,
     response_model: Union["BaseModel", None] = None,
     prompt: str = None,
     messages: list[dict[str, str]] = None,
@@ -720,6 +979,9 @@ async def get_llm_response_async(
     simulate: bool = simulate,
     **kwargs,
 ):
+    """NOTE: you should generally use the LLM_Agent class instead of this function.
+    This is deprecated, or maybe we can just use it for one-time calls etc.
+    """
     model = model or "gpt-4o-mini"
     ai = get_llm(
         model=model, use_async=True, hf_quantization_config=hf_quantization_config
@@ -744,7 +1006,7 @@ async def get_llm_response_async(
 @cache(ignore="cost_log")
 def get_llm_probs(
     return_probs_for: list[str],
-    model: str = "gpt-4o-mini",
+    model: str = None,
     prompt: str = None,
     messages: list[dict[str, str]] = None,
     input_string: str = None,
@@ -757,6 +1019,9 @@ def get_llm_probs(
     simulate: bool = simulate,
     **kwargs,
 ):
+    """NOTE: you should generally use the LLM_Agent class instead of this function.
+    This is deprecated, or maybe we can just use it for one-time calls etc.
+    """
     model = model or "gpt-4o-mini"
     ai = get_llm(
         model=model, use_async=False, hf_quantization_config=hf_quantization_config
@@ -780,7 +1045,7 @@ def get_llm_probs(
 @cache(ignore="cost_log")
 async def get_llm_probs_async(
     return_probs_for: list[str],
-    model: str = "gpt-4o-mini",
+    model: str = None,
     prompt: str = None,
     messages: list[dict[str, str]] = None,
     input_string: str = None,
@@ -793,6 +1058,9 @@ async def get_llm_probs_async(
     simulate: bool = simulate,
     **kwargs,
 ):
+    """NOTE: you should generally use the LLM_Agent class instead of this function.
+    This is deprecated, or maybe we can just use it for one-time calls etc.
+    """
     model = model or "gpt-4o-mini"
     ai = get_llm(
         model=model, use_async=True, hf_quantization_config=hf_quantization_config
