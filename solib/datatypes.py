@@ -224,16 +224,31 @@ class Answer(BaseModel):
         # # self has some other attributes non-None
         # # could do this though:
         # assert self.value is None
-        if isinstance(grounded, Question):
-            grounded = grounded.answer_cases_dict[self.short]
         assert grounded.is_grounded
-        return Answer(
-            short=self.short,
-            long=self.long,
-            value=grounded.value,
-            judge_prob=self.judge_prob or grounded.judge_prob,
-            case_probs=self.case_probs or grounded.case_probs,
-        )
+        if isinstance(grounded, Question):
+            grounded_ans = grounded.answer_cases_dict[self.short]
+            return Answer(
+                short=self.short,
+                long=self.long,
+                value=grounded_ans.value,
+                judge_prob=self.judge_prob or grounded_ans.judge_prob,
+                case_probs=(
+                    self.case_probs.uncensor(grounded)
+                    if self.case_probs
+                    else grounded_ans.case_probs
+                ),
+            )
+        elif isinstance(grounded, Answer):
+            assert (self.short, self.long) == (grounded.short, grounded.long)
+            return Answer(
+                short=self.short,
+                long=self.long,
+                value=grounded.value,
+                judge_prob=self.judge_prob or grounded.judge_prob,
+                case_probs=self.case_probs or grounded.case_probs,
+            )
+        else:
+            raise TypeError(f"Invalid grounded: {grounded}")
 
     @property
     def is_censored(self) -> bool:
@@ -364,6 +379,9 @@ class Question(BaseModel):
         # assert self.is_censored
         # # ^^we don't assert this because we still want to transfer values when
         # # self has some other attributes non-None
+        # NOTE: it is important that we pass a.uncensor(grounded) rather than
+        # a.uncensor(grounded.answer_dict[a.short]), to ensure a is also updated
+        # with all the case_probs from grounded
         assert grounded.is_grounded
         return Question(
             question=self.question,
@@ -518,10 +536,18 @@ class Question(BaseModel):
             agent_arguing_for_func = agent_arguing_for
         else:
             raise TypeError(f"Invalid agent_arguing_for: {agent_arguing_for}")
-        return sum(
-            agent_arguing_for_func(answer) * answer.case_probs.judge_score
-            for answer in self.answer_cases
-        )
+        res = 0
+        for answer in self.answer_cases:
+            logger.debug(
+                f"arguing for {answer.short} with prob {agent_arguing_for_func(answer)}"
+            )
+            logger.debug(f"{answer.case_probs.is_grounded}")
+            res += agent_arguing_for_func(answer) * answer.case_probs.judge_score
+        return res
+        # return sum(
+        #     agent_arguing_for_func(answer) * answer.case_probs.judge_score
+        #     for answer in self.answer_cases
+        # )
 
     @computed_field
     @property
