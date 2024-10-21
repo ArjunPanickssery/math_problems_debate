@@ -200,11 +200,12 @@ class Protocol:
             )
 
             # reattach ground truth values to trigger computation of scores
-            result.uncensor(question)
-
+            result = result.uncensor(question)
             await write_jsonl_async(
                 result.model_dump(), path=write_results, append=True
             )
+            assert result.is_argued
+            assert result.is_grounded
             return result
 
         results = await parallelized_call(process_question, questions)

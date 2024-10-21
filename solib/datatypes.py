@@ -224,8 +224,16 @@ class Answer(BaseModel):
         # # self has some other attributes non-None
         # # could do this though:
         # assert self.value is None
+        if isinstance(grounded, Question):
+            grounded = grounded.answer_cases_dict[self.short]
         assert grounded.is_grounded
-        return Answer.model_validate(self.model_dump() | grounded.model_dump())
+        return Answer(
+            short=self.short,
+            long=self.long,
+            value=grounded.value,
+            judge_prob=self.judge_prob or grounded.judge_prob,
+            case_probs=self.case_probs or grounded.case_probs,
+        )
 
     @property
     def is_censored(self) -> bool:
@@ -357,7 +365,11 @@ class Question(BaseModel):
         # # ^^we don't assert this because we still want to transfer values when
         # # self has some other attributes non-None
         assert grounded.is_grounded
-        return Question.model_validate(self.model_dump() | grounded.model_dump())
+        return Question(
+            question=self.question,
+            answer_cases=[a.uncensor(grounded) for a in self.answer_cases],
+            transcript=self.transcript or grounded.transcript,
+        )
 
     @property
     def is_censored(self) -> bool:
@@ -495,11 +507,19 @@ class Question(BaseModel):
 
         if isinstance(agent_arguing_for, list):
             assert len(agent_arguing_for) == len(self.answer_cases)
-            agent_arguing_for = lambda a: agent_arguing_for[
-                self.answer_cases.sort(key=lambda x: x.value).index(a)
+            agent_arguing_for_func = lambda a: agent_arguing_for[
+                sorted(self.answer_cases, key=lambda x: x.value).index(a)
             ]
+            # we have to name agent_arguing_for_func differently because functions are
+            # evaluated lazily, so when the function is called later on it will refer back
+            # to the above line and attempt to subscript it. At least I think that's what
+            # was happening.
+        elif isinstance(agent_arguing_for, Callable):
+            agent_arguing_for_func = agent_arguing_for
+        else:
+            raise TypeError(f"Invalid agent_arguing_for: {agent_arguing_for}")
         return sum(
-            agent_arguing_for(answer) * answer.case_probs.judge_score
+            agent_arguing_for_func(answer) * answer.case_probs.judge_score
             for answer in self.answer_cases
         )
 
@@ -527,7 +547,9 @@ class Question(BaseModel):
     @staticmethod
     def compute_stats(questions: list["Question"]) -> dict[str, Any]:
         """Compute stats for a list of .is_argued Questions."""
-        assert all(question.is_argued for question in questions)
+        assert all(
+            question.is_argued and question.is_grounded for question in questions
+        )
         asds = [question.agent_score_diff for question in questions]
         jsmaxs = [question.judge_score_max for question in questions]
         jsmins = [question.judge_score_min for question in questions]

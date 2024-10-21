@@ -67,6 +67,13 @@ def update_recursive(source, overrides):
     return source
 
 
+def update_nonnones(source, overrides):
+    for key, value in overrides.items():
+        if value is not None:
+            source[key] = value
+    return source
+
+
 AbstractionError = NotImplementedError("Must be implemented in subclass.")
 
 
