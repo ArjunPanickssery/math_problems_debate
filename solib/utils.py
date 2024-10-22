@@ -140,3 +140,19 @@ async def write_json_async(
             await f.write(json.dumps(data))
     else:
         pass
+
+
+def str_config(config: dict | list[dict]):
+    if isinstance(config, list):
+        return "\n".join(str_config(item) for item in config)
+    else:
+        return str(
+            {
+                k: (
+                    v.__name__
+                    if isinstance(v, type)
+                    else str_config(v) if isinstance(v, dict) else v
+                )
+                for k, v in config.items()
+            }
+        )

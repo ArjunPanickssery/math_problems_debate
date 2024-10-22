@@ -20,6 +20,9 @@ class Judge(LLM_Agent):
         """Add probabilities to each answer_case."""
         raise AbstractionError
 
+    def __repr__(self):
+        return f"{self.__class__.__name__}(model={self.model}, tools={self.tools})"
+
 
 class QA_Agent(LLM_Agent):
     """A generally convenient wrapper around an LLM, that answers a given prompt,
@@ -85,6 +88,9 @@ class QA_Agent(LLM_Agent):
         "---\n"
         "ANSWER YOU ARE ARGUING FOR: {answer_case}\n"
     )
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}(model={self.model}, tools={self.tools})"
 
 
 class Protocol:

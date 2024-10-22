@@ -18,7 +18,7 @@ test_experiment = Experiment(
         "gpt-4o-mini",
         # "hf:meta-llama/Llama-2-7b-chat-hf",
     ],
-    protocols=["blind"],
+    protocols=["blind", "propaganda", "debate", "consultancy"],
     write_path=Path(__file__).parent / "test_experiments",
 )
 

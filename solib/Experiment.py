@@ -2,6 +2,7 @@ import logging
 from datetime import datetime
 from pathlib import Path
 from solib.datatypes import Question
+from solib.utils import str_config
 from solib.llm_utils import parallelized_call
 from solib.protocols.protocols import *
 from solib.protocols.judges import *
@@ -164,7 +165,12 @@ class Experiment:
                 write=self.get_path(config),
             )
 
-        confirm = input(f"Run {len(self.filtered_configs)} experiments? (y/N)")
+        confirm = input(
+            f"Run {len(self.filtered_configs)} experiments? (y/N) [l to list]"
+        )
+        if confirm.lower() == "l":
+            print(str_config(self.filtered_configs))
+            confirm = input("Continue? (y/N)")
         if confirm.lower() != "y":
             return
         logger.debug(self.filtered_configs)
