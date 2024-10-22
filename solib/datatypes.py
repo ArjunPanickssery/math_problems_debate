@@ -104,7 +104,7 @@ class Score(BaseModel):
         return Score(log=score_log, logodds=score_logodds, accuracy=score_accuracy)
 
     # Helper method for pointwise operations
-    def _operate(self, other, op):
+    def _operate(self, other, op) -> "Score":
         # Function to apply an operation between two values
         def apply(x, y):
             if x is None or y is None:
@@ -157,6 +157,34 @@ class Score(BaseModel):
 
     def __rtruediv__(self, other):
         return self.__truediv__(other)
+
+    # helper function for array operations
+    @classmethod
+    def _arroperate(cls, scores: list["Score"], op) -> "Score":
+        return Score(
+            log=op([score.log for score in scores]),
+            logodds=op([score.logodds for score in scores]),
+            accuracy=op([score.accuracy for score in scores]),
+        )
+
+    @classmethod
+    def mean(cls, scores: list["Score"]) -> "Score":
+        return cls._arroperate(scores, np.mean)
+
+    @classmethod
+    def std(cls, scores: list["Score"]) -> "Score":
+        return cls._arroperate(scores, np.std)
+
+
+class Stats(BaseModel):
+    asd_mean: Score
+    asd_std: Score
+    jsmax_mean: Score
+    jsmax_std: Score
+    jsmins_mean: Score
+    jsmins_std: Score
+    jsuni_mean: Score
+    jsuni_std: Score
 
 
 class Answer(BaseModel):
@@ -218,7 +246,10 @@ class Answer(BaseModel):
     def censor(self) -> "Answer":
         return Answer(short=self.short, long=self.long)
 
-    def uncensor(self, grounded: Union["Answer", "Question"]) -> "Answer":
+    def uncensor(
+        self,
+        grounded: Union["Answer", "Question"],
+    ) -> "Answer":
         # assert self.is_censored
         # # ^^we don't assert this because we still want to transfer values when
         # # self has some other attributes non-None
@@ -427,6 +458,11 @@ class Question(BaseModel):
     def answer_cases_dict(self) -> dict[str, Answer]:
         return {answer.short: answer for answer in self.answer_cases}
 
+    @property
+    def answer_cases_values(self) -> list[float]:
+        assert self.is_grounded
+        return [answer.value for answer in self.answer_cases]
+
     def neg(self, answer: Answer) -> Answer:
         assert len(self.answer_cases) == 2
         # NOTE this is fine for now, but could become a problem one day
@@ -536,18 +572,10 @@ class Question(BaseModel):
             agent_arguing_for_func = agent_arguing_for
         else:
             raise TypeError(f"Invalid agent_arguing_for: {agent_arguing_for}")
-        res = 0
-        for answer in self.answer_cases:
-            logger.debug(
-                f"arguing for {answer.short} with prob {agent_arguing_for_func(answer)}"
-            )
-            logger.debug(f"{answer.case_probs.is_grounded}")
-            res += agent_arguing_for_func(answer) * answer.case_probs.judge_score
-        return res
-        # return sum(
-        #     agent_arguing_for_func(answer) * answer.case_probs.judge_score
-        #     for answer in self.answer_cases
-        # )
+        return sum(
+            agent_arguing_for_func(answer) * answer.case_probs.judge_score
+            for answer in self.answer_cases
+        )
 
     @computed_field
     @property
@@ -580,24 +608,24 @@ class Question(BaseModel):
         jsmaxs = [question.judge_score_max for question in questions]
         jsmins = [question.judge_score_min for question in questions]
         jsunis = [question.judge_score_uniform for question in questions]
-        asd_mean = np.mean(asds)
-        asd_std = np.std(asds)
-        jsmax_mean = np.mean(jsmaxs)
-        jsmax_std = np.std(jsmaxs)
-        jsmins_mean = np.mean(jsmins)
-        jsmins_std = np.std(jsmins)
-        jsuni_mean = np.mean(jsunis)
-        jsuni_std = np.std(jsunis)
-        return {
-            "asd_mean": asd_mean,
-            "asd_std": asd_std,
-            "jsmax_mean": jsmax_mean,
-            "jsmax_std": jsmax_std,
-            "jsmins_mean": jsmins_mean,
-            "jsmins_std": jsmins_std,
-            "jsuni_mean": jsuni_mean,
-            "jsuni_std": jsuni_std,
-        }
+        asd_mean = Score.mean(asds)
+        asd_std = Score.std(asds)
+        jsmax_mean = Score.mean(jsmaxs)
+        jsmax_std = Score.std(jsmaxs)
+        jsmins_mean = Score.mean(jsmins)
+        jsmins_std = Score.std(jsmins)
+        jsuni_mean = Score.mean(jsunis)
+        jsuni_std = Score.std(jsunis)
+        return Stats(
+            asd_mean=asd_mean,
+            asd_std=asd_std,
+            jsmax_mean=jsmax_mean,
+            jsmax_std=jsmax_std,
+            jsmins_mean=jsmins_mean,
+            jsmins_std=jsmins_std,
+            jsuni_mean=jsuni_mean,
+            jsuni_std=jsuni_std,
+        )
 
     # following methods apply for treating Question as a transcript
 

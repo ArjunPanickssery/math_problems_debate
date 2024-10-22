@@ -211,7 +211,7 @@ class Protocol:
         results = await parallelized_call(process_question, questions)
         stats = Question.compute_stats(results)
 
-        await write_json(stats, path=write_stats)
-        await write_json(config(self), path=write_config)
+        write_json(stats, path=write_stats)
+        write_json(config(self), path=write_config)
 
         return results, stats
