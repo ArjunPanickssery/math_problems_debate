@@ -23,7 +23,10 @@ class Consultancy(Protocol):
     def end_communication(self, question: Question) -> bool:
         """Default end_communication method: return True when consultancy transcript
         exceeds length num_turns. Override in subclass."""
-        return len(question.transcript) >= self.num_turns
+        return (
+            question.transcript is not None
+            and len(question.transcript) >= self.num_turns
+        )
 
     def tsitem_to_prompt(self, item: TranscriptItem) -> str:
         if item.role == "client":

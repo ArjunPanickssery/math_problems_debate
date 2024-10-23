@@ -92,4 +92,7 @@ class Debate(Protocol):
         """Default end_communication method: return True when debate transcript
         exceeds length num_turns. Can also be generalized to a host function that
         e.g. decides which debater goes next etc. Override in subclass."""
-        return len(question.transcript) >= self.num_turns
+        return (
+            question.transcript is not None
+            and len(question.transcript) >= self.num_turns
+        )
