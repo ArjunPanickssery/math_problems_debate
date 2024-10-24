@@ -226,7 +226,8 @@ class Experiment:
         )
         # path.mkdir(parents=True, exist_ok=True)
         i = 0
-        while path.exists():
+        path_new = path
+        while path_new.exists():
             i += 1
-            path = path.with_name(path.stem + f"_{i}")
-        return path
+            path_new = path.with_name(path.stem + f"_{i}")
+        return path_new

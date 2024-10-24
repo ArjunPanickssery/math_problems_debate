@@ -1,6 +1,7 @@
 import pytest
 import asyncio
 from pathlib import Path
+from datetime import datetime
 from solib.protocols.protocols import *
 from solib.Experiment import Experiment
 from solib.data.math import train_data
@@ -19,7 +20,9 @@ test_experiment = Experiment(
         # "hf:meta-llama/Llama-2-7b-chat-hf",
     ],
     protocols=["blind", "propaganda", "debate", "consultancy"],
-    write_path=Path(__file__).parent / "test_experiments",
+    write_path=Path(__file__).parent
+    / "test_results"
+    / f"{datetime.now().strftime('%Y-%m-%d_%H:%M:%S')}",
 )
 
 
