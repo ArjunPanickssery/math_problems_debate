@@ -1,6 +1,5 @@
 from collections import defaultdict
 from functools import partial, wraps
-from typing import Callable, Iterable
 import inspect
 import os
 import asyncio
@@ -8,7 +7,8 @@ import json
 import math
 import logging
 from dotenv import load_dotenv
-from typing import Literal, Union, Coroutine, TYPE_CHECKING
+from typing import Callable, Iterable, Literal, Union, Coroutine, TYPE_CHECKING
+from tqdm.asyncio import tqdm
 from pydantic import BaseModel
 from perscache import Cache
 from perscache.cache import hash_it
@@ -108,6 +108,7 @@ cache = BetterCache(serializer=PydanticJSONSerializer())
 global_cost_log = Costlog(mode="jsonl")
 simulate = os.getenv("SIMULATE", "False").lower() == "true"
 disable_costly = os.getenv("DISABLE_COSTLY", "False").lower() == "true"
+use_tqdm = os.getenv("USE_TQDM", "True").lower() == "true"
 
 
 # HACK. I have no idea why this works but just manually adding 'self' to
@@ -181,7 +182,7 @@ async def parallelized_call(
     func: Coroutine,
     data: list[str],
     max_concurrent_queries: int = 100,
-    max_tokens_per_minute: int = 30000,  # Add max tokens per minute
+    max_tokens_per_minute: int = 30000,  # Max tokens per minute
     token_usage_per_call: int = 2000,  # Estimate token usage per call
 ) -> list[any]:
     """
@@ -227,8 +228,21 @@ async def parallelized_call(
             return await func(datapoint)
 
     LOGGER.info("Calling call_func")
+
+    # Create tasks for all data points
     tasks = [call_func(local_semaphore, func, d) for d in data]
-    return await asyncio.gather(*tasks)
+
+    # Run tasks with or without tqdm progress bar based on the use_tqdm flag
+    if use_tqdm:
+        results = []
+        # Wrapping the gather call with tqdm for progress tracking
+        async for result in tqdm(asyncio.as_completed(tasks), total=len(tasks)):
+            results.append(await result)
+    else:
+        # Without tqdm, just await all tasks as usual
+        results = await asyncio.gather(*tasks)
+
+    return results
 
 
 def format_prompt(
