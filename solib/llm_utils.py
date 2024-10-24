@@ -138,10 +138,51 @@ class LLM_Simulator(LLM_Simulator_Faker):
         return t(prob=random.random())
 
 
+# async def parallelized_call(
+#     func: Coroutine,
+#     data: list[str],
+#     max_concurrent_queries: int = 100,
+# ) -> list[any]:
+#     """
+#     Run async func in parallel on the given data.
+#     func will usually be a partial which uses query_api or whatever in some way.
+
+#     Example usage:
+#         partial_eval_method = functools.partial(eval_method, model=model, **kwargs)
+#         results = await parallelized_call(partial_eval_method, [format_post(d) for d in data])
+#     """
+
+#     if os.getenv("SINGLE_THREAD"):
+#         LOGGER.info(f"Running {func} on {len(data)} datapoints sequentially")
+#         return [await func(d) for d in data]
+
+#     max_concurrent_queries = min(
+#         max_concurrent_queries,
+#         int(os.getenv("MAX_CONCURRENT_QUERIES", max_concurrent_queries)),
+#     )
+
+#     LOGGER.info(
+#         f"Running {func} on {len(data)} datapoints with {max_concurrent_queries} concurrent queries"
+#     )
+
+#     # Create a local semaphore
+#     local_semaphore = asyncio.Semaphore(max_concurrent_queries)
+
+#     async def call_func(sem, func, datapoint):
+#         async with sem:
+#             return await func(datapoint)
+
+#     LOGGER.info("Calling call_func")
+#     tasks = [call_func(local_semaphore, func, d) for d in data]
+#     return await asyncio.gather(*tasks)
+
+
 async def parallelized_call(
     func: Coroutine,
     data: list[str],
     max_concurrent_queries: int = 100,
+    max_tokens_per_minute: int = 30000,  # Add max tokens per minute
+    token_usage_per_call: int = 2000,  # Estimate token usage per call
 ) -> list[any]:
     """
     Run async func in parallel on the given data.
@@ -152,12 +193,12 @@ async def parallelized_call(
         results = await parallelized_call(partial_eval_method, [format_post(d) for d in data])
     """
 
+    total_tokens_used = 0
+    token_lock = asyncio.Lock()  # Lock for managing token usage safely
+
     if os.getenv("SINGLE_THREAD"):
         LOGGER.info(f"Running {func} on {len(data)} datapoints sequentially")
         return [await func(d) for d in data]
-
-    LOGGER.debug(f"{max_concurrent_queries=}")
-    LOGGER.debug(f"{os.getenv('MAX_CONCURRENT_QUERIES')=}")
 
     max_concurrent_queries = min(
         max_concurrent_queries,
@@ -172,7 +213,17 @@ async def parallelized_call(
     local_semaphore = asyncio.Semaphore(max_concurrent_queries)
 
     async def call_func(sem, func, datapoint):
+        nonlocal total_tokens_used
         async with sem:
+            # Estimate the tokens for this call and update usage
+            async with token_lock:
+                if total_tokens_used + token_usage_per_call > max_tokens_per_minute:
+                    # If token limit is about to exceed, wait
+                    await asyncio.sleep(60)  # Wait 60 seconds (1 minute)
+                    total_tokens_used = 0  # Reset token count after waiting
+
+                total_tokens_used += token_usage_per_call
+
             return await func(datapoint)
 
     LOGGER.info("Calling call_func")

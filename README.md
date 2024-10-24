@@ -37,3 +37,7 @@ We use the [`costly`](https://github.com/abhimanyupallavisudhir/costly) package 
 # Caching
 
 LLM calls will be cached into the `.cache` folder by default. To break the cache, just pass some random extra argument to the function, e.g. `no_cache=True`.
+
+# Logging
+
+Logs are written to `.logs/` by default. In general use the logger rather than print statements, warnings etc.

@@ -506,13 +506,21 @@ class Question(BaseModel):
 
     def normalize_probs(self) -> "Question":
         assert self.is_elicited
+        if self.total_prob == 0.0:
+            LOGGER.warning(
+                "Total probability is 0.0. Normalizing probs to 1 / len(answer_cases)."
+            )
         return Question(
             question=self.question,
             answer_cases=[
                 Answer(
                     short=answer.short,
                     long=answer.long,
-                    judge_prob=Prob(prob=answer.judge_prob / self.total_prob),
+                    judge_prob=(
+                        Prob(prob=answer.judge_prob / self.total_prob)
+                        if self.total_prob != 0.0
+                        else Prob(prob=1 / len(self.answer_cases))
+                    ),
                 )
                 for answer in self.answer_cases
             ],
