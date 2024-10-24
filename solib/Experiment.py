@@ -39,9 +39,9 @@ class Experiment:
     def __init__(
         self,
         questions: list[Question],
-        agent_models: list[str],
-        agent_toolss: list[list[callable]],
         judge_models: list[str],
+        agent_models: list[str],
+        agent_toolss: list[list[callable]] = None,
         protocols: dict[str, type[Protocol]] = None,
         num_turnss: list[int] = None,
         write_path: Path = Path("experiments")
@@ -59,7 +59,7 @@ class Experiment:
         """
         self.questions = questions
         self.agent_models = agent_models
-        self.agent_toolss = agent_toolss
+        self.agent_toolss = agent_toolss if agent_toolss is not None else [[]]
         self.judge_models = judge_models
         if protocols is None:
             pass

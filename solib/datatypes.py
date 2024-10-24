@@ -508,7 +508,8 @@ class Question(BaseModel):
         assert self.is_elicited
         if self.total_prob == 0.0:
             LOGGER.warning(
-                "Total probability is 0.0. Normalizing probs to 1 / len(answer_cases)."
+                f"Total probability is 0.0 for question {self.question}. "
+                "Normalizing probs to 1 / len(answer_cases)."
             )
         return Question(
             question=self.question,
