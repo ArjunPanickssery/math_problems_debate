@@ -1,18 +1,40 @@
 import os
+from datetime import datetime
 from dotenv import load_dotenv
 import logging
 
 load_dotenv()
 
-log_level_map = {
-    "DEBUG": logging.DEBUG,
-    "INFO": logging.INFO,
-    "WARNING": logging.WARNING,
-    "ERROR": logging.ERROR,
-    "CRITICAL": logging.CRITICAL,
-}
-log_level = log_level_map.get(os.getenv("LOG_LEVEL", "INFO"), logging.INFO)
+# LOG_LEVEL_MAP = {
+#     "DEBUG": logging.DEBUG,
+#     "INFO": logging.INFO,
+#     "WARNING": logging.WARNING,
+#     "ERROR": logging.ERROR,
+#     "CRITICAL": logging.CRITICAL,
+# }
+# LOG_LEVEL = LOG_LEVEL_MAP[os.getenv("LOG_LEVEL", "INFO")]
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
-logging.basicConfig(level=log_level)
+LOG_LEVEL = os.getenv("LOG_LEVEL", "DEBUG")
+LOG_LEVEL_CONSOLE = os.getenv("LOG_LEVEL_CONSOLE", "WARNING")
+LOG_LEVEL_FILE = os.getenv("LOG_LEVEL_FILE", "DEBUG")
+
+LOGGER = logging.getLogger(__name__)
+LOGGER.setLevel(LOG_LEVEL)
+
+FORMATTER = logging.Formatter(
+    "{asctime} - {levelname} - {message}",
+    style="{",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+
+CONSOLE_HANDLER = logging.StreamHandler()
+CONSOLE_HANDLER.setLevel(LOG_LEVEL_CONSOLE)
+CONSOLE_HANDLER.setFormatter(FORMATTER)
+LOGGER.addHandler(CONSOLE_HANDLER)
+
+FILE_HANDLER = logging.FileHandler(
+    f".logs/{datetime.now().strftime('%Y-%m-%d_%H:%M:%S')}.log"
+)
+FILE_HANDLER.setLevel(LOG_LEVEL_FILE)
+FILE_HANDLER.setFormatter(FORMATTER)
+LOGGER.addHandler(FILE_HANDLER)

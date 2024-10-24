@@ -39,7 +39,7 @@ if TYPE_CHECKING:
     # from langchain_mistralai import ChatMistralAI
     # from langchain_anthropic import ChatAnthropic
 
-logger = logging.getLogger(__name__)
+LOGGER = logging.getLogger(__name__)
 
 
 # for cache
@@ -153,15 +153,18 @@ async def parallelized_call(
     """
 
     if os.getenv("SINGLE_THREAD"):
-        logger.info(f"Running {func} on {len(data)} datapoints sequentially")
+        LOGGER.info(f"Running {func} on {len(data)} datapoints sequentially")
         return [await func(d) for d in data]
+
+    LOGGER.debug(f"{max_concurrent_queries=}")
+    LOGGER.debug(f"{os.getenv('MAX_CONCURRENT_QUERIES')=}")
 
     max_concurrent_queries = min(
         max_concurrent_queries,
         int(os.getenv("MAX_CONCURRENT_QUERIES", max_concurrent_queries)),
     )
 
-    logger.info(
+    LOGGER.info(
         f"Running {func} on {len(data)} datapoints with {max_concurrent_queries} concurrent queries"
     )
 
@@ -172,7 +175,7 @@ async def parallelized_call(
         async with sem:
             return await func(datapoint)
 
-    logger.info("Calling call_func")
+    LOGGER.info("Calling call_func")
     tasks = [call_func(local_semaphore, func, d) for d in data]
     return await asyncio.gather(*tasks)
 
@@ -463,7 +466,7 @@ def get_llm(model: str, use_async=False, hf_quantization_config=None):
                 # probably should do some error handling here if 'parsing_error' is set
                 parsed = response["parsed"]
                 if response["parsing_error"] is not None:
-                    logger.error(raw)
+                    LOGGER.error(raw)
                     raise ValueError(
                         f"Error parsing structured output: {response['parsing_error']}"
                     )
@@ -590,17 +593,17 @@ def get_llm(model: str, use_async=False, hf_quantization_config=None):
                 temperature,
                 **kwargs,
             )
-            logger.debug(messages)
+            LOGGER.debug(messages)
             response = get_response(messages)
 
             raw_response, usage = process_response(response)
 
-            logger.debug(f"raw_response: {raw_response}")
+            LOGGER.debug(f"raw_response: {raw_response}")
 
             if response_model is not None and isinstance(raw_response, dict):
                 raw_response = response_model(**raw_response)
 
-            logger.debug(f"raw_response: {raw_response}")
+            LOGGER.debug(f"raw_response: {raw_response}")
 
             return CostlyResponse(
                 output=raw_response,
@@ -640,12 +643,12 @@ def get_llm(model: str, use_async=False, hf_quantization_config=None):
 
             raw_response, usage = process_response(response)
 
-            logger.debug(f"raw_response: {raw_response}")
+            LOGGER.debug(f"raw_response: {raw_response}")
 
             if response_model is not None and isinstance(raw_response, dict):
                 raw_response = response_model(**raw_response)
 
-            logger.debug(f"raw_response: {raw_response}")
+            LOGGER.debug(f"raw_response: {raw_response}")
 
             return CostlyResponse(
                 output=raw_response,

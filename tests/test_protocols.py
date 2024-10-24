@@ -10,7 +10,7 @@ questions = train_data()[:3]
 test_experiment = Experiment(
     questions=questions,
     agent_models=[
-        "gpt-4o",
+        "gpt-4o-mini",
         # "hf:meta-llama/Meta-Llama-3-8B-Instruct",
     ],
     agent_toolss=[[]],

@@ -2,7 +2,7 @@ import logging
 from solib.datatypes import Question, Answer
 from solib.protocols.abstract import Protocol, QA_Agent, Judge
 
-logger = logging.getLogger(__name__)
+LOGGER = logging.getLogger(__name__)
 
 
 class Blind(Protocol):

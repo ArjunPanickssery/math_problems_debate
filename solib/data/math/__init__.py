@@ -4,7 +4,7 @@ import logging
 from solib.utils import random
 from solib.datatypes import Question, Answer
 
-logger = logging.getLogger(__name__)
+LOGGER = logging.getLogger(__name__)
 
 # NOTE: **kwargs are passed everywhere to allow the random seed to be broken (see project README)
 

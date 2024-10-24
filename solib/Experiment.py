@@ -8,7 +8,7 @@ from solib.protocols.protocols import *
 from solib.protocols.judges import *
 from solib.protocols.abstract import QA_Agent, Judge, Protocol
 
-logger = logging.getLogger(__name__)
+LOGGER = logging.getLogger(__name__)
 
 
 class Experiment:
@@ -173,7 +173,7 @@ class Experiment:
             confirm = input("Continue? (y/N)")
         if confirm.lower() != "y":
             return
-        logger.debug(self.filtered_configs)
+        LOGGER.debug(self.filtered_configs)
         await parallelized_call(run_experiment, self.filtered_configs)
 
     def _filter_trivial(self, config: dict):
