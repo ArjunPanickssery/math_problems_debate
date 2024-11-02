@@ -1,10 +1,7 @@
 import json
 import logging
-import inspect
 import warnings
 import numpy as np
-import copy
-from functools import wraps
 from typing import Any, Literal, Optional, Union, Callable, Self
 from pydantic import BaseModel, field_validator, computed_field, model_validator
 
@@ -299,6 +296,20 @@ class Answer(BaseModel):
     def is_argued(self) -> bool:
         return self.case_probs is not None
 
+    @computed_field
+    @property
+    def item_type(self) -> list[str]:
+        return [
+            k
+            for k, v in {
+                "is_censored": self.is_censored,
+                "is_grounded": self.is_grounded,
+                "is_elicited": self.is_elicited,
+                "is_argued": self.is_argued,
+            }.items()
+            if v
+        ]
+
     def to_prompt(self):
         return f"({self.short}): {self.long}"
 
@@ -436,6 +447,20 @@ class Question(BaseModel):
     def is_argued(self) -> bool:
         return all(answer.is_argued for answer in self.answer_cases)
 
+    @computed_field
+    @property
+    def item_type(self) -> list[str]:
+        return [
+            k
+            for k, v in {
+                "is_censored": self.is_censored,
+                "is_grounded": self.is_grounded,
+                "is_elicited": self.is_elicited,
+                "is_argued": self.is_argued,
+            }.items()
+            if v
+        ]
+
     @property
     def has_transcript(self) -> bool:
         return self.transcript is not None
@@ -570,7 +595,7 @@ class Question(BaseModel):
 
         if isinstance(agent_arguing_for, list):
             assert len(agent_arguing_for) == len(self.answer_cases)
-            agent_arguing_for_func = lambda a: agent_arguing_for[
+            agent_arguing_for_func = lambda a: agent_arguing_for[  # noqa
                 sorted(self.answer_cases, key=lambda x: x.value).index(a)
             ]
             # we have to name agent_arguing_for_func differently because functions are

@@ -27,10 +27,10 @@ from langchain_core.messages import (
 from langchain_core.runnables import ConfigurableField
 
 import solib.tool_use.tool_rendering
-from solib.utils import apply, apply_async
+from solib.utils import apply, apply_async  # noqa
 from solib.datatypes import Prob
 from solib.tool_use import tool_use
-from solib.tool_use.tool_use import ToolStopper, HuggingFaceToolCaller
+from solib.tool_use.tool_use import ToolStopper, HuggingFaceToolCaller  # noqa
 
 if TYPE_CHECKING:
     from transformers import AutoTokenizer
@@ -56,7 +56,7 @@ class PydanticJSONSerializer(JSONSerializer):
         else:
             try:
                 return dict(obj)
-            except:
+            except:  # noqa
                 raise TypeError(
                     f"Object of type {obj.__class__.__name__} is not JSON serializable"
                 )
@@ -291,7 +291,6 @@ def format_prompt(
     """
     if input_string is None:
         if messages is None:
-
             assert prompt is not None
 
             messages = []
@@ -312,9 +311,7 @@ def format_prompt(
             )
             if msg_type == "langchain":
                 messages.insert(0, SystemMessage(content=tool_msg))
-            elif (
-                not natively_supports_tools
-            ):  # local models (where msg_type="dict") that natively support tools will have the tool prompt added by apply_chat_template
+            elif not natively_supports_tools:  # local models (where msg_type="dict") that natively support tools will have the tool prompt added by apply_chat_template
                 messages.insert(  # otherwise, we manually create one
                     0,
                     {
@@ -336,7 +333,7 @@ def format_prompt(
 
 
 def convert_langchain_to_dict(
-    messages: list[BaseMessage | dict[str, str]]
+    messages: list[BaseMessage | dict[str, str]],
 ) -> list[dict[str, str]]:
     # TODO: modify this to support ToolMessage
     messages_out = []
@@ -541,7 +538,7 @@ def get_llm(model: str, use_async=False, hf_quantization_config=None):
 
             return raw_response, usage
 
-        _get_messages = lambda kwargs: convert_langchain_to_dict(
+        _get_messages = lambda kwargs: convert_langchain_to_dict(  # noqa
             format_prompt(
                 prompt=kwargs.get("prompt"),
                 messages=kwargs.get("messages"),
@@ -558,7 +555,6 @@ def get_llm(model: str, use_async=False, hf_quantization_config=None):
             response_model: Union["BaseModel", None] = None,
             top_logprobs: int = 5,
         ):
-
             if tools and response_model:
                 raise ValueError("Cannot use tools with response_model")
 
@@ -843,7 +839,6 @@ def get_llm(model: str, use_async=False, hf_quantization_config=None):
 
 
 class LLM_Agent:
-
     def __init__(
         self,
         model: str = None,

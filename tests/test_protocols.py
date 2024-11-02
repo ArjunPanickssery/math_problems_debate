@@ -1,8 +1,8 @@
 import pytest
-import asyncio
+import asyncio  # noqa
 from pathlib import Path
 from datetime import datetime
-from solib.protocols.protocols import *
+from solib.protocols.protocols import *  # noqa
 from solib.Experiment import Experiment
 from solib.data.math import train_data
 

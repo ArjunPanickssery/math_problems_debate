@@ -18,8 +18,6 @@ HF_TOKEN=hf_your_hf_key
 
 ```
 poetry run pytest -s
-poetry run pytest -s --runredundant # mostly just run this if pytest -s fails
-poetry run pytest -s --runhf # to run even tests involving hf models
 ```
 
 # Randomness

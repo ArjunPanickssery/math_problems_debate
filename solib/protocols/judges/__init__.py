@@ -1,5 +1,5 @@
-from .TipOfTongueJudge import TipOfTongueJudge
-from .JustAskProbabilityJudge import JustAskProbabilityJudge
+from .TipOfTongueJudge import TipOfTongueJudge  # noqa
+from .JustAskProbabilityJudge import JustAskProbabilityJudge  # noqa
 
 # import os
 # import importlib

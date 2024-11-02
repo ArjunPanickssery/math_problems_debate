@@ -4,8 +4,16 @@ from pathlib import Path
 from solib.datatypes import Question
 from solib.utils import str_config
 from solib.llm_utils import parallelized_call
-from solib.protocols.protocols import *
-from solib.protocols.judges import *
+from solib.protocols.protocols import (
+    Blind,
+    Propaganda,
+    Debate,
+    Consultancy,
+)
+from solib.protocols.judges import (
+    TipOfTongueJudge,
+    JustAskProbabilityJudge,
+)
 from solib.protocols.abstract import QA_Agent, Judge, Protocol
 
 LOGGER = logging.getLogger(__name__)
@@ -148,15 +156,14 @@ class Experiment:
         ]
 
     def filter_config(self, config: dict):
-        """Subclass this. By default, uses _filter_selfplay"""
-        return self._filter_selfplay(config)
+        """Subclass this. By default, uses _filter_selfplay and _filter_nohfjap."""
+        return self._filter_selfplay(config) and self._filter_nohfjap(config)
 
     @property
     def filtered_configs(self):
         return [config for config in self.all_configs if self.filter_config(config)]
 
     async def experiment(self):
-
         async def run_experiment(config: dict):
             setup = config["protocol"](**config["init_kwargs"])
             await setup.experiment(
@@ -187,6 +194,13 @@ class Experiment:
     def _filter_nohf(self, config: dict):
         for component in config["call_kwargs"].values():
             if isinstance(component, (QA_Agent, Judge)):
+                if component.model.startswith("hf:"):
+                    return False
+        return True
+
+    def _filter_nohfjap(self, config: dict):
+        for component in config["call_kwargs"].values():
+            if isinstance(component, (QA_Agent, JustAskProbabilityJudge)):
                 if component.model.startswith("hf:"):
                     return False
         return True

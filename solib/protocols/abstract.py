@@ -1,19 +1,13 @@
 import logging
-import json
-import functools
-from typing import Any, Literal
-from pydantic import BaseModel, Field
 from pathlib import Path
-import numpy as np
 from solib.utils import config, AbstractionError, write_jsonl_async, write_json
 from solib.llm_utils import parallelized_call, LLM_Agent
-from solib.datatypes import Answer, Question, Prob, TranscriptItem
+from solib.datatypes import Answer, Question, TranscriptItem
 
 LOGGER = logging.getLogger(__name__)
 
 
 class Judge(LLM_Agent):
-
     async def __call__(
         self, question: Question, context: str | None = None
     ) -> Question:
@@ -194,7 +188,6 @@ class Protocol:
             write_results = write_stats = write_config = None
 
         async def process_question(question: Question):
-
             # censor question before sending to any AI
             question_censored = question.censor()
 
