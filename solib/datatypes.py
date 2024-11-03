@@ -550,6 +550,7 @@ class Question(BaseModel):
                 )
                 for answer in self.answer_cases
             ],
+            transcript=self.transcript,
         )
 
     @computed_field

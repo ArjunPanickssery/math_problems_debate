@@ -6,7 +6,6 @@ LOGGER = logging.getLogger(__name__)
 
 
 class Propaganda(Protocol):
-
     async def run(
         self,
         agent: QA_Agent,
@@ -21,5 +20,7 @@ class Propaganda(Protocol):
             context=self.ts_to_prompt(question),
         )
         question.append(TranscriptItem(role=answer_case.short, content=agent_response))
+        assert question.transcript is not None
         result = await judge(question=question, context=self.ts_to_prompt(question))
+        assert result.transcript is not None
         return result

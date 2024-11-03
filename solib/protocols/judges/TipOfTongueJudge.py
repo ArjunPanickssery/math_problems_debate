@@ -16,7 +16,6 @@ class TipOfTongueJudge(Judge):
         question: Question,
         context: str,
     ) -> Question:
-
         prompt = self.prompt.format(
             question=question.to_prompt(),
             context=context,
@@ -35,6 +34,7 @@ class TipOfTongueJudge(Judge):
                 )
                 for a in question.answer_cases
             ],
+            transcript=question.transcript,
         )
         assert result.is_elicited
         assert result.is_normalized

@@ -43,6 +43,7 @@ class JustAskProbabilityJudge(Judge):
                 Answer.model_validate(a.model_dump() | {"judge_prob": p})
                 for a, p in zip(question.answer_cases, probs_)
             ],
+            transcript=question.transcript,
         )
         assert result.is_elicited
         return result.normalize_probs()
