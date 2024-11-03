@@ -105,7 +105,7 @@ class BetterCache(Cache):
 
 load_dotenv()
 cache = BetterCache(serializer=PydanticJSONSerializer())
-global_cost_log = Costlog(mode="jsonl")
+global_cost_log = Costlog(mode="jsonl", discard_extras=True)
 simulate = os.getenv("SIMULATE", "False").lower() == "true"
 disable_costly = os.getenv("DISABLE_COSTLY", "False").lower() == "true"
 use_tqdm = os.getenv("USE_TQDM", "True").lower() == "true"

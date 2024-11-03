@@ -2,7 +2,7 @@ import logging
 from datetime import datetime
 from pathlib import Path
 from solib.datatypes import Question
-from solib.utils import str_config
+from solib.utils import str_config, write_json, dump_config
 from solib.llm_utils import parallelized_call
 from solib.protocols.protocols import (
     Blind,
@@ -166,11 +166,13 @@ class Experiment:
     async def experiment(self):
         async def run_experiment(config: dict):
             setup = config["protocol"](**config["init_kwargs"])
-            await setup.experiment(
+            stuff = await setup.experiment(
                 questions=self.questions,
                 **config["call_kwargs"],
                 write=self.get_path(config),
             )
+            results, stats = stuff
+            return stats
 
         confirm = input(
             f"Run {len(self.filtered_configs)} experiments? (y/N) [l to list]"
@@ -181,7 +183,12 @@ class Experiment:
         if confirm.lower() != "y":
             return
         LOGGER.debug(self.filtered_configs)
-        await parallelized_call(run_experiment, self.filtered_configs)
+        statss = await parallelized_call(run_experiment, self.filtered_configs)
+        all_stats = [
+            {"config": config, "stats": stats}
+            for config, stats in zip(self.filtered_configs, statss)
+        ]
+        write_json(dump_config(all_stats), path=self.write_path / "all_stats.json")
 
     def _filter_trivial(self, config: dict):
         return True

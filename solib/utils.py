@@ -8,28 +8,32 @@ import hashlib
 import inspect
 
 
-def config(instance):
+def dump_config(instance):
     if inspect.isfunction(instance):
         return instance.__name__
     elif isinstance(instance, (int, float, str, bool, type(None))):
         return instance
     elif isinstance(instance, list):
-        return [config(item) for item in instance]
+        return [dump_config(item) for item in instance]
     elif isinstance(instance, dict):
-        return {k: config(v) for k, v in instance.items()}
+        return {k: dump_config(v) for k, v in instance.items()}
     elif isinstance(instance, tuple):
-        return tuple(config(item) for item in instance)
+        return tuple(dump_config(item) for item in instance)
     elif isinstance(instance, set):
-        return set(config(item) for item in instance)
+        return set(dump_config(item) for item in instance)
     elif isinstance(instance, BaseModel):
         return instance.model_dump()
+    elif isinstance(instance, type):
+        return instance.__name__
     elif hasattr(instance, "__class__") and hasattr(instance.__class__, "__name__"):
         result = {}
         result["__class__"] = instance.__class__.__name__
         if hasattr(instance, "dict"):
-            result["dict"] = {k: config(v) for k, v in instance.dict.items()}
+            result["dict"] = {k: dump_config(v) for k, v in instance.dict.items()}
         elif hasattr(instance, "__dict__"):
-            result["__dict__"] = {k: config(v) for k, v in instance.__dict__.items()}
+            result["__dict__"] = {
+                k: dump_config(v) for k, v in instance.__dict__.items()
+            }
     else:
         raise TypeError(f"Unsupported type: {type(instance)}")
     return result

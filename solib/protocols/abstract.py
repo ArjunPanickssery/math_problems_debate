@@ -1,6 +1,6 @@
 import logging
 from pathlib import Path
-from solib.utils import config, AbstractionError, write_jsonl_async, write_json
+from solib.utils import dump_config, AbstractionError, write_jsonl_async, write_json
 from solib.llm_utils import parallelized_call, LLM_Agent
 from solib.datatypes import Answer, Question, TranscriptItem
 
@@ -217,7 +217,7 @@ class Protocol:
 
         write_json(stats, path=write_stats)
         write_json(
-            config(
+            dump_config(
                 {
                     "protocol": self,
                     "agent": agent,
