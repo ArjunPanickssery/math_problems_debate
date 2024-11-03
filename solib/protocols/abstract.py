@@ -201,7 +201,7 @@ class Protocol:
             # reattach ground truth values to trigger computation of scores
             result = result.uncensor(question)
             await write_jsonl_async(
-                result.model_dump(), path=write_results, append=True
+                result.model_dump(exclude_none=True), path=write_results, append=True
             )
             assert result.is_argued
             assert result.is_grounded

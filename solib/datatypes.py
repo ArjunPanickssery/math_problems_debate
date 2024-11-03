@@ -328,10 +328,6 @@ class Answer(BaseModel):
             return None
         return Score.calc(self.case_probs, self)
 
-    class Config:
-        use_enum_values = True
-        exclude_none = True
-
 
 class Question(BaseModel):
     """
@@ -744,10 +740,6 @@ class Question(BaseModel):
         if self.transcript is None:
             self.transcript = []
         self.transcript.append(item)
-
-    class Config:
-        use_enum_values = True
-        exclude_none = True
 
 
 class TranscriptItem(BaseModel):
