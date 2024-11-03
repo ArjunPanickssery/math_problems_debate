@@ -57,6 +57,12 @@ class TipOfTongueJudge(Judge):
 
         self.prompt = prompt or self.prompt
         self.words_in_mouth = words_in_mouth or self.words_in_mouth
+        self.dict = {
+            "model": model,
+            "tools": tools,
+            "prompt": self.prompt,
+            "words_in_mouth": self.words_in_mouth,
+        }
         super().__init__(
             model=model, tools=tools, hf_quantization_config=hf_quantization_config
         )

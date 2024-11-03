@@ -10,7 +10,7 @@ class Debate(Protocol):
     def __init__(self, num_turns: int = 2, simultaneous=True, prompt: str = None):
         self.num_turns = num_turns
         self.simultaneous = simultaneous
-        super().__init__(prompt=prompt)
+        super().__init__(prompt=prompt, num_turns=num_turns, simultaneous=simultaneous)
 
     async def run(
         self,

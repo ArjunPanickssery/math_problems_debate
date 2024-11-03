@@ -5,25 +5,33 @@ import jsonlines
 import aiofiles
 import random as rnd
 import hashlib
+import inspect
 
 
 def config(instance):
-    result = {}
-    if hasattr(instance, "__class__") and hasattr(instance.__class__, "__name__"):
-        result["class"] = instance.__class__.__name__
-    for key, value in instance.__dict__.items():
-        if hasattr(value, "__dict__"):
-            result[key] = config(value)
-        elif isinstance(value, list):
-            result[key] = [
-                config(item) if hasattr(item, "__dict__") else item for item in value
-            ]
-        elif isinstance(value, dict):
-            result[key] = {
-                k: config(v) if hasattr(v, "__dict__") else v for k, v in value.items()
-            }
-        else:
-            result[key] = value
+    if inspect.isfunction(instance):
+        return instance.__name__
+    elif isinstance(instance, (int, float, str, bool, type(None))):
+        return instance
+    elif isinstance(instance, list):
+        return [config(item) for item in instance]
+    elif isinstance(instance, dict):
+        return {k: config(v) for k, v in instance.items()}
+    elif isinstance(instance, tuple):
+        return tuple(config(item) for item in instance)
+    elif isinstance(instance, set):
+        return set(config(item) for item in instance)
+    elif isinstance(instance, BaseModel):
+        return instance.model_dump()
+    elif hasattr(instance, "__class__") and hasattr(instance.__class__, "__name__"):
+        result = {}
+        result["__class__"] = instance.__class__.__name__
+        if hasattr(instance, "dict"):
+            result["dict"] = {k: config(v) for k, v in instance.dict.items()}
+        elif hasattr(instance, "__dict__"):
+            result["__dict__"] = {k: config(v) for k, v in instance.__dict__.items()}
+    else:
+        raise TypeError(f"Unsupported type: {type(instance)}")
     return result
 
 
@@ -151,7 +159,9 @@ def str_config(config: dict | list[dict]):
                 k: (
                     v.__name__
                     if isinstance(v, type)
-                    else str_config(v) if isinstance(v, dict) else v
+                    else str_config(v)
+                    if isinstance(v, dict)
+                    else v
                 )
                 for k, v in config.items()
             }

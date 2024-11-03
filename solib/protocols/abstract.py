@@ -67,6 +67,12 @@ class QA_Agent(LLM_Agent):
         )
         self.prompt = prompt or self.prompt
         self.words_in_mouth = words_in_mouth or self.words_in_mouth
+        self.dict = {
+            "model": self.model,
+            "tools": self.tools,
+            "prompt": self.prompt,
+            "words_in_mouth": self.words_in_mouth,
+        }
 
     words_in_mouth = " Sure, here's my response:\n\n"
 
@@ -94,8 +100,9 @@ class Protocol:
 
     prompt = None  # by default we default to QA_Agent.prompt for this protocol
 
-    def __init__(self, prompt: str = None):
+    def __init__(self, prompt: str = None, **kwargs):
         self.prompt = prompt or self.prompt
+        self.dict = {"prompt": self.prompt, **kwargs}
 
     def tsitem_to_prompt(self, item: TranscriptItem) -> str:
         return f"## Argument in favour of {item.role}\n{item.content}\n"
@@ -178,12 +185,10 @@ class Protocol:
         results = []
 
         if write:
+            Path(write).mkdir(parents=True, exist_ok=True)
             write_results = Path(write) / "results.jsonl"
-            write_results.parent.mkdir(parents=True, exist_ok=True)
             write_stats = Path(write) / "stats.json"
-            write_stats.parent.mkdir(parents=True, exist_ok=True)
             write_config = Path(write) / "config.json"
-            write_config.parent.mkdir(parents=True, exist_ok=True)
         else:
             write_results = write_stats = write_config = None
 
@@ -211,6 +216,16 @@ class Protocol:
         stats = Question.compute_stats(results)
 
         write_json(stats, path=write_stats)
-        write_json(config(self), path=write_config)
+        write_json(
+            config(
+                {
+                    "protocol": self,
+                    "agent": agent,
+                    "judge": judge,
+                    **other_components,
+                }
+            ),
+            path=write_config,
+        )
 
         return results, stats

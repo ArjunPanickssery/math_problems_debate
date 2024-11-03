@@ -18,6 +18,12 @@ class Consultancy(Protocol):
         self.client_prompt = client_prompt or self.client_prompt
         self.num_turns = num_turns
         self.consultant_goes_first = consultant_goes_first
+        super().__init__(
+            consultant_prompt=consultant_prompt,
+            client_prompt=client_prompt,
+            num_turns=num_turns,
+            consultant_goes_first=consultant_goes_first,
+        )
 
     def end_communication(self, question: Question) -> bool:
         """Default end_communication method: return True when consultancy transcript
