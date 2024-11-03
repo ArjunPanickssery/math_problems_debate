@@ -328,6 +328,10 @@ class Answer(BaseModel):
             return None
         return Score.calc(self.case_probs, self)
 
+    class Config:
+        use_enum_values = True
+        exclude_none = True
+
 
 class Question(BaseModel):
     """
@@ -590,9 +594,7 @@ class Question(BaseModel):
             }
         elif beta == np.inf:
             return {
-                answer.short: Prob(prob=1.0)
-                if answer.agent_score.log == max_agent_score
-                else Prob(prob=0.0)
+                answer.short: Prob(prob=1 / len(self.answer_cases))
                 for answer in self.answer_cases
             }
         else:
@@ -742,6 +744,10 @@ class Question(BaseModel):
         if self.transcript is None:
             self.transcript = []
         self.transcript.append(item)
+
+    class Config:
+        use_enum_values = True
+        exclude_none = True
 
 
 class TranscriptItem(BaseModel):
