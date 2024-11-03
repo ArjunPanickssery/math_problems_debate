@@ -176,12 +176,18 @@ class Score(BaseModel):
 class Stats(BaseModel):
     asd_mean: Score
     asd_std: Score
-    jsmax_mean: Score
-    jsmax_std: Score
-    jsmins_mean: Score
-    jsmins_std: Score
-    jsuni_mean: Score
-    jsuni_std: Score
+    jse_b0_mean: Score
+    jse_b0_std: Score
+    jse_b1_mean: Score
+    jse_b1_std: Score
+    jse_binf_mean: Score
+    jse_binf_std: Score
+    ase_b0_mean: Score
+    ase_b0_std: Score
+    ase_b1_mean: Score
+    ase_b1_std: Score
+    ase_binf_mean: Score
+    ase_binf_std: Score
 
 
 class Answer(BaseModel):
@@ -302,6 +308,7 @@ class Answer(BaseModel):
         return [
             k
             for k, v in {
+                "Answer": True,
                 "is_censored": self.is_censored,
                 "is_grounded": self.is_grounded,
                 "is_elicited": self.is_elicited,
@@ -357,21 +364,19 @@ class Question(BaseModel):
     Additional attributes in this case:
         agent_score_diff (Score): computed. Also requires .is_grounded. Measures how much more the
             agent can convince the judge by arguing for the true answer compared to the false answer.
-        judge_score_max (Score): computed. Also requires .is_grounded. Judge score if agent argues for
-            the best answer.
-        judge_score_min (Score): computed. Also requires .is_grounded. Judge score if agent argues for
-            the worst answer.
-        judge_score_uniform (Score): computed. Also requires .is_grounded. Judge score if agent argues for
-            any answer with equal probability.
+        judge_score_b0 (Score): computed. Also requires .is_grounded. Expected judge score with beta = 0.0.
+        judge_score_b1 (Score): computed. Also requires .is_grounded. Expected judge score with beta = 1.0.
+        judge_score_binf (Score): computed. Also requires .is_grounded. Expected judge score with beta = inf.
+        agent_score_b0 (Score): computed. Expected agent score with beta = 0.0.
+        agent_score_b1 (Score): computed. Expected agent score with beta = 1.0.
+        agent_score_binf (Score): computed. Expected agent score with beta = inf.
     Additional methods in this case:
-        judge_score_expected(
-            agent_arguing_for:
-                Callable[[Answer], Prob]
-                | list[float]
-                | Literal["max", "min", "uniform"]
-            ) -> Score:
-            computed. Also requires .is_grounded. Scores the elicited probabilities against the true answer,
-                given how likely the agent is to argue for each answer.
+        open_probs(beta: float) -> dict[str, Prob]: Also requires .is_argued. Returns a dict mapping each answer
+            case to its propensity of being argued for, given beta.
+        judge_score_expected(beta: float) -> Score: Also requires .is_grounded. Scores the elicited
+            probabilities against the true answer, given how likely the agent is to argue for each answer.
+        agent_score_expected(beta: float) -> Score: Scores the agent's persuasiveness, given how likely the
+            agent is to argue for each answer.
 
     ## `Question.has_transcript`
     To store a transcript en route to eliciting a probability.
@@ -453,6 +458,7 @@ class Question(BaseModel):
         return [
             k
             for k, v in {
+                "Question": True,
                 "is_censored": self.is_censored,
                 "is_grounded": self.is_grounded,
                 "is_elicited": self.is_elicited,
@@ -571,13 +577,87 @@ class Question(BaseModel):
             return None
         return self.true_answer.agent_score - self.false_answer.agent_score
 
-    def judge_score_expected(
+    def open_probs(self, beta: float) -> dict[str, Prob]:
+        """Propensity of the agent to argue for each answer."""
+        assert self.is_argued
+        max_agent_score = max(answer.agent_score.log for answer in self.answer_cases)
+        if beta == 0.0:
+            return {
+                answer.short: Prob(prob=1.0)
+                if answer.agent_score.log == max_agent_score
+                else Prob(prob=0.0)
+                for answer in self.answer_cases
+            }
+        elif beta == np.inf:
+            return {
+                answer.short: Prob(prob=1.0)
+                if answer.agent_score.log == max_agent_score
+                else Prob(prob=0.0)
+                for answer in self.answer_cases
+            }
+        else:
+            denom = sum(
+                np.exp(answer.agent_score.log / beta) for answer in self.answer_cases
+            )
+            return {
+                answer.short: Prob(prob=np.exp(answer.agent_score.log / beta) / denom)
+                for answer in self.answer_cases
+            }
+
+    def judge_score_expected(self, beta: float) -> Score:
+        if not (self.is_argued and self.is_grounded):
+            return None
+        return sum(
+            self.open_probs(beta)[answer.short].prob * answer.case_probs.judge_score
+            for answer in self.answer_cases
+        )
+
+    def agent_score_expected(self, beta: float) -> Score:
+        if not self.is_argued:
+            return None
+        return sum(
+            self.open_probs(beta)[answer.short].prob * answer.agent_score
+            for answer in self.answer_cases
+        )
+
+    @computed_field
+    @property
+    def judge_score_b0(self) -> Score:
+        return self.judge_score_expected(0.0)
+
+    @computed_field
+    @property
+    def judge_score_b1(self) -> Score:
+        return self.judge_score_expected(1.0)
+
+    @computed_field
+    @property
+    def judge_score_binf(self) -> Score:
+        return self.judge_score_expected(np.inf)
+
+    @computed_field
+    @property
+    def agent_score_b0(self) -> Score:
+        return self.agent_score_expected(0.0)
+
+    @computed_field
+    @property
+    def agent_score_b1(self) -> Score:
+        return self.agent_score_expected(1.0)
+
+    @computed_field
+    @property
+    def agent_score_binf(self) -> Score:
+        return self.agent_score_expected(np.inf)
+
+    def _judge_score_expected_legacy(
         self,
         agent_arguing_for: Union[
             Callable[[Answer], Prob], list[float], Literal["max", "min", "uniform"]
         ],
     ) -> Score:
         """Expected judge score given how likely an agent is to argue for each answer.
+        THIS IS BASICALLY USELESS and you should use judge_score_expected instead.
 
         Args:
             agent_arguing_for (Callable[[Answer], Prob] | list[float] | Literal["max", "min", "uniform"]):
@@ -612,27 +692,6 @@ class Question(BaseModel):
             for answer in self.answer_cases
         )
 
-    @computed_field
-    @property
-    def judge_score_max(self) -> Score | None:
-        if not (self.is_argued and self.is_grounded):
-            return None
-        return self.judge_score_expected("max")
-
-    @computed_field
-    @property
-    def judge_score_min(self) -> Score | None:
-        if not (self.is_argued and self.is_grounded):
-            return None
-        return self.judge_score_expected("min")
-
-    @computed_field
-    @property
-    def judge_score_uniform(self) -> Score | None:
-        if not (self.is_argued and self.is_grounded):
-            return None
-        return self.judge_score_expected("uniform")
-
     @staticmethod
     def compute_stats(questions: list["Question"]) -> dict[str, Any]:
         """Compute stats for a list of .is_argued Questions."""
@@ -640,26 +699,41 @@ class Question(BaseModel):
             question.is_argued and question.is_grounded for question in questions
         )
         asds = [question.agent_score_diff for question in questions]
-        jsmaxs = [question.judge_score_max for question in questions]
-        jsmins = [question.judge_score_min for question in questions]
-        jsunis = [question.judge_score_uniform for question in questions]
+        jse_b0s = [question.judge_score_b0 for question in questions]
+        jse_b1s = [question.judge_score_b1 for question in questions]
+        jse_binfs = [question.judge_score_binf for question in questions]
+        ase_b0s = [question.agent_score_b0 for question in questions]
+        ase_b1s = [question.agent_score_b1 for question in questions]
+        ase_binfs = [question.agent_score_binf for question in questions]
         asd_mean = Score.mean(asds)
         asd_std = Score.std(asds)
-        jsmax_mean = Score.mean(jsmaxs)
-        jsmax_std = Score.std(jsmaxs)
-        jsmins_mean = Score.mean(jsmins)
-        jsmins_std = Score.std(jsmins)
-        jsuni_mean = Score.mean(jsunis)
-        jsuni_std = Score.std(jsunis)
+        jse_b0_mean = Score.mean(jse_b0s)
+        jse_b0_std = Score.std(jse_b0s)
+        jse_b1_mean = Score.mean(jse_b1s)
+        jse_b1_std = Score.std(jse_b1s)
+        jse_binf_mean = Score.mean(jse_binfs)
+        jse_binf_std = Score.std(jse_binfs)
+        ase_b0_mean = Score.mean(ase_b0s)
+        ase_b0_std = Score.std(ase_b0s)
+        ase_b1_mean = Score.mean(ase_b1s)
+        ase_b1_std = Score.std(ase_b1s)
+        ase_binf_mean = Score.mean(ase_binfs)
+        ase_binf_std = Score.std(ase_binfs)
         return Stats(
             asd_mean=asd_mean,
             asd_std=asd_std,
-            jsmax_mean=jsmax_mean,
-            jsmax_std=jsmax_std,
-            jsmins_mean=jsmins_mean,
-            jsmins_std=jsmins_std,
-            jsuni_mean=jsuni_mean,
-            jsuni_std=jsuni_std,
+            jse_b0_mean=jse_b0_mean,
+            jse_b0_std=jse_b0_std,
+            jse_b1_mean=jse_b1_mean,
+            jse_b1_std=jse_b1_std,
+            jse_binf_mean=jse_binf_mean,
+            jse_binf_std=jse_binf_std,
+            ase_b0_mean=ase_b0_mean,
+            ase_b0_std=ase_b0_std,
+            ase_b1_mean=ase_b1_mean,
+            ase_b1_std=ase_b1_std,
+            ase_binf_mean=ase_binf_mean,
+            ase_binf_std=ase_binf_std,
         )
 
     # following methods apply for treating Question as a transcript
