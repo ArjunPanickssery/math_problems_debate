@@ -1,5 +1,4 @@
-import pytest
-import datetime
+import pytest  # noqa
 from solib.protocols.abstract import QA_Agent, Judge
 from solib.protocols.protocols import Debate
 from solib.Experiment import Experiment

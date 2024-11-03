@@ -22,7 +22,7 @@ test_experiment = Experiment(
     protocols=["blind", "propaganda", "debate", "consultancy"],
     write_path=Path(__file__).parent
     / "test_results"
-    / f"{datetime.now().strftime('%Y-%m-%d_%H:%M:%S')}",
+    / f"{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}",
 )
 
 
