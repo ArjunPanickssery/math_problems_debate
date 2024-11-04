@@ -8,11 +8,12 @@ import math
 import logging
 from dotenv import load_dotenv
 from typing import Callable, Iterable, Literal, Union, Coroutine, TYPE_CHECKING
+from transformers import BitsAndBytesConfig
 from pydantic import BaseModel
-import functools
 from perscache import Cache
 from perscache.cache import hash_it
 from perscache.serializers import JSONSerializer, Serializer
+from perscache.storage import Storage
 from costly import Costlog, CostlyResponse, costly
 from costly.simulators.llm_simulator_faker import LLM_Simulator_Faker
 import warnings
@@ -70,6 +71,14 @@ class PydanticJSONSerializer(JSONSerializer):
         return json.loads(data.decode("utf-8"))
 
 
+class DisabledStorage(Storage):  # class that disables storage
+    def read(self, path, deadline) -> bytes:
+        raise FileNotFoundError
+
+    def write(self, path, data: bytes) -> None:
+        pass
+
+
 class BetterCache(Cache):
     """A subclass of Cache that hashes types by their names."""
 
@@ -105,6 +114,7 @@ class BetterCache(Cache):
 
 load_dotenv()
 cache = BetterCache(serializer=PydanticJSONSerializer())
+storageless_cache = BetterCache(storage=DisabledStorage())
 GLOBAL_COST_LOG = Costlog(mode="jsonl", discard_extras=True)
 SIMULATE = os.getenv("SIMULATE", "False").lower() == "true"
 DISABLE_COSTLY = os.getenv("DISABLE_COSTLY", "False").lower() == "true"
@@ -399,11 +409,13 @@ def convert_langchain_to_dict(
             messages_out.append(m)
     return messages_out
 
-@functools.cache  # use regular functools to avoid persisting hf models to disk
-def get_llm(model: str, use_async=False, hf_quantization_config=None):
+@storageless_cache(ignore=None)
+def get_llm(model: str, use_async=False, hf_quantization_config=False):
     if model.startswith("hf:"):  # Hugging Face local models
         msg_type = "dict"
         from transformers import AutoTokenizer, AutoModelForCausalLM
+
+        quant_config = BitsAndBytesConfig(load_in_8bit=True) if hf_quantization_config else None
 
         api_key = os.getenv("HF_TOKEN")
         model = model.split("hf:")[1]

@@ -1,7 +1,6 @@
 import logging
 from datetime import datetime
 from pathlib import Path
-from transformers import BitsAndBytesConfig
 
 from solib.datatypes import Question
 from solib.utils import str_config, write_json, dump_config
@@ -67,7 +66,7 @@ class Experiment:
             num_turnss: List of number of turns for the protocols.
             write_path: Folder directory to write the results to.
         """
-        self.default_quant_config = BitsAndBytesConfig(load_in_8bit=True)
+        self.default_quant_config = True
         self.questions = questions
         self.agent_models = agent_models
         self.agent_toolss = agent_toolss if agent_toolss is not None else [[]]
