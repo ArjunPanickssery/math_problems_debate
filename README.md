@@ -1,18 +1,12 @@
 # Usage
 
-```
-$ python -m venv venv
-$ source venv/bin/activate
-$ poetry install
+```bash
+python -m venv venv
+source venv/bin/activate
+poetry install
 ```
 
-Create a `.env` file, e.g.
-
-```
-OPENAI_API_KEY=sk-your-openai-key
-ANTHROPIC_API_KEY=sk-ant-your-anthropic-key
-HF_TOKEN=hf_your_hf_key
-```
+Create a `.env` file, see [.env.example](.env.example)
 
 # Pytest
 

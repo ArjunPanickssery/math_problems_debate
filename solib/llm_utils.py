@@ -7,8 +7,7 @@ import json
 import math
 import logging
 from dotenv import load_dotenv
-from typing import Callable, Iterable, Literal, Union, Any, Coroutine, TYPE_CHECKING
-from tqdm.asyncio import tqdm
+from typing import Callable, Iterable, Literal, Union, Coroutine, TYPE_CHECKING
 from pydantic import BaseModel
 from perscache import Cache
 from perscache.cache import hash_it
