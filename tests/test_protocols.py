@@ -12,12 +12,12 @@ test_experiment = Experiment(
     questions=questions,
     agent_models=[
         "gpt-4o-mini",
-        # "hf:meta-llama/Meta-Llama-3-8B-Instruct",
+        "hf:meta-llama/Meta-Llama-3-8B-Instruct",
     ],
     agent_toolss=[[]],
     judge_models=[
         "gpt-4o-mini",
-        # "hf:meta-llama/Llama-2-7b-chat-hf",
+        "hf:meta-llama/Llama-2-7b-chat-hf",
     ],
     protocols=["blind", "propaganda", "debate", "consultancy"],
     write_path=Path(__file__).parent

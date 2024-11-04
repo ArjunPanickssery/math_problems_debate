@@ -48,7 +48,7 @@ class QA_Agent(LLM_Agent):
             answer_case=answer_case,
             context=context,
         )
-        return await self.get_response_async(
+        return await self.get_response(
             prompt=prompt,
             words_in_mouth=words_in_mouth,
             max_tokens=max_tokens,

@@ -1,6 +1,8 @@
 import logging
 from datetime import datetime
 from pathlib import Path
+from transformers import BitsAndBytesConfig
+
 from solib.datatypes import Question
 from solib.utils import str_config, write_json, dump_config
 from solib.llm_utils import parallelized_call
@@ -65,6 +67,7 @@ class Experiment:
             num_turnss: List of number of turns for the protocols.
             write_path: Folder directory to write the results to.
         """
+        self.default_quant_config = BitsAndBytesConfig(load_in_8bit=True)
         self.questions = questions
         self.agent_models = agent_models
         self.agent_toolss = agent_toolss if agent_toolss is not None else [[]]
@@ -95,6 +98,7 @@ class Experiment:
             QA_Agent(
                 model=model,
                 tools=tools,
+                hf_quantization_config=self.default_quant_config,
             )
             for model in self.agent_models
             for tools in self.agent_toolss
@@ -103,9 +107,9 @@ class Experiment:
     @property
     def judges(self):
         tot_judges = [
-            TipOfTongueJudge(model) for model in self.judge_models if model != "human"
+            TipOfTongueJudge(model, hf_quantization_config=self.default_quant_config) for model in self.judge_models if model != "human"
         ]
-        jap_judges = [JustAskProbabilityJudge(model) for model in self.judge_models]
+        jap_judges = [JustAskProbabilityJudge(model, hf_quantization_config=self.default_quant_config) for model in self.judge_models]
         return tot_judges + jap_judges
 
     @property

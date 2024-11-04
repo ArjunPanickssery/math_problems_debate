@@ -9,6 +9,7 @@ import logging
 from dotenv import load_dotenv
 from typing import Callable, Iterable, Literal, Union, Coroutine, TYPE_CHECKING
 from pydantic import BaseModel
+import functools
 from perscache import Cache
 from perscache.cache import hash_it
 from perscache.serializers import JSONSerializer, Serializer
@@ -398,7 +399,7 @@ def convert_langchain_to_dict(
             messages_out.append(m)
     return messages_out
 
-
+@functools.cache  # use regular functools to avoid persisting hf models to disk
 def get_llm(model: str, use_async=False, hf_quantization_config=None):
     if model.startswith("hf:"):  # Hugging Face local models
         msg_type = "dict"
@@ -901,14 +902,19 @@ class LLM_Agent:
             use_async=False,
             hf_quantization_config=hf_quantization_config,
         )
-        self.ai_async = get_llm(
-            model=self.model,
-            use_async=True,
-            hf_quantization_config=hf_quantization_config,
-        )
+        if not self.supports_async:
+            self.ai_async = get_llm(
+                model=self.model,
+                use_async=True,
+                hf_quantization_config=hf_quantization_config,
+            )
+
+    @property
+    def supports_async(self):
+        return not self.model.startswith('hf:')
 
     @method_cache(ignore=["cost_log"])
-    def get_response(
+    def get_response_sync(
         self,
         response_model: Union["BaseModel", None] = None,
         prompt: str = None,
@@ -970,8 +976,18 @@ class LLM_Agent:
                 **kwargs,
             )
 
+    async def get_response(self, *args, **kwargs):
+        if self.supports_async:
+            return await self.get_response_async(*args, **kwargs)
+        return self.get_response_sync(*args, **kwargs)
+
+    async def get_probs(self, *args, **kwargs):
+        if self.supports_async:
+            return await self.get_probs_async(*args, **kwargs)
+        return self.get_probs_sync(*args, **kwargs)
+
     @method_cache(ignore=["cost_log"])
-    def get_probs(
+    def get_probs_sync(
         self,
         return_probs_for: list[str],
         prompt: str = None,

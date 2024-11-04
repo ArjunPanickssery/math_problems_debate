@@ -21,11 +21,13 @@ class TipOfTongueJudge(Judge):
             context=context,
             answer_cases_short=", ".join(f"({a})" for a in question.answer_cases_short),
         )
-        probs = await self.get_probs_async(
+
+        probs = await self.get_probs(
             prompt=prompt,
             return_probs_for=question.answer_cases_short,
             words_in_mouth=self.words_in_mouth,
         )
+
         result = Question(
             question=question.question,
             answer_cases=[

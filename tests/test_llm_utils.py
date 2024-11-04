@@ -8,8 +8,8 @@ pytest_plugins = ("anyio",)
 @pytest.fixture(
     params=[
         "gpt-4o-mini",
-        # "hf:meta-llama/Llama-2-7b-chat-hf",
-        # "hf:meta-llama/Meta-Llama-3-8B-Instruct",
+        "hf:meta-llama/Llama-2-7b-chat-hf",
+        "hf:meta-llama/Meta-Llama-3-8B-Instruct",
     ]
 )
 def model(request):
@@ -27,7 +27,7 @@ def test_get_response_returns_string(llm_agent, request):
     ):
         pytest.skip("slow test, add --runhf option to run")
     prompt = "What is the capital of France?"
-    response = llm_agent.get_response(prompt=prompt)
+    response = llm_agent.get_response_sync(prompt=prompt)
     assert isinstance(response, str)
 
 
@@ -54,7 +54,7 @@ def test_get_response_with_max_tokens(llm_agent, request):
         pytest.skip("slow test, add --runhf option to run")
     prompt = "What is the capital of France?"
     max_tokens = 50
-    response = llm_agent.get_response(prompt=prompt, max_tokens=max_tokens)
+    response = llm_agent.get_response_sync(prompt=prompt, max_tokens=max_tokens)
     assert isinstance(response, str)
     assert len(response.split()) <= max_tokens
 
@@ -69,7 +69,7 @@ def test_get_response_with_words_in_mouth(llm_agent, request):
         'Answer exactly "0", "1", ... or "9", with nothing else in your response.'
     )
     words_in_mouth = " My guess for the correct answer is:\n\n"
-    response = llm_agent.get_response(prompt=prompt, words_in_mouth=words_in_mouth)
+    response = llm_agent.get_response_sync(prompt=prompt, words_in_mouth=words_in_mouth)
     assert isinstance(response, str)
 
 
@@ -142,7 +142,7 @@ def test_get_response_with_response_model(llm_agent, request):
         country: str
 
     prompt = "What is the capital of France?"
-    response = llm_agent.get_response(prompt=prompt, response_model=ResponseModel)
+    response = llm_agent.get_response_sync(prompt=prompt, response_model=ResponseModel)
     assert isinstance(response, ResponseModel)
     assert response.country == "France"
     assert response.capital == "Paris"

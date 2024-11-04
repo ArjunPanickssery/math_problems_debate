@@ -4,8 +4,9 @@ from solib.protocols.protocols import Debate
 from solib.Experiment import Experiment
 
 experiment = Experiment(
+    questions=[],
     agent_models=["gpt-4o-mini", "hf:meta-llama/Meta-Llama-3-8B-Instruct"],
-    agent_toolss=[],
+    agent_toolss=[[]],
     judge_models=["gpt-4o-mini", "hf:meta-llama/Meta-Llama-3-8B-Instruct"],
 )
 

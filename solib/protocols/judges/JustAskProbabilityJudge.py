@@ -26,7 +26,7 @@ class JustAskProbabilityJudge(Judge):
                 context=context,
                 answer_case=answer_case.short,
             )
-            response = await self.get_response_async(
+            response = await self.get_response(
                 prompt=prompt,
                 response_model=Prob,
                 max_tokens=20,
