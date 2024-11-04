@@ -8,6 +8,7 @@ import numpy as np
 from solib.utils import config, AbstractionError, write_jsonl_async, write_json
 from solib.llm_utils import parallelized_call, LLM_Agent
 from solib.datatypes import Answer, Question, Prob, TranscriptItem
+from solib.data.loading import Dataset
 
 LOGGER = logging.getLogger(__name__)
 
@@ -176,7 +177,7 @@ class Protocol:
     async def experiment(
         self,
         agent: QA_Agent,
-        questions: list[Question],
+        questions: Dataset,
         judge: Judge,
         write: Path | str | None = None,
         **other_components,

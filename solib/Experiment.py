@@ -2,6 +2,7 @@ import logging
 from datetime import datetime
 from pathlib import Path
 from solib.datatypes import Question
+from solib.data.loading import Dataset
 from solib.utils import str_config
 from solib.llm_utils import parallelized_call
 from solib.protocols.protocols import *
@@ -38,7 +39,7 @@ class Experiment:
 
     def __init__(
         self,
-        questions: list[Question],
+        questions: Dataset,
         judge_models: list[str],
         agent_models: list[str],
         agent_toolss: list[list[callable]] = None,

@@ -215,3 +215,4 @@ class TruthfulQA(Dataset):
         inst = cls()
         inst.set_questions(dset, user_seed)
         return inst
+
