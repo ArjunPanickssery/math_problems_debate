@@ -110,7 +110,17 @@ SIMULATE = os.getenv("SIMULATE", "False").lower() == "true"
 DISABLE_COSTLY = os.getenv("DISABLE_COSTLY", "False").lower() == "true"
 USE_TQDM = os.getenv("USE_TQDM", "True").lower() == "true"
 MAX_CONCURRENT_QUERIES = int(os.getenv("MAX_CONCURRENT_QUERIES", 25))
-GLOBAL_SEMAPHORE = None
+
+
+def reset_global_semaphore():
+    global GLOBAL_LLM_SEMAPHORE
+    GLOBAL_LLM_SEMAPHORE = asyncio.Semaphore(MAX_CONCURRENT_QUERIES)
+    LOGGER.info(
+        f"Resetting global semaphore, max concurrent queries: {MAX_CONCURRENT_QUERIES}"
+    )
+
+
+reset_global_semaphore()
 
 
 # HACK. I have no idea why this works but just manually adding 'self' to
@@ -250,6 +260,7 @@ class LLM_Simulator(LLM_Simulator_Faker):
 async def parallelized_call(
     func: Coroutine,
     data: list[str],
+    max_concurrent_queries: int = 100,
 ) -> list[any]:
     """
     Run async func in parallel on the given data.
@@ -259,35 +270,28 @@ async def parallelized_call(
         partial_eval_method = functools.partial(eval_method, model=model, **kwargs)
         results = await parallelized_call(partial_eval_method, [format_post(d) for d in data])
     """
-    global GLOBAL_SEMAPHORE
 
-    if GLOBAL_SEMAPHORE is None:
-        GLOBAL_SEMAPHORE = asyncio.Semaphore(MAX_CONCURRENT_QUERIES)
+    if os.getenv("SINGLE_THREAD"):
+        LOGGER.info(f"Running {func} on {len(data)} datapoints sequentially")
+        return [await func(d) for d in data]
 
-    LOGGER.info(
-        f"Running {func} on {len(data)} datapoints with {MAX_CONCURRENT_QUERIES} concurrent queries"
+    max_concurrent_queries = min(
+        max_concurrent_queries,
+        int(os.getenv("MAX_CONCURRENT_QUERIES", max_concurrent_queries)),
     )
 
-    async def call_func(sem: asyncio.Semaphore, func: Callable, datapoint: Any):
+    LOGGER.info(
+        f"Running {func} on {len(data)} datapoints with {max_concurrent_queries} concurrent queries"
+    )
+
+    local_semaphore = asyncio.Semaphore(max_concurrent_queries)
+
+    async def call_func(sem, func, datapoint):
         async with sem:
             return await func(datapoint)
 
-    LOGGER.info("Calling call_func")
-
-    # Create tasks for all data points
-    tasks = [call_func(GLOBAL_SEMAPHORE, func, d) for d in data]
-
-    # Run tasks with or without tqdm progress bar based on the use_tqdm flag
-    if USE_TQDM:
-        results = []
-        # Wrapping the gather call with tqdm for progress tracking
-        async for result in tqdm(asyncio.as_completed(tasks), total=len(tasks)):
-            results.append(await result)
-    else:
-        # Without tqdm, just await all tasks as usual
-        results = await asyncio.gather(*tasks)
-
-    return results
+    tasks = [call_func(local_semaphore, func, d) for d in data]
+    return await asyncio.gather(*tasks)
 
 
 def format_prompt(
@@ -950,21 +954,22 @@ class LLM_Agent:
         simulate: bool = SIMULATE,
         **kwargs,
     ):
-        return await self.ai_async["generate_async"](
-            model=self.model,
-            tools=self.tools,
-            response_model=response_model,
-            prompt=prompt,
-            messages=messages,
-            input_string=input_string,
-            system_message=system_message,
-            words_in_mouth=words_in_mouth,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            cost_log=cost_log,
-            simulate=simulate,
-            **kwargs,
-        )
+        async with GLOBAL_LLM_SEMAPHORE:
+            return await self.ai_async["generate_async"](
+                model=self.model,
+                tools=self.tools,
+                response_model=response_model,
+                prompt=prompt,
+                messages=messages,
+                input_string=input_string,
+                system_message=system_message,
+                words_in_mouth=words_in_mouth,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                cost_log=cost_log,
+                simulate=simulate,
+                **kwargs,
+            )
 
     @method_cache(ignore=["cost_log"])
     def get_probs(
@@ -1012,21 +1017,22 @@ class LLM_Agent:
         simulate: bool = SIMULATE,
         **kwargs,
     ):
-        return await self.ai_async["return_probs_async"](
-            model=self.model,
-            tools=self.tools,
-            return_probs_for=return_probs_for,
-            prompt=prompt,
-            messages=messages,
-            input_string=input_string,
-            system_message=system_message,
-            words_in_mouth=words_in_mouth,
-            top_logprobs=top_logprobs,
-            temperature=temperature,
-            cost_log=cost_log,
-            simulate=simulate,
-            **kwargs,
-        )
+        async with GLOBAL_LLM_SEMAPHORE:
+            return await self.ai_async["return_probs_async"](
+                model=self.model,
+                tools=self.tools,
+                return_probs_for=return_probs_for,
+                prompt=prompt,
+                messages=messages,
+                input_string=input_string,
+                system_message=system_message,
+                words_in_mouth=words_in_mouth,
+                top_logprobs=top_logprobs,
+                temperature=temperature,
+                cost_log=cost_log,
+                simulate=simulate,
+                **kwargs,
+            )
 
 
 @cache(ignore="cost_log")
@@ -1094,21 +1100,22 @@ async def get_llm_response_async(
     ai = get_llm(
         model=model, use_async=True, hf_quantization_config=hf_quantization_config
     )
-    return await ai["generate_async"](
-        model=model,
-        prompt=prompt,
-        messages=messages,
-        input_string=input_string,
-        system_message=system_message,
-        words_in_mouth=words_in_mouth,
-        max_tokens=max_tokens,
-        response_model=response_model,
-        tools=tools,
-        temperature=temperature,
-        cost_log=cost_log,
-        simulate=simulate,
-        **kwargs,
-    )
+    async with GLOBAL_LLM_SEMAPHORE:
+        return await ai["generate_async"](
+            model=model,
+            prompt=prompt,
+            messages=messages,
+            input_string=input_string,
+            system_message=system_message,
+            words_in_mouth=words_in_mouth,
+            max_tokens=max_tokens,
+            response_model=response_model,
+            tools=tools,
+            temperature=temperature,
+            cost_log=cost_log,
+            simulate=simulate,
+            **kwargs,
+        )
 
 
 @cache(ignore="cost_log")
@@ -1173,17 +1180,18 @@ async def get_llm_probs_async(
     ai = get_llm(
         model=model, use_async=True, hf_quantization_config=hf_quantization_config
     )
-    return await ai["return_probs_async"](
-        model=model,
-        return_probs_for=return_probs_for,
-        prompt=prompt,
-        messages=messages,
-        input_string=input_string,
-        system_message=system_message,
-        words_in_mouth=words_in_mouth,
-        top_logprobs=top_logprobs,
-        temperature=temperature,
-        cost_log=cost_log,
-        simulate=simulate,
-        **kwargs,
-    )
+    async with GLOBAL_LLM_SEMAPHORE:
+        return await ai["return_probs_async"](
+            model=model,
+            return_probs_for=return_probs_for,
+            prompt=prompt,
+            messages=messages,
+            input_string=input_string,
+            system_message=system_message,
+            words_in_mouth=words_in_mouth,
+            top_logprobs=top_logprobs,
+            temperature=temperature,
+            cost_log=cost_log,
+            simulate=simulate,
+            **kwargs,
+        )
