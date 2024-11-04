@@ -212,7 +212,12 @@ class Experiment:
                     return False
         return True
 
-    def get_path(self, config: dict):
+    def _get_path_protocol(self, config: dict):
+        protocol_str = config["protocol"]
+        if not isinstance(protocol_str, str):
+            protocol_str = protocol_str.__name__
+        # we support config["protocol"]: str too because we also use this
+        # in reading from all_stats.json
         init_kwargs_str = ""
         for k, v in config["init_kwargs"].items():
             if k == "num_turns":
@@ -225,8 +230,10 @@ class Experiment:
                 k_ = k
                 v_ = v
             v_ = str(v_)
-            init_kwargs_str += f"{k_}{v_}_"
-        init_kwargs_str = init_kwargs_str[:-1]
+            init_kwargs_str += f"_{k_}{v_}"
+        return config["protocol"].__name__ + init_kwargs_str
+
+    def _get_path_call(self, config: dict):
         call_kwargs_str = ""
         for k, v in config["call_kwargs"].items():
             if k in ["agent", "adversary"]:
@@ -238,12 +245,14 @@ class Experiment:
             else:
                 k_ = k
                 v_ = v
-            call_kwargs_str += f"{k_}_{v_}_"
-        call_kwargs_str = call_kwargs_str[:-1]
+            call_kwargs_str += f"_{k_}{v_}"
+        return call_kwargs_str
+
+    def get_path(self, config: dict):
         path = (
             self.write_path
-            / (config["protocol"].__name__ + "_" + init_kwargs_str)
-            / call_kwargs_str
+            / self._get_path_protocol(config)
+            / self._get_path_call(config)
         )
         # path.mkdir(parents=True, exist_ok=True)
         i = 0

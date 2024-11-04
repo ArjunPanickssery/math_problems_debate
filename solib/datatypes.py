@@ -65,6 +65,9 @@ class Prob(BaseModel):
     def __eq__(self, other):
         return float(self) == float(other)
 
+    def pad(self, eps: float = 1e-4) -> "Prob":
+        return Prob(prob=min(max(self.prob, eps), 1 - eps))
+
 
 class Score(BaseModel):
     """
@@ -76,7 +79,9 @@ class Score(BaseModel):
     accuracy: float | None = None
 
     @classmethod
-    def calc(cls, question: "Question", answer_case: "Answer") -> Optional["Score"]:
+    def calc(
+        cls, question: "Question", answer_case: "Answer", eps: float = 1e-4
+    ) -> Optional["Score"]:
         """Score for answer_case based on probability assigned to it in Question."""
         # .censor() because e.g. question might be answer_case.case_probs, so
         # question.answer_cases will have probabilities while answer_case would not
@@ -90,13 +95,13 @@ class Score(BaseModel):
         # find answer case in question
         answer_case_in_question = question.answer_cases_dict[answer_case.short]
 
-        score_log = np.log(answer_case_in_question.judge_prob)
-        score_logodds = np.log(answer_case_in_question.judge_prob) - np.log(
-            question.neg(answer_case_in_question).judge_prob
+        score_log = np.log(answer_case_in_question.judge_prob.pad(eps))
+        score_logodds = np.log(answer_case_in_question.judge_prob.pad(eps)) - np.log(
+            question.neg(answer_case_in_question).judge_prob.pad(eps)
         )
         score_accuracy = float(
-            answer_case_in_question.judge_prob
-            > question.neg(answer_case_in_question).judge_prob
+            answer_case_in_question.judge_prob.pad(eps)
+            > question.neg(answer_case_in_question).judge_prob.pad(eps)
         )
         return Score(log=score_log, logodds=score_logodds, accuracy=score_accuracy)
 
