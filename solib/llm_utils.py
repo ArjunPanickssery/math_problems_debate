@@ -7,7 +7,7 @@ import json
 import math
 import logging
 from dotenv import load_dotenv
-from typing import Callable, Iterable, Literal, Union, Coroutine, TYPE_CHECKING
+from typing import Callable, Iterable, Literal, Union, Any, Coroutine, TYPE_CHECKING
 from tqdm.asyncio import tqdm
 from pydantic import BaseModel
 from perscache import Cache
@@ -97,7 +97,7 @@ class BetterCache(Cache):
 
         # Include global variables in the cache hash because Python handles default
         # variables a bit differently than you might expect
-        arg_dict["simulate"] = simulate  # Add to the hash key
+        arg_dict["simulate"] = SIMULATE  # Add to the hash key
 
         # Hash the function source, serializer type, and the argument dictionary
         return hash_it(inspect.getsource(fn), type(serializer).__name__, arg_dict)
@@ -105,10 +105,12 @@ class BetterCache(Cache):
 
 load_dotenv()
 cache = BetterCache(serializer=PydanticJSONSerializer())
-global_cost_log = Costlog(mode="jsonl", discard_extras=True)
-simulate = os.getenv("SIMULATE", "False").lower() == "true"
-disable_costly = os.getenv("DISABLE_COSTLY", "False").lower() == "true"
-use_tqdm = os.getenv("USE_TQDM", "True").lower() == "true"
+GLOBAL_COST_LOG = Costlog(mode="jsonl", discard_extras=True)
+SIMULATE = os.getenv("SIMULATE", "False").lower() == "true"
+DISABLE_COSTLY = os.getenv("DISABLE_COSTLY", "False").lower() == "true"
+USE_TQDM = os.getenv("USE_TQDM", "True").lower() == "true"
+MAX_CONCURRENT_QUERIES = int(os.getenv("MAX_CONCURRENT_QUERIES", 25))
+GLOBAL_SEMAPHORE = None
 
 
 # HACK. I have no idea why this works but just manually adding 'self' to
@@ -178,12 +180,76 @@ class LLM_Simulator(LLM_Simulator_Faker):
 #     return await asyncio.gather(*tasks)
 
 
+# async def parallelized_call(
+#     func: Coroutine,
+#     data: list[str],
+#     max_concurrent_queries: int = 100,
+#     max_tokens_per_minute: int = 30000,  # Max tokens per minute
+#     token_usage_per_call: int = 2000,  # Estimate token usage per call
+# ) -> list[any]:
+#     """
+#     Run async func in parallel on the given data.
+#     func will usually be a partial which uses query_api or whatever in some way.
+
+#     Example usage:
+#         partial_eval_method = functools.partial(eval_method, model=model, **kwargs)
+#         results = await parallelized_call(partial_eval_method, [format_post(d) for d in data])
+#     """
+
+#     total_tokens_used = 0
+#     token_lock = asyncio.Lock()  # Lock for managing token usage safely
+
+#     if os.getenv("SINGLE_THREAD"):
+#         LOGGER.info(f"Running {func} on {len(data)} datapoints sequentially")
+#         return [await func(d) for d in data]
+
+#     max_concurrent_queries = min(
+#         max_concurrent_queries,
+#         int(os.getenv("MAX_CONCURRENT_QUERIES", max_concurrent_queries)),
+#     )
+
+#     LOGGER.info(
+#         f"Running {func} on {len(data)} datapoints with {max_concurrent_queries} concurrent queries"
+#     )
+
+#     # Create a local semaphore
+#     local_semaphore = asyncio.Semaphore(max_concurrent_queries)
+
+#     async def call_func(sem, func, datapoint):
+#         nonlocal total_tokens_used
+#         async with sem:
+#             # Estimate the tokens for this call and update usage
+#             async with token_lock:
+#                 if total_tokens_used + token_usage_per_call > max_tokens_per_minute:
+#                     # If token limit is about to exceed, wait
+#                     await asyncio.sleep(60)  # Wait 60 seconds (1 minute)
+#                     total_tokens_used = 0  # Reset token count after waiting
+
+#                 total_tokens_used += token_usage_per_call
+
+#             return await func(datapoint)
+
+#     LOGGER.info("Calling call_func")
+
+#     # Create tasks for all data points
+#     tasks = [call_func(local_semaphore, func, d) for d in data]
+
+#     # Run tasks with or without tqdm progress bar based on the use_tqdm flag
+#     if use_tqdm:
+#         results = []
+#         # Wrapping the gather call with tqdm for progress tracking
+#         async for result in tqdm(asyncio.as_completed(tasks), total=len(tasks)):
+#             results.append(await result)
+#     else:
+#         # Without tqdm, just await all tasks as usual
+#         results = await asyncio.gather(*tasks)
+
+#     return results
+
+
 async def parallelized_call(
     func: Coroutine,
     data: list[str],
-    max_concurrent_queries: int = 100,
-    max_tokens_per_minute: int = 30000,  # Max tokens per minute
-    token_usage_per_call: int = 2000,  # Estimate token usage per call
 ) -> list[any]:
     """
     Run async func in parallel on the given data.
@@ -193,47 +259,26 @@ async def parallelized_call(
         partial_eval_method = functools.partial(eval_method, model=model, **kwargs)
         results = await parallelized_call(partial_eval_method, [format_post(d) for d in data])
     """
+    global GLOBAL_SEMAPHORE
 
-    total_tokens_used = 0
-    token_lock = asyncio.Lock()  # Lock for managing token usage safely
-
-    if os.getenv("SINGLE_THREAD"):
-        LOGGER.info(f"Running {func} on {len(data)} datapoints sequentially")
-        return [await func(d) for d in data]
-
-    max_concurrent_queries = min(
-        max_concurrent_queries,
-        int(os.getenv("MAX_CONCURRENT_QUERIES", max_concurrent_queries)),
-    )
+    if GLOBAL_SEMAPHORE is None:
+        GLOBAL_SEMAPHORE = asyncio.Semaphore(MAX_CONCURRENT_QUERIES)
 
     LOGGER.info(
-        f"Running {func} on {len(data)} datapoints with {max_concurrent_queries} concurrent queries"
+        f"Running {func} on {len(data)} datapoints with {MAX_CONCURRENT_QUERIES} concurrent queries"
     )
 
-    # Create a local semaphore
-    local_semaphore = asyncio.Semaphore(max_concurrent_queries)
-
-    async def call_func(sem, func, datapoint):
-        nonlocal total_tokens_used
+    async def call_func(sem: asyncio.Semaphore, func: Callable, datapoint: Any):
         async with sem:
-            # Estimate the tokens for this call and update usage
-            async with token_lock:
-                if total_tokens_used + token_usage_per_call > max_tokens_per_minute:
-                    # If token limit is about to exceed, wait
-                    await asyncio.sleep(60)  # Wait 60 seconds (1 minute)
-                    total_tokens_used = 0  # Reset token count after waiting
-
-                total_tokens_used += token_usage_per_call
-
             return await func(datapoint)
 
     LOGGER.info("Calling call_func")
 
     # Create tasks for all data points
-    tasks = [call_func(local_semaphore, func, d) for d in data]
+    tasks = [call_func(GLOBAL_SEMAPHORE, func, d) for d in data]
 
     # Run tasks with or without tqdm progress bar based on the use_tqdm flag
-    if use_tqdm:
+    if USE_TQDM:
         results = []
         # Wrapping the gather call with tqdm for progress tracking
         async for result in tqdm(asyncio.as_completed(tasks), total=len(tasks)):
@@ -629,7 +674,7 @@ def get_llm(model: str, use_async=False, hf_quantization_config=None):
         @costly(
             simulator=LLM_Simulator.simulate_llm_call,
             messages=_get_messages,
-            disable_costly=disable_costly,
+            disable_costly=DISABLE_COSTLY,
         )
         def generate(
             model: str = model,
@@ -640,8 +685,8 @@ def get_llm(model: str, use_async=False, hf_quantization_config=None):
             response_model: Union["BaseModel", None] = None,
             tools: list[callable] = None,
             temperature: float = 0.0,
-            cost_log: Costlog = global_cost_log,
-            simulate: bool = simulate,
+            cost_log: Costlog = GLOBAL_COST_LOG,
+            simulate: bool = SIMULATE,
             **kwargs,
         ):
             get_response, messages = generate_format_and_bind(
@@ -674,7 +719,7 @@ def get_llm(model: str, use_async=False, hf_quantization_config=None):
         @costly(
             simulator=LLM_Simulator.simulate_llm_call,
             messages=_get_messages,
-            disable_costly=disable_costly,
+            disable_costly=DISABLE_COSTLY,
         )
         async def generate_async(
             model: str = model,
@@ -685,8 +730,8 @@ def get_llm(model: str, use_async=False, hf_quantization_config=None):
             response_model: Union["BaseModel", None] = None,
             tools: list[callable] = None,
             temperature: float = 0.0,
-            cost_log: Costlog = global_cost_log,
-            simulate: bool = simulate,
+            cost_log: Costlog = GLOBAL_COST_LOG,
+            simulate: bool = SIMULATE,
             **kwargs,
         ):
             get_response, messages = generate_format_and_bind(
@@ -758,7 +803,7 @@ def get_llm(model: str, use_async=False, hf_quantization_config=None):
         @costly(
             simulator=LLM_Simulator.simulate_llm_probs,
             messages=_get_messages,
-            disable_costly=disable_costly,
+            disable_costly=DISABLE_COSTLY,
         )
         def return_probs(
             return_probs_for: list[str],
@@ -768,8 +813,8 @@ def get_llm(model: str, use_async=False, hf_quantization_config=None):
             system_message: str | None = None,
             top_logprobs: int = 5,
             temperature: float = 0.0,
-            cost_log: Costlog = global_cost_log,
-            simulate: bool = simulate,
+            cost_log: Costlog = GLOBAL_COST_LOG,
+            simulate: bool = SIMULATE,
             **kwargs,
         ):
             get_response, messages = probability_format_and_bind(
@@ -795,7 +840,7 @@ def get_llm(model: str, use_async=False, hf_quantization_config=None):
         @costly(
             simulator=LLM_Simulator.simulate_llm_probs,
             messages=_get_messages,
-            disable_costly=disable_costly,
+            disable_costly=DISABLE_COSTLY,
         )
         async def return_probs_async(
             return_probs_for: list[str],
@@ -805,8 +850,8 @@ def get_llm(model: str, use_async=False, hf_quantization_config=None):
             system_message: str | None = None,
             top_logprobs: int = 5,
             temperature: float = 0.0,
-            cost_log: Costlog = global_cost_log,
-            simulate: bool = simulate,
+            cost_log: Costlog = GLOBAL_COST_LOG,
+            simulate: bool = SIMULATE,
             **kwargs,
         ):
             get_response, messages = probability_format_and_bind(
@@ -870,8 +915,8 @@ class LLM_Agent:
         words_in_mouth: str | None = None,
         max_tokens: int = 2048,
         temperature: float = 0.0,
-        cost_log: Costlog = global_cost_log,
-        simulate: bool = simulate,
+        cost_log: Costlog = GLOBAL_COST_LOG,
+        simulate: bool = SIMULATE,
         **kwargs,
     ):
         return self.ai["generate"](
@@ -901,8 +946,8 @@ class LLM_Agent:
         words_in_mouth: str | None = None,
         max_tokens: int = 2048,
         temperature: float = 0.0,
-        cost_log: Costlog = global_cost_log,
-        simulate: bool = simulate,
+        cost_log: Costlog = GLOBAL_COST_LOG,
+        simulate: bool = SIMULATE,
         **kwargs,
     ):
         return await self.ai_async["generate_async"](
@@ -932,8 +977,8 @@ class LLM_Agent:
         words_in_mouth: str | None = None,
         top_logprobs: int = 5,
         temperature: float = 0.0,
-        cost_log: Costlog = global_cost_log,
-        simulate: bool = simulate,
+        cost_log: Costlog = GLOBAL_COST_LOG,
+        simulate: bool = SIMULATE,
         **kwargs,
     ):
         return self.ai["return_probs"](
@@ -963,8 +1008,8 @@ class LLM_Agent:
         words_in_mouth: str | None = None,
         top_logprobs: int = 5,
         temperature: float = 0.0,
-        cost_log: Costlog = global_cost_log,
-        simulate: bool = simulate,
+        cost_log: Costlog = GLOBAL_COST_LOG,
+        simulate: bool = SIMULATE,
         **kwargs,
     ):
         return await self.ai_async["return_probs_async"](
@@ -997,8 +1042,8 @@ def get_llm_response(
     temperature: float = 0.0,
     tools: list[callable] = None,
     hf_quantization_config=None,
-    cost_log: Costlog = global_cost_log,
-    simulate: bool = simulate,
+    cost_log: Costlog = GLOBAL_COST_LOG,
+    simulate: bool = SIMULATE,
     **kwargs,  # kwargs necessary for costly
 ):
     """NOTE: you should generally use the LLM_Agent class instead of this function.
@@ -1038,8 +1083,8 @@ async def get_llm_response_async(
     temperature: float = 0.0,
     tools: list[callable] = None,
     hf_quantization_config=None,
-    cost_log: Costlog = global_cost_log,
-    simulate: bool = simulate,
+    cost_log: Costlog = GLOBAL_COST_LOG,
+    simulate: bool = SIMULATE,
     **kwargs,
 ):
     """NOTE: you should generally use the LLM_Agent class instead of this function.
@@ -1078,8 +1123,8 @@ def get_llm_probs(
     top_logprobs: int = 5,
     temperature: float = 0.0,
     hf_quantization_config=None,
-    cost_log: Costlog = global_cost_log,
-    simulate: bool = simulate,
+    cost_log: Costlog = GLOBAL_COST_LOG,
+    simulate: bool = SIMULATE,
     **kwargs,
 ):
     """NOTE: you should generally use the LLM_Agent class instead of this function.
@@ -1117,8 +1162,8 @@ async def get_llm_probs_async(
     top_logprobs: int = 5,
     temperature: float = 0.0,
     hf_quantization_config=None,
-    cost_log: Costlog = global_cost_log,
-    simulate: bool = simulate,
+    cost_log: Costlog = GLOBAL_COST_LOG,
+    simulate: bool = SIMULATE,
     **kwargs,
 ):
     """NOTE: you should generally use the LLM_Agent class instead of this function.
