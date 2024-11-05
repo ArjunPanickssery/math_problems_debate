@@ -1,5 +1,6 @@
 from collections import defaultdict
 from functools import partial, wraps
+import functools
 import inspect
 import os
 import asyncio
@@ -114,7 +115,7 @@ class BetterCache(Cache):
 
 load_dotenv()
 cache = BetterCache(serializer=PydanticJSONSerializer())
-storageless_cache = BetterCache(storage=DisabledStorage())
+storageless_cache = Cache(storage=DisabledStorage())
 GLOBAL_COST_LOG = Costlog(mode="jsonl", discard_extras=True)
 SIMULATE = os.getenv("SIMULATE", "False").lower() == "true"
 DISABLE_COSTLY = os.getenv("DISABLE_COSTLY", "False").lower() == "true"
@@ -409,27 +410,33 @@ def convert_langchain_to_dict(
             messages_out.append(m)
     return messages_out
 
-@storageless_cache(ignore=None)
+
+@functools.cache
+def load_hf_model(model: str, hf_quantization_config=False):
+    print("Loading Hugging Face model", model, hf_quantization_config)
+    from transformers import AutoTokenizer, AutoModelForCausalLM
+
+    quant_config = BitsAndBytesConfig(load_in_8bit=True) if hf_quantization_config else None
+
+    api_key = os.getenv("HF_TOKEN")
+    model = model.split("hf:")[1]
+    tokenizer = AutoTokenizer.from_pretrained(model)
+    device_map = "cuda" if hf_quantization_config else "auto"
+    model = AutoModelForCausalLM.from_pretrained(
+        model,
+        device_map=device_map,
+        token=api_key,
+        quantization_config=quant_config,
+    )
+
+    return (tokenizer, model)
+
+
 def get_llm(model: str, use_async=False, hf_quantization_config=False):
     if model.startswith("hf:"):  # Hugging Face local models
         msg_type = "dict"
-        from transformers import AutoTokenizer, AutoModelForCausalLM
 
-        quant_config = BitsAndBytesConfig(load_in_8bit=True) if hf_quantization_config else None
-
-        api_key = os.getenv("HF_TOKEN")
-        model = model.split("hf:")[1]
-        tokenizer = AutoTokenizer.from_pretrained(model)
-        device_map = "cuda" if hf_quantization_config is not None else "auto"
-        model = AutoModelForCausalLM.from_pretrained(
-            model,
-            device_map=device_map,
-            token=api_key,
-            quantization_config=hf_quantization_config,
-        )
-
-        client = (tokenizer, model)
-
+        tokenizer, model = load_hf_model(model, hf_quantization_config)
         # TODO: add cost logging for local models
         def generate(
             prompt: str = None,
@@ -914,7 +921,7 @@ class LLM_Agent:
             use_async=False,
             hf_quantization_config=hf_quantization_config,
         )
-        if not self.supports_async:
+        if self.supports_async:
             self.ai_async = get_llm(
                 model=self.model,
                 use_async=True,

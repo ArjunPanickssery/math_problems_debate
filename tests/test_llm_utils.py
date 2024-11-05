@@ -40,7 +40,7 @@ def test_get_probs_returns_dict(llm_agent, request):
         "Take a random guess as to what the 1,000,001st digit of pi is. "
         'Answer exactly "0", "1", ... or "9", with nothing else in your response.'
     )
-    response = llm_agent.get_probs(
+    response = llm_agent.get_probs_sync(
         prompt=prompt,
         return_probs_for=[str(n) for n in range(10)],
     )
