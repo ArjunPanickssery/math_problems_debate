@@ -534,11 +534,15 @@ def get_llm(model: str, use_async=False, hf_quantization_config=True):
             output_probs = output.softmax(dim=0)
             probs = {token: 0 for token in return_probs_for}
             for token in probs:
-                token_enc = tokenizer.encode(token)[-1]
-                if token_enc in output_probs:
-                    probs[token] = output_probs[token_enc].item()
+                # workaround for weird difference between word as a continuation vs standalone
+                token_enc = tokenizer.encode(f"({token}", add_special_tokens=False)[-1]
+                probs[token] = output_probs[token_enc].item()
             total_prob = sum(probs.values())
-            probs_relative = {token: prob / total_prob for token, prob in probs.items()}
+            try:
+                probs_relative = {token: prob / total_prob for token, prob in probs.items()}
+            except ZeroDivisionError:
+                import pdb
+                pdb.set_trace()
             return probs_relative
 
         return {
