@@ -11,9 +11,11 @@ from dotenv import load_dotenv
 from typing import Callable, Iterable, Literal, Union, Coroutine, TYPE_CHECKING
 from transformers import BitsAndBytesConfig
 from pydantic import BaseModel
+import cloudpickle
+import io
 from perscache import Cache
 from perscache.cache import hash_it
-from perscache.serializers import JSONSerializer, Serializer
+from perscache.serializers import JSONSerializer, Serializer, PickleSerializer, CloudPickleSerializer
 from perscache.storage import Storage
 from costly import Costlog, CostlyResponse, costly
 from costly.simulators.llm_simulator_faker import LLM_Simulator_Faker
@@ -32,7 +34,7 @@ import solib.tool_use.tool_rendering
 from solib.utils import apply, apply_async  # noqa
 from solib.datatypes import Prob
 from solib.tool_use import tool_use
-from solib.tool_use.tool_use import ToolStopper, HuggingFaceToolCaller  # noqa
+from solib.tool_use.tool_use import HuggingFaceToolCaller  # noqa
 
 if TYPE_CHECKING:
     from transformers import AutoTokenizer
@@ -50,11 +52,11 @@ class PydanticJSONSerializer(JSONSerializer):
     def default(obj):
         if hasattr(obj, "to_dict"):
             return obj.to_dict()
-        elif isinstance(obj, BaseModel):
-            return obj.model_dump()
-        elif isinstance(obj, type) and issubclass(obj, BaseModel):
+        elif isinstance(obj, BaseModel) and issubclass(type(obj), BaseModel):  # check for subclass
             # If it's a Pydantic model class, return its name for serialization
             return f"{obj.__module__}.{obj.__class__.__name__}"
+        elif isinstance(obj, BaseModel):
+            return obj.model_dump()
         else:
             try:
                 return dict(obj)
@@ -112,9 +114,29 @@ class BetterCache(Cache):
         # Hash the function source, serializer type, and the argument dictionary
         return hash_it(inspect.getsource(fn), type(serializer).__name__, arg_dict)
 
+class SafeCloudPickleSerializer(CloudPickleSerializer):
+    # https://github.com/pydantic/pydantic/issues/8232#issuecomment-2189431721
+    @classmethod
+    def dumps(cls, obj):
+        model_namespaces = {}
+
+        with io.BytesIO() as f:
+            pickler = cloudpickle.CloudPickler(f)
+
+            for ModelClass in BaseModel.__subclasses__():
+                model_namespaces[ModelClass] = ModelClass.__pydantic_parent_namespace__
+                ModelClass.__pydantic_parent_namespace__ = None
+
+            try:
+                pickler.dump(obj)
+                return f.getvalue()
+            finally:
+                for ModelClass, namespace in model_namespaces.items():
+                    ModelClass.__pydantic_parent_namespace__ = namespace
+
 
 load_dotenv()
-cache = BetterCache(serializer=PydanticJSONSerializer())
+cache = BetterCache(serializer=SafeCloudPickleSerializer())
 storageless_cache = Cache(storage=DisabledStorage())
 GLOBAL_COST_LOG = Costlog(mode="jsonl", discard_extras=True)
 SIMULATE = os.getenv("SIMULATE", "False").lower() == "true"
@@ -412,7 +434,7 @@ def convert_langchain_to_dict(
 
 
 @functools.cache
-def load_hf_model(model: str, hf_quantization_config=False):
+def load_hf_model(model: str, hf_quantization_config=True):
     print("Loading Hugging Face model", model, hf_quantization_config)
     from transformers import AutoTokenizer, AutoModelForCausalLM
 
@@ -432,11 +454,12 @@ def load_hf_model(model: str, hf_quantization_config=False):
     return (tokenizer, model)
 
 
-def get_llm(model: str, use_async=False, hf_quantization_config=False):
+def get_llm(model: str, use_async=False, hf_quantization_config=True):
     if model.startswith("hf:"):  # Hugging Face local models
         msg_type = "dict"
 
-        tokenizer, model = load_hf_model(model, hf_quantization_config)
+        client = load_hf_model(model, hf_quantization_config)
+        tokenizer, model = client
         # TODO: add cost logging for local models
         def generate(
             prompt: str = None,
@@ -911,7 +934,7 @@ class LLM_Agent:
         self,
         model: str = None,
         tools: list[callable] = None,
-        hf_quantization_config=None,
+        hf_quantization_config=True,
     ):
         self.model = model or "gpt-4o-mini"
         self.tools = tools
