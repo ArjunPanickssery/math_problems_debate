@@ -1,15 +1,13 @@
-import pytest
-import asyncio  # noqa
+import asyncio 
 from pathlib import Path
 from datetime import datetime
-from solib.protocols.protocols import *  # noqa
 from solib.Experiment import Experiment
 from solib.data.math import train_data
 from solib.tool_use.default_tools import math_eval
 
 questions = train_data()
 
-test_experiment = Experiment(
+init_exp= Experiment(
     questions=questions,
     agent_models=[
         "gpt-4o-2024-08-06",
@@ -25,11 +23,8 @@ test_experiment = Experiment(
     ],
     protocols=["blind", "propaganda", "debate", "consultancy"],
     write_path=Path(__file__).parent
-    / "test_results"
-    / f"{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}",
+    / f"init_exp_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}",
 )
 
 
-@pytest.mark.asyncio
-async def test_experiment_runs():
-    await test_experiment.experiment()
+asyncio.run(init_exp.experiment())
