@@ -15,7 +15,11 @@ import cloudpickle
 import io
 from perscache import Cache
 from perscache.cache import hash_it
-from perscache.serializers import JSONSerializer, Serializer, PickleSerializer, CloudPickleSerializer
+from perscache.serializers import (
+    JSONSerializer,
+    Serializer,
+    CloudPickleSerializer,
+)
 from perscache.storage import Storage
 from costly import Costlog, CostlyResponse, costly
 from costly.simulators.llm_simulator_faker import LLM_Simulator_Faker
@@ -52,7 +56,9 @@ class PydanticJSONSerializer(JSONSerializer):
     def default(obj):
         if hasattr(obj, "to_dict"):
             return obj.to_dict()
-        elif isinstance(obj, BaseModel) and issubclass(type(obj), BaseModel):  # check for subclass
+        elif isinstance(obj, BaseModel) and issubclass(
+            type(obj), BaseModel
+        ):  # check for subclass
             # If it's a Pydantic model class, return its name for serialization
             return f"{obj.__module__}.{obj.__class__.__name__}"
         elif isinstance(obj, BaseModel):
@@ -114,6 +120,7 @@ class BetterCache(Cache):
         # Hash the function source, serializer type, and the argument dictionary
         return hash_it(inspect.getsource(fn), type(serializer).__name__, arg_dict)
 
+
 class SafeCloudPickleSerializer(CloudPickleSerializer):
     # https://github.com/pydantic/pydantic/issues/8232#issuecomment-2189431721
     @classmethod
@@ -142,7 +149,7 @@ GLOBAL_COST_LOG = Costlog(mode="jsonl", discard_extras=True)
 SIMULATE = os.getenv("SIMULATE", "False").lower() == "true"
 DISABLE_COSTLY = os.getenv("DISABLE_COSTLY", "False").lower() == "true"
 USE_TQDM = os.getenv("USE_TQDM", "True").lower() == "true"
-MAX_CONCURRENT_QUERIES = int(os.getenv("MAX_CONCURRENT_QUERIES", 25))
+MAX_CONCURRENT_QUERIES = int(os.getenv("MAX_CONCURRENT_QUERIES", 10))
 
 
 def reset_global_semaphore():
@@ -438,7 +445,9 @@ def load_hf_model(model: str, hf_quantization_config=True):
     print("Loading Hugging Face model", model, hf_quantization_config)
     from transformers import AutoTokenizer, AutoModelForCausalLM
 
-    quant_config = BitsAndBytesConfig(load_in_8bit=True) if hf_quantization_config else None
+    quant_config = (
+        BitsAndBytesConfig(load_in_8bit=True) if hf_quantization_config else None
+    )
 
     api_key = os.getenv("HF_TOKEN")
     model = model.split("hf:")[1]
@@ -460,6 +469,7 @@ def get_llm(model: str, use_async=False, hf_quantization_config=True):
 
         client = load_hf_model(model, hf_quantization_config)
         tokenizer, model = client
+
         # TODO: add cost logging for local models
         def generate(
             prompt: str = None,
@@ -539,9 +549,12 @@ def get_llm(model: str, use_async=False, hf_quantization_config=True):
                 probs[token] = output_probs[token_enc].item()
             total_prob = sum(probs.values())
             try:
-                probs_relative = {token: prob / total_prob for token, prob in probs.items()}
+                probs_relative = {
+                    token: prob / total_prob for token, prob in probs.items()
+                }
             except ZeroDivisionError:
                 import pdb
+
                 pdb.set_trace()
             return probs_relative
 
@@ -957,7 +970,7 @@ class LLM_Agent:
 
     @property
     def supports_async(self):
-        return not self.model.startswith('hf:')
+        return not self.model.startswith("hf:")
 
     @method_cache(ignore=["cost_log"])
     def get_response_sync(

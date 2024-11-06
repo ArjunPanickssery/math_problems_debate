@@ -106,9 +106,16 @@ class Experiment:
     @property
     def judges(self):
         tot_judges = [
-            TipOfTongueJudge(model, hf_quantization_config=self.default_quant_config) for model in self.judge_models if model != "human"
+            TipOfTongueJudge(model, hf_quantization_config=self.default_quant_config)
+            for model in self.judge_models
+            if model != "human"
         ]
-        jap_judges = [JustAskProbabilityJudge(model, hf_quantization_config=self.default_quant_config) for model in self.judge_models]
+        jap_judges = [
+            JustAskProbabilityJudge(
+                model, hf_quantization_config=self.default_quant_config
+            )
+            for model in self.judge_models
+        ]
         return tot_judges + jap_judges
 
     @property
