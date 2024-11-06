@@ -185,7 +185,8 @@ class Experiment:
             return stats
 
         confirm = input(
-            f"Run {len(self.filtered_configs)} experiments? (y/N) [l to list]"
+            f"Run {len(self.filtered_configs)} experiments on "
+            f"{len(self.questions)} questions? (y/N) [l to list]"
         )
         if confirm.lower() == "l":
             print(str_config(self.filtered_configs))
