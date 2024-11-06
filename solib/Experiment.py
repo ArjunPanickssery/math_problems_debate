@@ -223,6 +223,13 @@ class Experiment:
                     return False
         return True
 
+    def _filter_nononhftot(self, config: dict):
+        for component in config["call_kwargs"].values():
+            if isinstance(component, (QA_Agent, TipOfTongueJudge)):
+                if not component.model.startswith("hf:"):
+                    return False
+        return True
+
     def _get_path_protocol(self, config: dict):
         protocol_str = config["protocol"]
         if not isinstance(protocol_str, str):
