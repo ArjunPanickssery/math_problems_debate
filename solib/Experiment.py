@@ -15,6 +15,7 @@ from solib.protocols.judges import (
     TipOfTongueJudge,
     JustAskProbabilityJudge,
 )
+from solib.protocols.agents import BestOfNAgent
 from solib.protocols.abstract import QA_Agent, Judge, Protocol
 
 LOGGER = logging.getLogger(__name__)
@@ -53,6 +54,7 @@ class Experiment:
         agent_toolss: list[list[callable]] = None,
         protocols: dict[str, type[Protocol]] = None,
         num_turnss: list[int] = None,
+        bon_ns: list[int] = None,
         write_path: Path = Path("experiments")
         / f"results_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}",
     ):
@@ -81,7 +83,10 @@ class Experiment:
             raise ValueError(f"protocols must be a list or dict, got {type(protocols)}")
         if num_turnss is None:
             num_turnss = [2, 4]
+        if bon_ns is None:
+            bon_ns = []
         self.num_turnss = num_turnss
+        self.bon_ns = bon_ns
         self.write_path = write_path
 
     protocols = {
@@ -92,7 +97,7 @@ class Experiment:
     }
 
     @property
-    def agents(self):
+    def agents_plain(self):
         return [
             QA_Agent(
                 model=model,
@@ -102,6 +107,18 @@ class Experiment:
             for model in self.agent_models
             for tools in self.agent_toolss
         ]
+
+    @property
+    def agents_bestofn(self):
+        return [
+            BestOfNAgent(n=n, agent=agent)
+            for n in self.bon_ns
+            for agent in self.agents_plain
+        ]
+
+    @property
+    def agents(self):
+        return self.agents_plain + self.agents_bestofn
 
     @property
     def judges(self):

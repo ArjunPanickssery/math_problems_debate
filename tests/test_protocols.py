@@ -21,6 +21,7 @@ test_experiment = Experiment(
         # "hf:meta-llama/Llama-2-7b-chat-hf",
     ],
     protocols=["blind", "propaganda", "debate", "consultancy"],
+    bon_ns=[4, 8],
     write_path=Path(__file__).parent
     / "test_results"
     / f"{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}",

@@ -1,7 +1,9 @@
+import logging
 from solib.llm_utils import parallelized_call, CACHE_BREAKER, reset_cache_breaker
 from solib.datatypes import Question, Answer, Score
 from solib.protocols.abstract import QA_Agent, Protocol, Judge
-import logging
+from solib.protocols.judges import JustAskProbabilityJudge
+from solib.protocols.protocols import Propaganda
 
 LOGGER = logging.getLogger(__name__)
 
@@ -11,14 +13,14 @@ class BestOfN_Agent(QA_Agent):
         self,
         n: int,
         agent: QA_Agent,
-        judge: Judge,
-        protocol: Protocol,
+        judge: Judge = None,
+        protocol: Protocol = None,
         **other_components,
     ):
         self.n = n
         self.agent = agent
-        self.judge = judge
-        self.protocol = protocol
+        self.judge = judge or JustAskProbabilityJudge()
+        self.protocol = protocol or Propaganda()
         self.other_components = other_components
 
     async def __call__(
