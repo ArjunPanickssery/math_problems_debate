@@ -39,17 +39,20 @@ def dump_config(instance):
     return result
 
 
-def seed(*args, **kwargs):
-    user_seed = kwargs.get("user_seed", 0)
+def seed(*args, user_seed=0):
     input_str = "".join(map(str, args))
     hash_object = hashlib.md5(input_str.encode())
     seed = int(hash_object.hexdigest(), 16) % 2**32
     rnd.seed(seed + user_seed)
 
 
-def random(*args, **kwargs):
-    seed(*args, **kwargs)
-    return rnd.random()
+class random:
+    def __init__(self, *args, user_seed=0):
+        seed(*args, user_seed)
+
+    def __getattr__(self, name):
+        return getattr(rnd, name, None)
+
 
 
 def apply(func, *args, **kwargs):
