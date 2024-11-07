@@ -116,6 +116,7 @@ class BetterCache(Cache):
         # Include global variables in the cache hash because Python handles default
         # variables a bit differently than you might expect
         arg_dict["simulate"] = SIMULATE  # Add to the hash key
+        arg_dict["cache_breaker"] = CACHE_BREAKER
 
         # Hash the function source, serializer type, and the argument dictionary
         return hash_it(inspect.getsource(fn), type(serializer).__name__, arg_dict)
@@ -160,7 +161,13 @@ def reset_global_semaphore():
     )
 
 
+def reset_cache_breaker():
+    global CACHE_BREAKER
+    CACHE_BREAKER = os.getenv("CACHE_BREAKER", "")
+
+
 reset_global_semaphore()
+reset_cache_breaker()
 
 
 # HACK. I have no idea why this works but just manually adding 'self' to
@@ -299,7 +306,7 @@ class LLM_Simulator(LLM_Simulator_Faker):
 
 async def parallelized_call(
     func: Coroutine,
-    data: list[str],
+    data: list[any],
     max_concurrent_queries: int = 100,
 ) -> list[any]:
     """

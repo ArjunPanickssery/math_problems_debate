@@ -39,13 +39,13 @@ class Consultancy(Protocol):
         else:
             return super().tsitem_to_prompt(item)
 
-    async def run(
+    async def step(
         self,
         agent: QA_Agent,
         question: Question,
         answer_case: Answer,
         judge: Judge,
-    ):
+    ) -> Question:
         consultant = functools.partial(
             agent,
             prompt=self.consultant_prompt,
@@ -62,21 +62,15 @@ class Consultancy(Protocol):
             prompt=self.client_prompt,
             question=question.to_prompt(),
         )
-
-        if self.consultant_goes_first:
+        if question.transcript[-1].role == "client" or (
+            question.transcript in [None, []] and self.consultant_goes_first
+        ):
             cons_resp = await consultant(context=self.ts_to_prompt(question))
             question.append(TranscriptItem(role=answer_case.short, content=cons_resp))
-        while not self.end_communication(question):
+        else:
             client_resp = await client(context=self.ts_to_prompt(question))
             question.append(TranscriptItem(role="client", content=client_resp))
-            cons_resp = await consultant(
-                answer_case=answer_case.to_prompt(),
-                context=self.ts_to_prompt(question),
-            )
-            question.append(TranscriptItem(role=answer_case.short, content=cons_resp))
-        result = await judge(question=question, context=self.ts_to_prompt(question))
-        assert result.transcript is not None
-        return result
+        return question
 
     consultant_prompt = (
         "You are a consultant trying to convince the judge of the following answer "

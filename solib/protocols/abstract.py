@@ -114,6 +114,29 @@ class Protocol:
             return ""
         return "\n".join(self.tsitem_to_prompt(item) for item in transcript)
 
+    async def end_communication(self, question: Question) -> bool:
+        raise AbstractionError
+
+    async def step(
+        self,
+        agent: QA_Agent,
+        question: Question,
+        answer_case: Answer,
+        judge: Judge,
+        **other_components,
+    ) -> Question:
+        """You can subclass step() and end_communication() and have run() defined
+        automatically, or you can define run() and step() will just be run().
+        Or you can subclass both."""
+        # raise AbstractionError
+        return await self.run(
+            agent=agent,
+            question=question,
+            answer_case=answer_case,
+            judge=judge,
+            **other_components,
+        )
+
     async def run(
         self,
         agent: QA_Agent,
@@ -123,7 +146,8 @@ class Protocol:
         **other_components,
     ) -> Question:
         """Let agent argue for answer_case, and get the probability for answer_case
-        based on that.
+        based on that. Can be subclassed to take a different form than "run self.step()
+        until self.end_communication()".
 
         Args:
             agent (QA_Agent): agent to oversee/judge.
@@ -135,7 +159,20 @@ class Protocol:
         Returns:
             Question with added transcript + probs for each answer_case.
         """
-        raise AbstractionError
+        while not self.end_communication(question):
+            t = len(question.transcript)
+            question = await self.step(
+                agent=agent,
+                question=question,
+                answer_case=answer_case,
+                judge=judge,
+                **other_components,
+            )
+            assert len(question.transcript) > t
+        result = await judge(question=question, context=self.ts_to_prompt(question))
+        assert result.is_elicited
+        assert result.transcript is not None
+        return result
 
     async def run_on_all_answer_cases(
         self,
