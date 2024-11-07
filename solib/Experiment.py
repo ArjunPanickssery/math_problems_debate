@@ -186,7 +186,8 @@ class Experiment:
             return stats
 
         confirm = input(
-            f"Run {len(self.filtered_configs)} experiments? (y/N) [l to list]"
+            f"Run {len(self.filtered_configs)} experiments on "
+            f"{len(self.questions)} questions? (y/N) [l to list]"
         )
         if confirm.lower() == "l":
             print(str_config(self.filtered_configs))
@@ -220,6 +221,13 @@ class Experiment:
         for component in config["call_kwargs"].values():
             if isinstance(component, (QA_Agent, JustAskProbabilityJudge)):
                 if component.model.startswith("hf:"):
+                    return False
+        return True
+
+    def _filter_nononhftot(self, config: dict):
+        for component in config["call_kwargs"].values():
+            if isinstance(component, (QA_Agent, TipOfTongueJudge)):
+                if not component.model.startswith("hf:"):
                     return False
         return True
 
