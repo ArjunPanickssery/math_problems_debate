@@ -16,17 +16,18 @@ class TipOfTongueJudge(Judge):
         question: Question,
         context: str,
     ) -> Question:
-
         prompt = self.prompt.format(
             question=question.to_prompt(),
             context=context,
             answer_cases_short=", ".join(f"({a})" for a in question.answer_cases_short),
         )
-        probs = await self.get_probs_async(
+
+        probs = await self.get_probs(
             prompt=prompt,
             return_probs_for=question.answer_cases_short,
             words_in_mouth=self.words_in_mouth,
         )
+
         result = Question(
             question=question.question,
             answer_cases=[
@@ -35,6 +36,7 @@ class TipOfTongueJudge(Judge):
                 )
                 for a in question.answer_cases
             ],
+            transcript=question.transcript,
         )
         assert result.is_elicited
         assert result.is_normalized
@@ -57,6 +59,12 @@ class TipOfTongueJudge(Judge):
 
         self.prompt = prompt or self.prompt
         self.words_in_mouth = words_in_mouth or self.words_in_mouth
+        self.dict = {
+            "model": model,
+            "tools": tools,
+            "prompt": self.prompt,
+            "words_in_mouth": self.words_in_mouth,
+        }
         super().__init__(
             model=model, tools=tools, hf_quantization_config=hf_quantization_config
         )

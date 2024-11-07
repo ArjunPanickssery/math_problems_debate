@@ -1,12 +1,21 @@
 import logging
 from datetime import datetime
 from pathlib import Path
-from solib.datatypes import Question
+
 from solib.data.loading import Dataset
 from solib.utils import str_config
+from solib.utils import str_config, write_json, dump_config
 from solib.llm_utils import parallelized_call
-from solib.protocols.protocols import *
-from solib.protocols.judges import *
+from solib.protocols.protocols import (
+    Blind,
+    Propaganda,
+    Debate,
+    Consultancy,
+)
+from solib.protocols.judges import (
+    TipOfTongueJudge,
+    JustAskProbabilityJudge,
+)
 from solib.protocols.abstract import QA_Agent, Judge, Protocol
 
 LOGGER = logging.getLogger(__name__)
@@ -58,6 +67,7 @@ class Experiment:
             num_turnss: List of number of turns for the protocols.
             write_path: Folder directory to write the results to.
         """
+        self.default_quant_config = True
         self.questions = questions
         self.agent_models = agent_models
         self.agent_toolss = agent_toolss if agent_toolss is not None else [[]]
@@ -88,6 +98,7 @@ class Experiment:
             QA_Agent(
                 model=model,
                 tools=tools,
+                hf_quantization_config=self.default_quant_config,
             )
             for model in self.agent_models
             for tools in self.agent_toolss
@@ -96,9 +107,16 @@ class Experiment:
     @property
     def judges(self):
         tot_judges = [
-            TipOfTongueJudge(model) for model in self.judge_models if model != "human"
+            TipOfTongueJudge(model, hf_quantization_config=self.default_quant_config)
+            for model in self.judge_models
+            if model != "human"
         ]
-        jap_judges = [JustAskProbabilityJudge(model) for model in self.judge_models]
+        jap_judges = [
+            JustAskProbabilityJudge(
+                model, hf_quantization_config=self.default_quant_config
+            )
+            for model in self.judge_models
+        ]
         return tot_judges + jap_judges
 
     @property
@@ -149,22 +167,23 @@ class Experiment:
         ]
 
     def filter_config(self, config: dict):
-        """Subclass this. By default, uses _filter_selfplay"""
-        return self._filter_selfplay(config)
+        """Subclass this. By default, uses _filter_selfplay and _filter_nohfjap."""
+        return self._filter_selfplay(config) and self._filter_nohfjap(config)
 
     @property
     def filtered_configs(self):
         return [config for config in self.all_configs if self.filter_config(config)]
 
     async def experiment(self):
-
         async def run_experiment(config: dict):
             setup = config["protocol"](**config["init_kwargs"])
-            await setup.experiment(
+            stuff = await setup.experiment(
                 questions=self.questions,
                 **config["call_kwargs"],
                 write=self.get_path(config),
             )
+            results, stats = stuff
+            return stats
 
         confirm = input(
             f"Run {len(self.filtered_configs)} experiments? (y/N) [l to list]"
@@ -175,7 +194,12 @@ class Experiment:
         if confirm.lower() != "y":
             return
         LOGGER.debug(self.filtered_configs)
-        await parallelized_call(run_experiment, self.filtered_configs)
+        statss = await parallelized_call(run_experiment, self.filtered_configs)
+        all_stats = [
+            {"config": config, "stats": stats}
+            for config, stats in zip(self.filtered_configs, statss)
+        ]
+        write_json(dump_config(all_stats), path=self.write_path / "all_stats.json")
 
     def _filter_trivial(self, config: dict):
         return True
@@ -192,7 +216,19 @@ class Experiment:
                     return False
         return True
 
-    def get_path(self, config: dict):
+    def _filter_nohfjap(self, config: dict):
+        for component in config["call_kwargs"].values():
+            if isinstance(component, (QA_Agent, JustAskProbabilityJudge)):
+                if component.model.startswith("hf:"):
+                    return False
+        return True
+
+    def _get_path_protocol(self, config: dict):
+        protocol_str = config["protocol"]
+        if not isinstance(protocol_str, str):
+            protocol_str = protocol_str.__name__
+        # we support config["protocol"]: str too because we also use this
+        # in reading from all_stats.json
         init_kwargs_str = ""
         for k, v in config["init_kwargs"].items():
             if k == "num_turns":
@@ -205,8 +241,10 @@ class Experiment:
                 k_ = k
                 v_ = v
             v_ = str(v_)
-            init_kwargs_str += f"{k_}{v_}_"
-        init_kwargs_str = init_kwargs_str[:-1]
+            init_kwargs_str += f"_{k_}{v_}"
+        return config["protocol"].__name__ + init_kwargs_str
+
+    def _get_path_call(self, config: dict):
         call_kwargs_str = ""
         for k, v in config["call_kwargs"].items():
             if k in ["agent", "adversary"]:
@@ -218,12 +256,14 @@ class Experiment:
             else:
                 k_ = k
                 v_ = v
-            call_kwargs_str += f"{k_}_{v_}_"
-        call_kwargs_str = call_kwargs_str[:-1]
+            call_kwargs_str += f"_{k_}{v_}"
+        return call_kwargs_str
+
+    def get_path(self, config: dict):
         path = (
             self.write_path
-            / (config["protocol"].__name__ + "_" + init_kwargs_str)
-            / call_kwargs_str
+            / self._get_path_protocol(config)
+            / self._get_path_call(config)
         )
         # path.mkdir(parents=True, exist_ok=True)
         i = 0

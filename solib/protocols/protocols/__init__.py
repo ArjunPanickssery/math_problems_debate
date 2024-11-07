@@ -1,8 +1,8 @@
-from .Blind import Blind
-from .Propaganda import Propaganda
-from .Debate import Debate
-from .Debate import Debate
-from .Consultancy import Consultancy
+from .Blind import Blind  # noqa
+from .Propaganda import Propaganda  # noqa
+from .Debate import Debate  # noqa
+from .Debate import Debate  # noqa
+from .Consultancy import Consultancy  # noqa
 
 # import os
 # import importlib

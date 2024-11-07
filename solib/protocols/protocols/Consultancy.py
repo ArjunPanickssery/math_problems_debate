@@ -7,7 +7,6 @@ LOGGER = logging.getLogger(__name__)
 
 
 class Consultancy(Protocol):
-
     def __init__(
         self,
         consultant_prompt: str = None,
@@ -19,6 +18,12 @@ class Consultancy(Protocol):
         self.client_prompt = client_prompt or self.client_prompt
         self.num_turns = num_turns
         self.consultant_goes_first = consultant_goes_first
+        super().__init__(
+            consultant_prompt=consultant_prompt,
+            client_prompt=client_prompt,
+            num_turns=num_turns,
+            consultant_goes_first=consultant_goes_first,
+        )
 
     def end_communication(self, question: Question) -> bool:
         """Default end_communication method: return True when consultancy transcript
@@ -70,6 +75,7 @@ class Consultancy(Protocol):
             )
             question.append(TranscriptItem(role=answer_case.short, content=cons_resp))
         result = await judge(question=question, context=self.ts_to_prompt(question))
+        assert result.transcript is not None
         return result
 
     consultant_prompt = (

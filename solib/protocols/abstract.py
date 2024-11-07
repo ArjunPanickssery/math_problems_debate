@@ -1,20 +1,14 @@
 import logging
-import json
-import functools
-from typing import Any, Literal
-from pydantic import BaseModel, Field
 from pathlib import Path
-import numpy as np
-from solib.utils import config, AbstractionError, write_jsonl_async, write_json
+from solib.utils import dump_config, AbstractionError, write_jsonl_async, write_json
 from solib.llm_utils import parallelized_call, LLM_Agent
-from solib.datatypes import Answer, Question, Prob, TranscriptItem
+from solib.datatypes import Answer, Question, TranscriptItem
 from solib.data.loading import Dataset
 
 LOGGER = logging.getLogger(__name__)
 
 
 class Judge(LLM_Agent):
-
     async def __call__(
         self, question: Question, context: str | None = None
     ) -> Question:
@@ -55,7 +49,7 @@ class QA_Agent(LLM_Agent):
             answer_case=answer_case,
             context=context,
         )
-        return await self.get_response_async(
+        return await self.get_response(
             prompt=prompt,
             words_in_mouth=words_in_mouth,
             max_tokens=max_tokens,
@@ -74,6 +68,12 @@ class QA_Agent(LLM_Agent):
         )
         self.prompt = prompt or self.prompt
         self.words_in_mouth = words_in_mouth or self.words_in_mouth
+        self.dict = {
+            "model": self.model,
+            "tools": self.tools,
+            "prompt": self.prompt,
+            "words_in_mouth": self.words_in_mouth,
+        }
 
     words_in_mouth = " Sure, here's my response:\n\n"
 
@@ -101,8 +101,9 @@ class Protocol:
 
     prompt = None  # by default we default to QA_Agent.prompt for this protocol
 
-    def __init__(self, prompt: str = None):
+    def __init__(self, prompt: str = None, **kwargs):
         self.prompt = prompt or self.prompt
+        self.dict = {"prompt": self.prompt, **kwargs}
 
     def tsitem_to_prompt(self, item: TranscriptItem) -> str:
         return f"## Argument in favour of {item.role}\n{item.content}\n"
@@ -185,17 +186,14 @@ class Protocol:
         results = []
 
         if write:
+            Path(write).mkdir(parents=True, exist_ok=True)
             write_results = Path(write) / "results.jsonl"
-            write_results.parent.mkdir(parents=True, exist_ok=True)
             write_stats = Path(write) / "stats.json"
-            write_stats.parent.mkdir(parents=True, exist_ok=True)
             write_config = Path(write) / "config.json"
-            write_config.parent.mkdir(parents=True, exist_ok=True)
         else:
             write_results = write_stats = write_config = None
 
         async def process_question(question: Question):
-
             # censor question before sending to any AI
             question_censored = question.censor()
 
@@ -209,7 +207,7 @@ class Protocol:
             # reattach ground truth values to trigger computation of scores
             result = result.uncensor(question)
             await write_jsonl_async(
-                result.model_dump(), path=write_results, append=True
+                result.model_dump(exclude_none=True), path=write_results, append=True
             )
             assert result.is_argued
             assert result.is_grounded
@@ -219,6 +217,16 @@ class Protocol:
         stats = Question.compute_stats(results)
 
         write_json(stats, path=write_stats)
-        write_json(config(self), path=write_config)
+        write_json(
+            dump_config(
+                {
+                    "protocol": self,
+                    "agent": agent,
+                    "judge": judge,
+                    **other_components,
+                }
+            ),
+            path=write_config,
+        )
 
         return results, stats

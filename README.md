@@ -1,25 +1,17 @@
 # Usage
 
-```
-$ python -m venv venv
-$ source venv/bin/activate
-$ poetry install
+```bash
+python -m venv venv
+source venv/bin/activate
+poetry install
 ```
 
-Create a `.env` file, e.g.
-
-```
-OPENAI_API_KEY=sk-your-openai-key
-ANTHROPIC_API_KEY=sk-ant-your-anthropic-key
-HF_TOKEN=hf_your_hf_key
-```
+Create a `.env` file, see [.env.example](.env.example)
 
 # Pytest
 
 ```
 poetry run pytest -s
-poetry run pytest -s --runredundant # mostly just run this if pytest -s fails
-poetry run pytest -s --runhf # to run even tests involving hf models
 ```
 
 # Randomness
@@ -30,7 +22,9 @@ The only exception to this is `costly` simulators.
 
 # LLM calls, simulation and cost estimation
 
-We use the [`costly`](https://github.com/abhimanyupallavisudhir/costly) package for cost estimation ahead of making API calls. Specifically there are global variables `global_cost_log` and `simulate` defined in `solib.llm_utils`. As long as all LLM calls go through `get_llm_response()` from `solib.llm_utils`, stuff will work properly.
+We use the [`costly`](https://github.com/abhimanyupallavisudhir/costly) package for cost estimation ahead of making API calls. Specifically there are global variables `global_cost_log` and `simulate` defined in `solib.llm_utils`. As long as all LLM calls go through `get_llm_response()` from `solib.llm_utils`, stuff will work properly, and the cost estimate will be logged to `.costly/[datetime].jsonl`, `.costly/[datetime].totals.json`, `.costly/[datetime].totals_by_model.json`.
+
+NOTE: if you are not seeing anything being logged, or if the totals are not being created, it's probably because it's reading cached results and so doesn't have any costs.
 
 `simulate` is controlled by an environment variable `SIMULATE` (which can be set to `True` or `False`), so you can run any command as `SIMULATE=True python your_script.py` to ensure all LLM calls are simulated.
 

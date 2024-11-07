@@ -1,12 +1,12 @@
-import pytest
-import datetime
+import pytest  # noqa
 from solib.protocols.abstract import QA_Agent, Judge
 from solib.protocols.protocols import Debate
 from solib.Experiment import Experiment
 
 experiment = Experiment(
+    questions=[],
     agent_models=["gpt-4o-mini", "hf:meta-llama/Meta-Llama-3-8B-Instruct"],
-    agent_toolss=[],
+    agent_toolss=[[]],
     judge_models=["gpt-4o-mini", "hf:meta-llama/Meta-Llama-3-8B-Instruct"],
 )
 
@@ -28,6 +28,4 @@ def test_get_path():
     )
     path = str(path)
     assert path.startswith("experiments/results_")
-    assert path.endswith(
-        "/Debate_t1_n4/J_gpt-4o-mini_A_gpt-4o-mini_A_gpt-4o-mini/results.json"
-    )
+    assert path.endswith("/Debate_t1_n4/_Jgpt-4o-mini_Agpt-4o-mini_Agpt-4o-mini")

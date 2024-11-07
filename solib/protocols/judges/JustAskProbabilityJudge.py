@@ -26,7 +26,7 @@ class JustAskProbabilityJudge(Judge):
                 context=context,
                 answer_case=answer_case.short,
             )
-            response = await self.get_response_async(
+            response = await self.get_response(
                 prompt=prompt,
                 response_model=Prob,
                 max_tokens=20,
@@ -43,6 +43,7 @@ class JustAskProbabilityJudge(Judge):
                 Answer.model_validate(a.model_dump() | {"judge_prob": p})
                 for a, p in zip(question.answer_cases, probs_)
             ],
+            transcript=question.transcript,
         )
         assert result.is_elicited
         return result.normalize_probs()
@@ -63,6 +64,12 @@ class JustAskProbabilityJudge(Judge):
         """
         self.prompt = prompt or self.prompt
         self.words_in_mouth = words_in_mouth or self.words_in_mouth
+        self.dict = {
+            "model": model,
+            "tools": tools,
+            "prompt": self.prompt,
+            "words_in_mouth": self.words_in_mouth,
+        }
         super().__init__(
             model=model, tools=tools, hf_quantization_config=hf_quantization_config
         )
