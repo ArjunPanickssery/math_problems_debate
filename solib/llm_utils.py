@@ -968,6 +968,7 @@ class RateLimiter:
         self.lock = threading.Lock()
 
     def wait_if_needed(self, estimated_tokens: Optional[int] = None):
+        estimated_tokens = estimated_tokens or 3000
         current_time = datetime.now()
         minute_ago = current_time - timedelta(minutes=1)
 
@@ -983,6 +984,7 @@ class RateLimiter:
             # Check request rate limit
             while len(self.request_timestamps) >= self.requests_per_minute:
                 sleep_time = (self.request_timestamps[0] - minute_ago).total_seconds()
+                LOGGER.info(f"Sleeping for {sleep_time} seconds")
                 time.sleep(max(0, sleep_time))
                 minute_ago = datetime.now() - timedelta(minutes=1)
                 self.request_timestamps = [
@@ -994,6 +996,7 @@ class RateLimiter:
                 total_tokens = sum(tokens for _, tokens in self.token_usage)
                 while total_tokens + estimated_tokens > self.tokens_per_minute:
                     sleep_time = (self.token_usage[0][0] - minute_ago).total_seconds()
+                    LOGGER.info(f"Sleeping for {sleep_time} seconds")
                     time.sleep(max(0, sleep_time))
                     minute_ago = datetime.now() - timedelta(minutes=1)
                     self.token_usage = [
@@ -1008,19 +1011,30 @@ class RateLimiter:
             if estimated_tokens:
                 self.token_usage.append((current_time, estimated_tokens))
 
+    @classmethod
+    def get_rate_limiter(cls, model: str):
+        matching_keys = [key for key in cls.RATE_LIMITERS if model.startswith(key)]
+        if not matching_keys:
+            LOGGER.warning(
+                f"No rate limiter found for model {model}, assuming __DEFAULT__"
+            )
+            k = "__DEFAULT__"
+        else:
+            k = max(matching_keys, key=len)
+        return cls(**cls.RATE_LIMITERS[k])
 
-RATE_LIMITERS: Dict[str, RateLimiter] = {
-    "gpt-3.5-turbo": RateLimiter(requests_per_minute=3500, tokens_per_minute=200000),
-    "gpt-4": RateLimiter(requests_per_minute=500, tokens_per_minute=10000),
-    "gpt-4-turbo": RateLimiter(requests_per_minute=500, tokens_per_minute=30000),
-    "gpt-4o": RateLimiter(requests_per_minute=500, tokens_per_minute=30000),
-    "gpt-4o-mini": RateLimiter(requests_per_minute=500, tokens_per_minute=200000),
-    "claude-3-opus": RateLimiter(requests_per_minute=500, tokens_per_minute=15000),
-    "claude-3-sonnet": RateLimiter(requests_per_minute=500, tokens_per_minute=15000),
-    "mistral-medium": RateLimiter(requests_per_minute=500, tokens_per_minute=15000),
-    "mistral-small": RateLimiter(requests_per_minute=500, tokens_per_minute=15000),
-    "__DEFAULT__": RateLimiter(requests_per_minute=500, tokens_per_minute=15000),
-}
+    RATE_LIMITERS: Dict[str, dict] = {
+        "gpt-3.5-turbo": {"requests_per_minute": 3500, "tokens_per_minute": 200000},
+        "gpt-4": {"requests_per_minute": 500, "tokens_per_minute": 10000},
+        "gpt-4-turbo": {"requests_per_minute": 500, "tokens_per_minute": 30000},
+        "gpt-4o": {"requests_per_minute": 500, "tokens_per_minute": 30000},
+        "gpt-4o-mini": {"requests_per_minute": 500, "tokens_per_minute": 200000},
+        "claude-3-opus": {"requests_per_minute": 500, "tokens_per_minute": 15000},
+        "claude-3-sonnet": {"requests_per_minute": 500, "tokens_per_minute": 15000},
+        "mistral-medium": {"requests_per_minute": 500, "tokens_per_minute": 15000},
+        "mistral-small": {"requests_per_minute": 500, "tokens_per_minute": 15000},
+        "__DEFAULT__": {"requests_per_minute": 500, "tokens_per_minute": 15000},
+    }
 
 
 class LLM_Agent:
@@ -1062,15 +1076,11 @@ class LLM_Agent:
         temperature: float = 0.0,
         cost_log: Costlog = GLOBAL_COST_LOG,
         simulate: bool = SIMULATE,
-        estimated_input_tokens: Optional[int] = None,
         **kwargs,
     ):
         # Get rate limiter for this model if it exists
-        rate_limiter = RATE_LIMITERS.get(self.model, RATE_LIMITERS["__DEFAULT__"])
-        if rate_limiter:
-            # Estimate total tokens (input + output)
-            total_estimated_tokens = (estimated_input_tokens or 0) + max_tokens
-            rate_limiter.wait_if_needed(total_estimated_tokens)
+        rate_limiter = RateLimiter.get_rate_limiter(self.model)
+        rate_limiter.wait_if_needed()
 
         return self.ai["generate"](
             model=self.model,
@@ -1101,15 +1111,11 @@ class LLM_Agent:
         temperature: float = 0.0,
         cost_log: Costlog = GLOBAL_COST_LOG,
         simulate: bool = SIMULATE,
-        estimated_input_tokens: Optional[int] = None,
         **kwargs,
     ):
         # Get rate limiter for this model if it exists
-        rate_limiter = RATE_LIMITERS.get(self.model, RATE_LIMITERS["__DEFAULT__"])
-        if rate_limiter:
-            # Estimate total tokens (input + output)
-            total_estimated_tokens = (estimated_input_tokens or 0) + max_tokens
-            rate_limiter.wait_if_needed(total_estimated_tokens)
+        rate_limiter = RateLimiter.get_rate_limiter(self.model)
+        rate_limiter.wait_if_needed()
 
         async with GLOBAL_LLM_SEMAPHORE:
             return await self.ai_async["generate_async"](
@@ -1151,15 +1157,11 @@ class LLM_Agent:
         temperature: float = 0.0,
         cost_log: Costlog = GLOBAL_COST_LOG,
         simulate: bool = SIMULATE,
-        estimated_input_tokens: Optional[int] = None,
         **kwargs,
     ):
         # Get rate limiter for this model if it exists
-        rate_limiter = RATE_LIMITERS.get(self.model, RATE_LIMITERS["__DEFAULT__"])
-        if rate_limiter:
-            # Estimate total tokens (input + output)
-            total_estimated_tokens = estimated_input_tokens or 0
-            rate_limiter.wait_if_needed(total_estimated_tokens)
+        rate_limiter = RateLimiter.get_rate_limiter(self.model)
+        rate_limiter.wait_if_needed()
 
         return self.ai["return_probs"](
             model=self.model,
@@ -1190,15 +1192,11 @@ class LLM_Agent:
         temperature: float = 0.0,
         cost_log: Costlog = GLOBAL_COST_LOG,
         simulate: bool = SIMULATE,
-        estimated_input_tokens: Optional[int] = None,
         **kwargs,
     ):
         # Get rate limiter for this model if it exists
-        rate_limiter = RATE_LIMITERS.get(self.model, RATE_LIMITERS["__DEFAULT__"])
-        if rate_limiter:
-            # Estimate total tokens (input + output)
-            total_estimated_tokens = estimated_input_tokens or 0
-            rate_limiter.wait_if_needed(total_estimated_tokens)
+        rate_limiter = RateLimiter.get_rate_limiter(self.model)
+        rate_limiter.wait_if_needed()
 
         async with GLOBAL_LLM_SEMAPHORE:
             return await self.ai_async["return_probs_async"](
@@ -1233,18 +1231,14 @@ def get_llm_response(
     hf_quantization_config=None,
     cost_log: Costlog = GLOBAL_COST_LOG,
     simulate: bool = SIMULATE,
-    estimated_input_tokens: Optional[int] = None,
     **kwargs,  # kwargs necessary for costly
 ):
     """NOTE: you should generally use the LLM_Agent class instead of this function.
     This is deprecated, or maybe we can just use it for one-time calls etc.
     """
     # Get rate limiter for this model if it exists
-    rate_limiter = RATE_LIMITERS.get(model, RATE_LIMITERS["__DEFAULT__"])
-    if rate_limiter:
-        # Estimate total tokens (input + output)
-        total_estimated_tokens = estimated_input_tokens or 0
-        rate_limiter.wait_if_needed(total_estimated_tokens)
+    rate_limiter = RateLimiter.get_rate_limiter(model)
+    rate_limiter.wait_if_needed()
     model = model or "gpt-4o-mini"
     ai = get_llm(
         model=model, use_async=False, hf_quantization_config=hf_quantization_config
@@ -1281,18 +1275,14 @@ async def get_llm_response_async(
     hf_quantization_config=None,
     cost_log: Costlog = GLOBAL_COST_LOG,
     simulate: bool = SIMULATE,
-    estimated_input_tokens: Optional[int] = None,
     **kwargs,
 ):
     """NOTE: you should generally use the LLM_Agent class instead of this function.
     This is deprecated, or maybe we can just use it for one-time calls etc.
     """
     # Get rate limiter for this model if it exists
-    rate_limiter = RATE_LIMITERS.get(model, RATE_LIMITERS["__DEFAULT__"])
-    if rate_limiter:
-        # Estimate total tokens (input + output)
-        total_estimated_tokens = estimated_input_tokens or 0
-        rate_limiter.wait_if_needed(total_estimated_tokens)
+    rate_limiter = RateLimiter.get_rate_limiter(model)
+    rate_limiter.wait_if_needed()
     model = model or "gpt-4o-mini"
     ai = get_llm(
         model=model, use_async=True, hf_quantization_config=hf_quantization_config
@@ -1329,18 +1319,14 @@ def get_llm_probs(
     hf_quantization_config=None,
     cost_log: Costlog = GLOBAL_COST_LOG,
     simulate: bool = SIMULATE,
-    estimated_input_tokens: Optional[int] = None,
     **kwargs,
 ):
     """NOTE: you should generally use the LLM_Agent class instead of this function.
     This is deprecated, or maybe we can just use it for one-time calls etc.
     """
     # Get rate limiter for this model if it exists
-    rate_limiter = RATE_LIMITERS.get(model, RATE_LIMITERS["__DEFAULT__"])
-    if rate_limiter:
-        # Estimate total tokens (input + output)
-        total_estimated_tokens = estimated_input_tokens or 0
-        rate_limiter.wait_if_needed(total_estimated_tokens)
+    rate_limiter = RateLimiter.get_rate_limiter(model)
+    rate_limiter.wait_if_needed()
     model = model or "gpt-4o-mini"
     ai = get_llm(
         model=model, use_async=False, hf_quantization_config=hf_quantization_config
@@ -1375,18 +1361,14 @@ async def get_llm_probs_async(
     hf_quantization_config=None,
     cost_log: Costlog = GLOBAL_COST_LOG,
     simulate: bool = SIMULATE,
-    estimated_input_tokens: Optional[int] = None,
     **kwargs,
 ):
     """NOTE: you should generally use the LLM_Agent class instead of this function.
     This is deprecated, or maybe we can just use it for one-time calls etc.
     """
     # Get rate limiter for this model if it exists
-    rate_limiter = RATE_LIMITERS.get(model, RATE_LIMITERS["__DEFAULT__"])
-    if rate_limiter:
-        # Estimate total tokens (input + output)
-        total_estimated_tokens = estimated_input_tokens or 0
-        rate_limiter.wait_if_needed(total_estimated_tokens)
+    rate_limiter = RateLimiter.get_rate_limiter(model)
+    rate_limiter.wait_if_needed()
     model = model or "gpt-4o-mini"
     ai = get_llm(
         model=model, use_async=True, hf_quantization_config=hf_quantization_config
