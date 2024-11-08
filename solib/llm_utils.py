@@ -1000,6 +1000,7 @@ class LLM_Agent:
                 )
             except Exception as e:
                 LOGGER.warning(f"Error on attempt {i}: {e}")
+                time.sleep(60)
         raise Exception("Failed to get response")
 
     @method_cache(ignore=["cost_log"])
@@ -1041,6 +1042,7 @@ class LLM_Agent:
                     )
             except Exception as e:
                 LOGGER.warning(f"Error on attempt {i}: {e}")
+                time.sleep(60)
         raise Exception("Failed to get response")
 
     async def get_response(self, *args, **kwargs):
@@ -1132,6 +1134,7 @@ class LLM_Agent:
                     )
             except Exception as e:
                 LOGGER.warning(f"Error on attempt {i}: {e}")
+                time.sleep(60)
         raise Exception("Failed to get response")
 
 
@@ -1181,6 +1184,7 @@ def get_llm_response(
             )
         except Exception as e:
             LOGGER.warning(f"Error on attempt {i}: {e}")
+            time.sleep(60)
     raise Exception("Failed to get response")
 
 
@@ -1231,6 +1235,7 @@ async def get_llm_response_async(
                 )
         except Exception as e:
             LOGGER.warning(f"Error on attempt {i}: {e}")
+            time.sleep(60)
     raise Exception("Failed to get response")
 
 
@@ -1278,6 +1283,7 @@ def get_llm_probs(
             )
         except Exception as e:
             LOGGER.warning(f"Error on attempt {i}: {e}")
+            time.sleep(60)
     raise Exception("Failed to get response")
 
 
@@ -1326,4 +1332,5 @@ async def get_llm_probs_async(
                 )
         except Exception as e:
             LOGGER.warning(f"Error on attempt {i}: {e}")
+            time.sleep(60)
     raise Exception("Failed to get response")
