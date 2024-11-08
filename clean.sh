@@ -1,62 +1,91 @@
 #!/bin/bash
 
-# Function to delete or keep n most recent items in a directory
-cleanup() {
-    local dir=$1
-    local keep=$2
-
-    if [ -d "$dir" ]; then
-        if [ "$keep" -gt 0 ]; then
-            # Get a list of items in the directory sorted by modification time, excluding the latest $keep items
-            to_delete=($(ls -1t "$dir" | tail -n +$((keep + 1))))
-            for item in "${to_delete[@]}"; do
-                rm -rf "$dir/$item"
-            done
-        else
-            # Remove everything in the directory if keep is 0 or not specified
-            rm -rf "$dir"/*
-        fi
-        echo "Cleaned up $dir, kept $keep most recent items"
+# Function to remove all items except the most recent n items
+cleanup_folder() {
+    folder=$1
+    keep=$2
+    
+    # Check if the folder exists
+    if [ -d "$folder" ]; then
+        # List items sorted by modification time, skipping the most recent $keep items
+        items_to_remove=$(ls -t "$folder" | tail -n +$((keep + 1)))
+        for item in $items_to_remove; do
+            rm -r "$folder/$item"
+        done
     else
-        echo "Directory $dir does not exist"
+        echo "Folder $folder does not exist."
     fi
 }
 
-# Default value for keeping items is 0 (delete all)
+# Default keep value
 keep=0
 
 # Parse arguments
-for arg in "$@"; do
-    case $arg in
+while [[ "$#" -gt 0 ]]; do
+    case $1 in
         --cache)
-            cleanup ".cache" "$keep"
+            action_cache=true
+            if [[ "$2" =~ ^[0-9]+$ ]]; then
+                keep=$2
+                shift
+            fi
             ;;
         --costly)
-            cleanup ".costly" "$keep"
+            action_costly=true
+            if [[ "$2" =~ ^[0-9]+$ ]]; then
+                keep=$2
+                shift
+            fi
             ;;
         --logs)
-            cleanup ".logs" "$keep"
+            action_logs=true
+            if [[ "$2" =~ ^[0-9]+$ ]]; then
+                keep=$2
+                shift
+            fi
             ;;
         --tests)
-            cleanup "tests/test_results" "$keep"
+            action_tests=true
+            if [[ "$2" =~ ^[0-9]+$ ]]; then
+                keep=$2
+                shift
+            fi
             ;;
         --all)
-            cleanup ".cache" "$keep"
-            cleanup ".costly" "$keep"
-            cleanup ".logs" "$keep"
-            cleanup "tests/test_results" "$keep"
-            ;;
-        -n=*|--keep=*)
-            keep="${arg#*=}"
+            action_cache=true
+            action_costly=true
+            action_logs=true
+            action_tests=true
+            if [[ "$2" =~ ^[0-9]+$ ]]; then
+                keep=$2
+                shift
+            fi
             ;;
         *)
-            echo "Unknown option: $arg"
+            echo "Unknown argument: $1"
+            exit 1
             ;;
     esac
+    shift
 done
 
+# Run actions based on the parsed arguments
+if [[ "$action_cache" == true ]]; then
+    echo "Cleaning up .cache/ folder, keeping $keep most recent items..."
+    cleanup_folder ".cache" $keep
+fi
 
-# rm -r .cache/
-# rm -r .costly/
-# rm -r .logs/
-# rm -r tests/test_results/
+if [[ "$action_costly" == true ]]; then
+    echo "Cleaning up .costly/ folder, keeping $keep most recent items..."
+    cleanup_folder ".costly" $keep
+fi
+
+if [[ "$action_logs" == true ]]; then
+    echo "Cleaning up .logs/ folder, keeping $keep most recent items..."
+    cleanup_folder ".logs" $keep
+fi
+
+if [[ "$action_tests" == true ]]; then
+    echo "Cleaning up tests/test_results/ folder, keeping $keep most recent items..."
+    cleanup_folder "tests/test_results" $keep
+fi

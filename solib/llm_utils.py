@@ -26,7 +26,7 @@ from costly.simulators.llm_simulator_faker import LLM_Simulator_Faker
 import warnings
 from datetime import datetime, timedelta
 import time
-from typing import Dict, Optional
+from typing import Optional
 import threading
 
 from langchain_core.messages import (
@@ -967,10 +967,13 @@ class RateLimiter:
         self.token_usage = []
         self.lock = threading.Lock()
 
-    def wait_if_needed(self, estimated_tokens: Optional[int] = None):
-        estimated_tokens = estimated_tokens or 3000
+    def wait_if_needed(self, input_tokens: int = 2048):
+        LOGGER.info(f"Current request count: {len(self.request_timestamps)}")
+
         current_time = datetime.now()
         minute_ago = current_time - timedelta(minutes=1)
+
+        estimated_tokens = input_tokens + 2048
 
         with self.lock:
             # Clean up old timestamps
@@ -994,6 +997,7 @@ class RateLimiter:
             # Check token rate limit if applicable
             if self.tokens_per_minute and estimated_tokens:
                 total_tokens = sum(tokens for _, tokens in self.token_usage)
+                LOGGER.info(f"Current token usage: {total_tokens}")
                 while total_tokens + estimated_tokens > self.tokens_per_minute:
                     sleep_time = (self.token_usage[0][0] - minute_ago).total_seconds()
                     LOGGER.info(f"Sleeping for {sleep_time} seconds")
@@ -1013,7 +1017,7 @@ class RateLimiter:
 
     @classmethod
     def get_rate_limiter(cls, model: str):
-        matching_keys = [key for key in cls.RATE_LIMITERS if model.startswith(key)]
+        matching_keys = [key for key in RATE_LIMITERS if model.startswith(key)]
         if not matching_keys:
             LOGGER.warning(
                 f"No rate limiter found for model {model}, assuming __DEFAULT__"
@@ -1021,20 +1025,21 @@ class RateLimiter:
             k = "__DEFAULT__"
         else:
             k = max(matching_keys, key=len)
-        return cls(**cls.RATE_LIMITERS[k])
+        return RATE_LIMITERS[k]
 
-    RATE_LIMITERS: Dict[str, dict] = {
-        "gpt-3.5-turbo": {"requests_per_minute": 3500, "tokens_per_minute": 200000},
-        "gpt-4": {"requests_per_minute": 500, "tokens_per_minute": 10000},
-        "gpt-4-turbo": {"requests_per_minute": 500, "tokens_per_minute": 30000},
-        "gpt-4o": {"requests_per_minute": 500, "tokens_per_minute": 30000},
-        "gpt-4o-mini": {"requests_per_minute": 500, "tokens_per_minute": 200000},
-        "claude-3-opus": {"requests_per_minute": 500, "tokens_per_minute": 15000},
-        "claude-3-sonnet": {"requests_per_minute": 500, "tokens_per_minute": 15000},
-        "mistral-medium": {"requests_per_minute": 500, "tokens_per_minute": 15000},
-        "mistral-small": {"requests_per_minute": 500, "tokens_per_minute": 15000},
-        "__DEFAULT__": {"requests_per_minute": 500, "tokens_per_minute": 15000},
-    }
+
+RATE_LIMITERS: dict[str, RateLimiter] = {
+    "gpt-3.5-turbo": RateLimiter(requests_per_minute=3500, tokens_per_minute=200000),
+    "gpt-4": RateLimiter(requests_per_minute=500, tokens_per_minute=10000),
+    "gpt-4-turbo": RateLimiter(requests_per_minute=500, tokens_per_minute=30000),
+    "gpt-4o": RateLimiter(requests_per_minute=500, tokens_per_minute=30000),
+    "gpt-4o-mini": RateLimiter(requests_per_minute=500, tokens_per_minute=200000),
+    "claude-3-opus": RateLimiter(requests_per_minute=500, tokens_per_minute=15000),
+    "claude-3-sonnet": RateLimiter(requests_per_minute=500, tokens_per_minute=15000),
+    "mistral-medium": RateLimiter(requests_per_minute=500, tokens_per_minute=15000),
+    "mistral-small": RateLimiter(requests_per_minute=500, tokens_per_minute=15000),
+    "__DEFAULT__": RateLimiter(requests_per_minute=500, tokens_per_minute=15000),
+}
 
 
 class LLM_Agent:
