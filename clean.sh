@@ -33,7 +33,7 @@ while [[ "$#" -gt 0 ]]; do
         --costly)
             action_costly=true
             if [[ "$2" =~ ^[0-9]+$ ]]; then
-                keep=$2
+                keep=$((3 * $2)) # Set keep to 3 * the provided value for --costly
                 shift
             fi
             ;;
