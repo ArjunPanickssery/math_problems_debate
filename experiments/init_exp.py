@@ -2,10 +2,10 @@ import asyncio
 from pathlib import Path
 from datetime import datetime
 from solib.Experiment import Experiment
-from solib.data.math import train_data
+from solib.data.loading import GSM8K
 from solib.tool_use.default_tools import math_eval
 
-questions = train_data()
+questions = GSM8K.data(limit=100)
 
 init_exp = Experiment(
     questions=questions,
