@@ -1,4 +1,4 @@
-import asyncio 
+import asyncio
 from pathlib import Path
 from datetime import datetime
 from solib.Experiment import Experiment
@@ -7,7 +7,7 @@ from solib.tool_use.default_tools import math_eval
 
 questions = train_data()
 
-init_exp= Experiment(
+init_exp = Experiment(
     questions=questions,
     agent_models=[
         "gpt-4o-2024-08-06",
@@ -22,6 +22,7 @@ init_exp= Experiment(
         "hf:meta-llama/Llama-2-7b-chat-hf",
     ],
     protocols=["blind", "propaganda", "debate", "consultancy"],
+    bon_ns=[4, 8, 16, 32],
     write_path=Path(__file__).parent
     / f"init_exp_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}",
 )
