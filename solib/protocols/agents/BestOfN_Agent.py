@@ -22,6 +22,12 @@ class BestOfN_Agent(QA_Agent):
         self.judge = judge or JustAskProbabilityJudge()
         self.protocol = protocol or Propaganda()
         self.other_components = other_components
+        # inherit other stuff
+        self.model = self.agent.model
+        self.tools = self.agent.tools
+        self.prompt = self.agent.prompt
+        self.words_in_mouth = self.agent.words_in_mouth
+        self.dict = self.agent.dict
 
     async def __call__(
         self,
@@ -43,14 +49,14 @@ class BestOfN_Agent(QA_Agent):
                 judge=self.judge,
                 **self.other_components,
             )
-            response = transcript.transcript[-1]
+            response = transcript.transcript[-1].content
             result = await self.judge(
                 question=transcript, context=self.protocol.ts_to_prompt(transcript)
             )
             agent_score = Score.calc(result, kwargs["answer_case"]).log
             return response, agent_score
 
-        results = parallelized_call(
+        results = await parallelized_call(
             run_agent,
             [
                 {

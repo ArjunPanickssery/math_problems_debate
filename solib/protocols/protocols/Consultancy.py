@@ -49,8 +49,8 @@ class Consultancy(Protocol):
         consultant = functools.partial(
             agent,
             prompt=self.consultant_prompt,
-            question=question.to_prompt(),
-            answer_case=answer_case.to_prompt(),
+            question=question,
+            answer_case=answer_case,
         )
         client_agent = QA_Agent(
             model=judge.model,
@@ -60,7 +60,7 @@ class Consultancy(Protocol):
         client = functools.partial(
             client_agent,
             prompt=self.client_prompt,
-            question=question.to_prompt(),
+            question=question,
         )
         if question.transcript[-1].role == "client" or (
             question.transcript in [None, []] and self.consultant_goes_first

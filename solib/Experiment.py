@@ -15,7 +15,7 @@ from solib.protocols.judges import (
     TipOfTongueJudge,
     JustAskProbabilityJudge,
 )
-from solib.protocols.agents import BestOfNAgent
+from solib.protocols.agents import BestOfN_Agent
 from solib.protocols.abstract import QA_Agent, Judge, Protocol
 
 LOGGER = logging.getLogger(__name__)
@@ -111,7 +111,7 @@ class Experiment:
     @property
     def agents_bestofn(self):
         return [
-            BestOfNAgent(n=n, agent=agent)
+            BestOfN_Agent(n=n, agent=agent)
             for n in self.bon_ns
             for agent in self.agents_plain
         ]

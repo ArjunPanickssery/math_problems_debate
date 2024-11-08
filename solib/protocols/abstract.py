@@ -43,6 +43,10 @@ class QA_Agent(LLM_Agent):
         """
         prompt = prompt or self.prompt
         words_in_mouth = words_in_mouth or self.words_in_mouth
+        if isinstance(question, Question):
+            question = question.to_prompt()
+        if isinstance(answer_case, Answer):
+            answer_case = answer_case.to_prompt()
         prompt = prompt.format(
             question=question,
             answer_case=answer_case,
@@ -160,7 +164,7 @@ class Protocol:
             Question with added transcript + probs for each answer_case.
         """
         while not self.end_communication(question):
-            t = len(question.transcript)
+            t = len(question.transcript) if question.transcript is not None else 0
             question = await self.step(
                 agent=agent,
                 question=question,

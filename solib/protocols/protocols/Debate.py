@@ -24,13 +24,14 @@ class Debate(Protocol):
         debater_pro = functools.partial(
             agent,
             prompt=self.prompt,
-            question=question.to_prompt(),
+            question=question,
+            answer_case=answer_case,
         )
         debater_con = functools.partial(
             adversary,
             prompt=self.prompt,
-            question=question.to_prompt(),
-            answer_case=opp_case.to_prompt(),
+            question=question,
+            answer_case=opp_case,
         )
         if self.simultaneous:
             debater_pro_arg = await debater_pro(context=self.ts_to_prompt(question))

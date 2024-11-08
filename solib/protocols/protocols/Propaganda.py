@@ -13,10 +13,11 @@ class Propaganda(Protocol):
         answer_case: Answer,
         judge: Judge,
     ) -> Question:
+        assert isinstance(question, Question)
         agent_response = await agent(
             prompt=self.prompt,
-            question=question.to_prompt(),
-            answer_case=answer_case.to_prompt(),
+            question=question,
+            answer_case=answer_case,
             context=self.ts_to_prompt(question),
         )
         question.append(TranscriptItem(role=answer_case.short, content=agent_response))
