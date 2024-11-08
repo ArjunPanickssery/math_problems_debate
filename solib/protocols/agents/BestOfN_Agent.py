@@ -67,6 +67,7 @@ class BestOfN_Agent(QA_Agent):
             ],
         )
         reset_cache_breaker()
+
         LOGGER.debug(f"CACHE_BREAKER AFTER BON: {CACHE_BREAKER}")
 
         best_response, best_score = max(results, key=lambda x: x[1])

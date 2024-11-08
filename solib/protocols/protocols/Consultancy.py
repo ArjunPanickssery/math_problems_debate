@@ -62,8 +62,8 @@ class Consultancy(Protocol):
             prompt=self.client_prompt,
             question=question,
         )
-        if question.transcript[-1].role == "client" or (
-            question.transcript in [None, []] and self.consultant_goes_first
+        if (question.transcript in [None, []] and self.consultant_goes_first) or (
+            question.transcript and question.transcript[-1].role == "client"
         ):
             cons_resp = await consultant(context=self.ts_to_prompt(question))
             question.append(TranscriptItem(role=answer_case.short, content=cons_resp))
