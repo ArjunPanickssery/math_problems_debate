@@ -12,50 +12,46 @@ class Debate(Protocol):
         self.simultaneous = simultaneous
         super().__init__(prompt=prompt, num_turns=num_turns, simultaneous=simultaneous)
 
-    async def run(
+    async def step(
         self,
         agent: QA_Agent,
         question: Question,
         answer_case: Answer,
         adversary: QA_Agent,
         judge: Judge,
-    ) -> Question:
+    ):
         opp_case = question.neg(answer_case)
         debater_pro = functools.partial(
             agent,
             prompt=self.prompt,
-            question=question.to_prompt(),
-            answer_case=answer_case.to_prompt(),
+            question=question,
+            answer_case=answer_case,
         )
         debater_con = functools.partial(
             adversary,
             prompt=self.prompt,
-            question=question.to_prompt(),
-            answer_case=opp_case.to_prompt(),
+            question=question,
+            answer_case=opp_case,
         )
-        while not self.end_communication(question):
-            if self.simultaneous:
-                debater_pro_arg = await debater_pro(context=self.ts_to_prompt(question))
-                debater_con_arg = await debater_con(context=self.ts_to_prompt(question))
-                question.append(
-                    TranscriptItem(role=answer_case.short, content=debater_pro_arg)
-                )
-                question.append(
-                    TranscriptItem(role=opp_case.short, content=debater_con_arg)
-                )
-            else:
-                debater_pro_arg = await debater_pro(context=self.ts_to_prompt(question))
-                question.append(
-                    TranscriptItem(role=answer_case.short, content=debater_pro_arg)
-                )
-                debater_con_arg = await debater_con(context=self.ts_to_prompt(question))
-                question.append(
-                    TranscriptItem(role=opp_case.short, content=debater_con_arg)
-                )
-        result = await judge(question=question, context=self.ts_to_prompt(question))
-        assert result.is_elicited
-        assert result.transcript is not None
-        return result
+        if self.simultaneous:
+            debater_pro_arg = await debater_pro(context=self.ts_to_prompt(question))
+            debater_con_arg = await debater_con(context=self.ts_to_prompt(question))
+            question.append(
+                TranscriptItem(role=answer_case.short, content=debater_pro_arg)
+            )
+            question.append(
+                TranscriptItem(role=opp_case.short, content=debater_con_arg)
+            )
+        else:
+            debater_pro_arg = await debater_pro(context=self.ts_to_prompt(question))
+            question.append(
+                TranscriptItem(role=answer_case.short, content=debater_pro_arg)
+            )
+            debater_con_arg = await debater_con(context=self.ts_to_prompt(question))
+            question.append(
+                TranscriptItem(role=opp_case.short, content=debater_con_arg)
+            )
+        return question
 
     async def run_on_all_answer_cases(
         self,

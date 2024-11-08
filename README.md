@@ -8,17 +8,17 @@ poetry install
 
 Create a `.env` file, see [.env.example](.env.example)
 
-# Pytest
-
-```
-poetry run pytest -s
-```
-
 # Randomness
 
 Throughout this repo, always use `solib.utils.random(*args, **kwargs)` instead of `random.random()`. This automatically sets the seed based on `args` (which should be the args of the function you're running), and optionally a `user_seed` kwarg. This is useful for caching and reproducibility.
 
 The only exception to this is `costly` simulators.
+
+# Pytest
+
+```
+poetry run pytest -s
+```
 
 # LLM calls, simulation and cost estimation
 
@@ -35,3 +35,9 @@ LLM calls will be cached into the `.cache` folder by default. To break the cache
 # Logging
 
 Logs are written to `.logs/` by default. In general use the logger rather than print statements, warnings etc.
+
+# Cleanup
+
+`./clean.sh --all 5` will remove all but the 5 most recent items in each folder `.logs/`, `.cache/`, `.costly/`, and `tests/test_results/`. Options: `--logs`, `--cache`, `--costly`, `--tests`, `--all`. If you don't specify a number, it will remove everything.
+
+

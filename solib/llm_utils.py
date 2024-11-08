@@ -24,6 +24,10 @@ from perscache.storage import Storage
 from costly import Costlog, CostlyResponse, costly
 from costly.simulators.llm_simulator_faker import LLM_Simulator_Faker
 import warnings
+from datetime import datetime, timedelta
+import time
+from typing import Optional
+import threading
 
 from langchain_core.messages import (
     HumanMessage,
@@ -116,6 +120,7 @@ class BetterCache(Cache):
         # Include global variables in the cache hash because Python handles default
         # variables a bit differently than you might expect
         arg_dict["simulate"] = SIMULATE  # Add to the hash key
+        arg_dict["cache_breaker"] = CACHE_BREAKER
 
         # Hash the function source, serializer type, and the argument dictionary
         return hash_it(inspect.getsource(fn), type(serializer).__name__, arg_dict)
@@ -160,7 +165,13 @@ def reset_global_semaphore():
     )
 
 
+def reset_cache_breaker():
+    global CACHE_BREAKER
+    CACHE_BREAKER = os.getenv("CACHE_BREAKER", "")
+
+
 reset_global_semaphore()
+reset_cache_breaker()
 
 
 # HACK. I have no idea why this works but just manually adding 'self' to
@@ -191,115 +202,9 @@ class LLM_Simulator(LLM_Simulator_Faker):
         return t(prob=random.random())
 
 
-# async def parallelized_call(
-#     func: Coroutine,
-#     data: list[str],
-#     max_concurrent_queries: int = 100,
-# ) -> list[any]:
-#     """
-#     Run async func in parallel on the given data.
-#     func will usually be a partial which uses query_api or whatever in some way.
-
-#     Example usage:
-#         partial_eval_method = functools.partial(eval_method, model=model, **kwargs)
-#         results = await parallelized_call(partial_eval_method, [format_post(d) for d in data])
-#     """
-
-#     if os.getenv("SINGLE_THREAD"):
-#         LOGGER.info(f"Running {func} on {len(data)} datapoints sequentially")
-#         return [await func(d) for d in data]
-
-#     max_concurrent_queries = min(
-#         max_concurrent_queries,
-#         int(os.getenv("MAX_CONCURRENT_QUERIES", max_concurrent_queries)),
-#     )
-
-#     LOGGER.info(
-#         f"Running {func} on {len(data)} datapoints with {max_concurrent_queries} concurrent queries"
-#     )
-
-#     # Create a local semaphore
-#     local_semaphore = asyncio.Semaphore(max_concurrent_queries)
-
-#     async def call_func(sem, func, datapoint):
-#         async with sem:
-#             return await func(datapoint)
-
-#     LOGGER.info("Calling call_func")
-#     tasks = [call_func(local_semaphore, func, d) for d in data]
-#     return await asyncio.gather(*tasks)
-
-
-# async def parallelized_call(
-#     func: Coroutine,
-#     data: list[str],
-#     max_concurrent_queries: int = 100,
-#     max_tokens_per_minute: int = 30000,  # Max tokens per minute
-#     token_usage_per_call: int = 2000,  # Estimate token usage per call
-# ) -> list[any]:
-#     """
-#     Run async func in parallel on the given data.
-#     func will usually be a partial which uses query_api or whatever in some way.
-
-#     Example usage:
-#         partial_eval_method = functools.partial(eval_method, model=model, **kwargs)
-#         results = await parallelized_call(partial_eval_method, [format_post(d) for d in data])
-#     """
-
-#     total_tokens_used = 0
-#     token_lock = asyncio.Lock()  # Lock for managing token usage safely
-
-#     if os.getenv("SINGLE_THREAD"):
-#         LOGGER.info(f"Running {func} on {len(data)} datapoints sequentially")
-#         return [await func(d) for d in data]
-
-#     max_concurrent_queries = min(
-#         max_concurrent_queries,
-#         int(os.getenv("MAX_CONCURRENT_QUERIES", max_concurrent_queries)),
-#     )
-
-#     LOGGER.info(
-#         f"Running {func} on {len(data)} datapoints with {max_concurrent_queries} concurrent queries"
-#     )
-
-#     # Create a local semaphore
-#     local_semaphore = asyncio.Semaphore(max_concurrent_queries)
-
-#     async def call_func(sem, func, datapoint):
-#         nonlocal total_tokens_used
-#         async with sem:
-#             # Estimate the tokens for this call and update usage
-#             async with token_lock:
-#                 if total_tokens_used + token_usage_per_call > max_tokens_per_minute:
-#                     # If token limit is about to exceed, wait
-#                     await asyncio.sleep(60)  # Wait 60 seconds (1 minute)
-#                     total_tokens_used = 0  # Reset token count after waiting
-
-#                 total_tokens_used += token_usage_per_call
-
-#             return await func(datapoint)
-
-#     LOGGER.info("Calling call_func")
-
-#     # Create tasks for all data points
-#     tasks = [call_func(local_semaphore, func, d) for d in data]
-
-#     # Run tasks with or without tqdm progress bar based on the use_tqdm flag
-#     if use_tqdm:
-#         results = []
-#         # Wrapping the gather call with tqdm for progress tracking
-#         async for result in tqdm(asyncio.as_completed(tasks), total=len(tasks)):
-#             results.append(await result)
-#     else:
-#         # Without tqdm, just await all tasks as usual
-#         results = await asyncio.gather(*tasks)
-
-#     return results
-
-
 async def parallelized_call(
     func: Coroutine,
-    data: list[str],
+    data: list[any],
     max_concurrent_queries: int = 100,
 ) -> list[any]:
     """
@@ -946,6 +851,91 @@ def get_llm(model: str, use_async=False, hf_quantization_config=True):
         }
 
 
+class RateLimiter:
+    def __init__(
+        self, requests_per_minute: int, tokens_per_minute: Optional[int] = None
+    ):
+        self.requests_per_minute = requests_per_minute
+        self.tokens_per_minute = tokens_per_minute
+        self.request_timestamps = []
+        self.token_usage = []
+        self.lock = threading.Lock()
+
+    def wait_if_needed(self, input_tokens: int = 4096):
+        LOGGER.info(f"Current request count: {len(self.request_timestamps)}")
+
+        current_time = datetime.now()
+        minute_ago = current_time - timedelta(minutes=1)
+
+        estimated_tokens = input_tokens + 2048
+
+        with self.lock:
+            # Clean up old timestamps
+            self.request_timestamps = [
+                ts for ts in self.request_timestamps if ts > minute_ago
+            ]
+            self.token_usage = [
+                (ts, tokens) for ts, tokens in self.token_usage if ts > minute_ago
+            ]
+
+            # Check request rate limit
+            while len(self.request_timestamps) >= self.requests_per_minute:
+                sleep_time = (self.request_timestamps[0] - minute_ago).total_seconds()
+                LOGGER.info(f"Sleeping for {sleep_time} seconds")
+                time.sleep(max(0, sleep_time))
+                minute_ago = datetime.now() - timedelta(minutes=1)
+                self.request_timestamps = [
+                    ts for ts in self.request_timestamps if ts > minute_ago
+                ]
+
+            # Check token rate limit if applicable
+            if self.tokens_per_minute and estimated_tokens:
+                total_tokens = sum(tokens for _, tokens in self.token_usage)
+                LOGGER.info(f"Current token usage: {total_tokens}")
+                while total_tokens + estimated_tokens > self.tokens_per_minute:
+                    sleep_time = (self.token_usage[0][0] - minute_ago).total_seconds()
+                    LOGGER.info(f"Sleeping for {sleep_time} seconds")
+                    time.sleep(max(0, sleep_time))
+                    minute_ago = datetime.now() - timedelta(minutes=1)
+                    self.token_usage = [
+                        (ts, tokens)
+                        for ts, tokens in self.token_usage
+                        if ts > minute_ago
+                    ]
+                    total_tokens = sum(tokens for _, tokens in self.token_usage)
+
+            # Record this request
+            self.request_timestamps.append(current_time)
+            if estimated_tokens:
+                self.token_usage.append((current_time, estimated_tokens))
+
+    @classmethod
+    def get_rate_limiter(cls, model: str):
+        matching_keys = [key for key in RATE_LIMITERS if model.startswith(key)]
+        if not matching_keys:
+            LOGGER.warning(
+                f"No rate limiter found for model {model}, assuming __DEFAULT__"
+            )
+            k = "__DEFAULT__"
+        else:
+            k = max(matching_keys, key=len)
+        return RATE_LIMITERS[k]
+
+
+RATE_LIMITERS: dict[str, RateLimiter] = {
+    "gpt-3.5-turbo": RateLimiter(requests_per_minute=3500, tokens_per_minute=200000),
+    "gpt-4": RateLimiter(requests_per_minute=500, tokens_per_minute=10000),
+    "gpt-4-turbo": RateLimiter(requests_per_minute=500, tokens_per_minute=30000),
+    "gpt-4o": RateLimiter(requests_per_minute=500, tokens_per_minute=30000),
+    "gpt-4o-mini": RateLimiter(requests_per_minute=500, tokens_per_minute=200000),
+    "claude-3-opus": RateLimiter(requests_per_minute=500, tokens_per_minute=15000),
+    "claude-3-sonnet": RateLimiter(requests_per_minute=500, tokens_per_minute=15000),
+    "mistral-medium": RateLimiter(requests_per_minute=500, tokens_per_minute=15000),
+    "mistral-small": RateLimiter(requests_per_minute=500, tokens_per_minute=15000),
+    "__DEFAULT__": RateLimiter(requests_per_minute=500, tokens_per_minute=15000),
+}
+
+
 class LLM_Agent:
     def __init__(
         self,
@@ -987,21 +977,31 @@ class LLM_Agent:
         simulate: bool = SIMULATE,
         **kwargs,
     ):
-        return self.ai["generate"](
-            model=self.model,
-            tools=self.tools,
-            response_model=response_model,
-            prompt=prompt,
-            messages=messages,
-            input_string=input_string,
-            system_message=system_message,
-            words_in_mouth=words_in_mouth,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            cost_log=cost_log,
-            simulate=simulate,
-            **kwargs,
-        )
+        # Get rate limiter for this model if it exists
+        rate_limiter = RateLimiter.get_rate_limiter(self.model)
+        rate_limiter.wait_if_needed()
+
+        for i in range(5):
+            try:
+                return self.ai["generate"](
+                    model=self.model,
+                    tools=self.tools,
+                    response_model=response_model,
+                    prompt=prompt,
+                    messages=messages,
+                    input_string=input_string,
+                    system_message=system_message,
+                    words_in_mouth=words_in_mouth,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    cost_log=cost_log,
+                    simulate=simulate,
+                    **kwargs,
+                )
+            except Exception as e:
+                LOGGER.warning(f"Error on attempt {i}: {e}")
+                time.sleep(60)
+        raise Exception("Failed to get response")
 
     @method_cache(ignore=["cost_log"])
     async def get_response_async(
@@ -1018,22 +1018,32 @@ class LLM_Agent:
         simulate: bool = SIMULATE,
         **kwargs,
     ):
-        async with GLOBAL_LLM_SEMAPHORE:
-            return await self.ai_async["generate_async"](
-                model=self.model,
-                tools=self.tools,
-                response_model=response_model,
-                prompt=prompt,
-                messages=messages,
-                input_string=input_string,
-                system_message=system_message,
-                words_in_mouth=words_in_mouth,
-                max_tokens=max_tokens,
-                temperature=temperature,
-                cost_log=cost_log,
-                simulate=simulate,
-                **kwargs,
-            )
+        # Get rate limiter for this model if it exists
+        rate_limiter = RateLimiter.get_rate_limiter(self.model)
+        rate_limiter.wait_if_needed()
+
+        for i in range(5):
+            try:
+                async with GLOBAL_LLM_SEMAPHORE:
+                    return await self.ai_async["generate_async"](
+                        model=self.model,
+                        tools=self.tools,
+                        response_model=response_model,
+                        prompt=prompt,
+                        messages=messages,
+                        input_string=input_string,
+                        system_message=system_message,
+                        words_in_mouth=words_in_mouth,
+                        max_tokens=max_tokens,
+                        temperature=temperature,
+                        cost_log=cost_log,
+                        simulate=simulate,
+                        **kwargs,
+                    )
+            except Exception as e:
+                LOGGER.warning(f"Error on attempt {i}: {e}")
+                time.sleep(60)
+        raise Exception("Failed to get response")
 
     async def get_response(self, *args, **kwargs):
         if self.supports_async:
@@ -1060,21 +1070,30 @@ class LLM_Agent:
         simulate: bool = SIMULATE,
         **kwargs,
     ):
-        return self.ai["return_probs"](
-            model=self.model,
-            tools=self.tools,
-            return_probs_for=return_probs_for,
-            prompt=prompt,
-            messages=messages,
-            input_string=input_string,
-            system_message=system_message,
-            words_in_mouth=words_in_mouth,
-            top_logprobs=top_logprobs,
-            temperature=temperature,
-            cost_log=cost_log,
-            simulate=simulate,
-            **kwargs,
-        )
+        # Get rate limiter for this model if it exists
+        rate_limiter = RateLimiter.get_rate_limiter(self.model)
+        rate_limiter.wait_if_needed()
+
+        for i in range(5):
+            try:
+                return self.ai["return_probs"](
+                    model=self.model,
+                    tools=self.tools,
+                    return_probs_for=return_probs_for,
+                    prompt=prompt,
+                    messages=messages,
+                    input_string=input_string,
+                    system_message=system_message,
+                    words_in_mouth=words_in_mouth,
+                    top_logprobs=top_logprobs,
+                    temperature=temperature,
+                    cost_log=cost_log,
+                    simulate=simulate,
+                    **kwargs,
+                )
+            except Exception as e:
+                LOGGER.warning(f"Error on attempt {i}: {e}")
+        raise Exception("Failed to get response")
 
     @method_cache(ignore=["cost_log"])
     async def get_probs_async(
@@ -1091,22 +1110,32 @@ class LLM_Agent:
         simulate: bool = SIMULATE,
         **kwargs,
     ):
-        async with GLOBAL_LLM_SEMAPHORE:
-            return await self.ai_async["return_probs_async"](
-                model=self.model,
-                tools=self.tools,
-                return_probs_for=return_probs_for,
-                prompt=prompt,
-                messages=messages,
-                input_string=input_string,
-                system_message=system_message,
-                words_in_mouth=words_in_mouth,
-                top_logprobs=top_logprobs,
-                temperature=temperature,
-                cost_log=cost_log,
-                simulate=simulate,
-                **kwargs,
-            )
+        # Get rate limiter for this model if it exists
+        rate_limiter = RateLimiter.get_rate_limiter(self.model)
+        rate_limiter.wait_if_needed()
+
+        for i in range(5):
+            try:
+                async with GLOBAL_LLM_SEMAPHORE:
+                    return await self.ai_async["return_probs_async"](
+                        model=self.model,
+                        tools=self.tools,
+                        return_probs_for=return_probs_for,
+                        prompt=prompt,
+                        messages=messages,
+                        input_string=input_string,
+                        system_message=system_message,
+                        words_in_mouth=words_in_mouth,
+                        top_logprobs=top_logprobs,
+                        temperature=temperature,
+                        cost_log=cost_log,
+                        simulate=simulate,
+                        **kwargs,
+                    )
+            except Exception as e:
+                LOGGER.warning(f"Error on attempt {i}: {e}")
+                time.sleep(60)
+        raise Exception("Failed to get response")
 
 
 @cache(ignore="cost_log")
@@ -1129,25 +1158,34 @@ def get_llm_response(
     """NOTE: you should generally use the LLM_Agent class instead of this function.
     This is deprecated, or maybe we can just use it for one-time calls etc.
     """
+    # Get rate limiter for this model if it exists
+    rate_limiter = RateLimiter.get_rate_limiter(model)
+    rate_limiter.wait_if_needed()
     model = model or "gpt-4o-mini"
     ai = get_llm(
         model=model, use_async=False, hf_quantization_config=hf_quantization_config
     )
-    return ai["generate"](
-        model=model,
-        prompt=prompt,
-        messages=messages,
-        input_string=input_string,
-        system_message=system_message,
-        words_in_mouth=words_in_mouth,
-        max_tokens=max_tokens,
-        response_model=response_model,
-        tools=tools,
-        temperature=temperature,
-        cost_log=cost_log,
-        simulate=simulate,
-        **kwargs,
-    )
+    for i in range(5):
+        try:
+            return ai["generate"](
+                model=model,
+                prompt=prompt,
+                messages=messages,
+                input_string=input_string,
+                system_message=system_message,
+                words_in_mouth=words_in_mouth,
+                max_tokens=max_tokens,
+                response_model=response_model,
+                tools=tools,
+                temperature=temperature,
+                cost_log=cost_log,
+                simulate=simulate,
+                **kwargs,
+            )
+        except Exception as e:
+            LOGGER.warning(f"Error on attempt {i}: {e}")
+            time.sleep(60)
+    raise Exception("Failed to get response")
 
 
 @cache(ignore="cost_log")
@@ -1170,26 +1208,35 @@ async def get_llm_response_async(
     """NOTE: you should generally use the LLM_Agent class instead of this function.
     This is deprecated, or maybe we can just use it for one-time calls etc.
     """
+    # Get rate limiter for this model if it exists
+    rate_limiter = RateLimiter.get_rate_limiter(model)
+    rate_limiter.wait_if_needed()
     model = model or "gpt-4o-mini"
     ai = get_llm(
         model=model, use_async=True, hf_quantization_config=hf_quantization_config
     )
-    async with GLOBAL_LLM_SEMAPHORE:
-        return await ai["generate_async"](
-            model=model,
-            prompt=prompt,
-            messages=messages,
-            input_string=input_string,
-            system_message=system_message,
-            words_in_mouth=words_in_mouth,
-            max_tokens=max_tokens,
-            response_model=response_model,
-            tools=tools,
-            temperature=temperature,
-            cost_log=cost_log,
-            simulate=simulate,
-            **kwargs,
-        )
+    for i in range(5):
+        try:
+            async with GLOBAL_LLM_SEMAPHORE:
+                return await ai["generate_async"](
+                    model=model,
+                    prompt=prompt,
+                    messages=messages,
+                    input_string=input_string,
+                    system_message=system_message,
+                    words_in_mouth=words_in_mouth,
+                    max_tokens=max_tokens,
+                    response_model=response_model,
+                    tools=tools,
+                    temperature=temperature,
+                    cost_log=cost_log,
+                    simulate=simulate,
+                    **kwargs,
+                )
+        except Exception as e:
+            LOGGER.warning(f"Error on attempt {i}: {e}")
+            time.sleep(60)
+    raise Exception("Failed to get response")
 
 
 @cache(ignore="cost_log")
@@ -1211,24 +1258,33 @@ def get_llm_probs(
     """NOTE: you should generally use the LLM_Agent class instead of this function.
     This is deprecated, or maybe we can just use it for one-time calls etc.
     """
+    # Get rate limiter for this model if it exists
+    rate_limiter = RateLimiter.get_rate_limiter(model)
+    rate_limiter.wait_if_needed()
     model = model or "gpt-4o-mini"
     ai = get_llm(
         model=model, use_async=False, hf_quantization_config=hf_quantization_config
     )
-    return ai["return_probs"](
-        model=model,
-        return_probs_for=return_probs_for,
-        prompt=prompt,
-        messages=messages,
-        input_string=input_string,
-        system_message=system_message,
-        words_in_mouth=words_in_mouth,
-        top_logprobs=top_logprobs,
-        temperature=temperature,
-        cost_log=cost_log,
-        simulate=simulate,
-        **kwargs,
-    )
+    for i in range(5):
+        try:
+            return ai["return_probs"](
+                model=model,
+                return_probs_for=return_probs_for,
+                prompt=prompt,
+                messages=messages,
+                input_string=input_string,
+                system_message=system_message,
+                words_in_mouth=words_in_mouth,
+                top_logprobs=top_logprobs,
+                temperature=temperature,
+                cost_log=cost_log,
+                simulate=simulate,
+                **kwargs,
+            )
+        except Exception as e:
+            LOGGER.warning(f"Error on attempt {i}: {e}")
+            time.sleep(60)
+    raise Exception("Failed to get response")
 
 
 @cache(ignore="cost_log")
@@ -1250,22 +1306,31 @@ async def get_llm_probs_async(
     """NOTE: you should generally use the LLM_Agent class instead of this function.
     This is deprecated, or maybe we can just use it for one-time calls etc.
     """
+    # Get rate limiter for this model if it exists
+    rate_limiter = RateLimiter.get_rate_limiter(model)
+    rate_limiter.wait_if_needed()
     model = model or "gpt-4o-mini"
     ai = get_llm(
         model=model, use_async=True, hf_quantization_config=hf_quantization_config
     )
-    async with GLOBAL_LLM_SEMAPHORE:
-        return await ai["return_probs_async"](
-            model=model,
-            return_probs_for=return_probs_for,
-            prompt=prompt,
-            messages=messages,
-            input_string=input_string,
-            system_message=system_message,
-            words_in_mouth=words_in_mouth,
-            top_logprobs=top_logprobs,
-            temperature=temperature,
-            cost_log=cost_log,
-            simulate=simulate,
-            **kwargs,
-        )
+    for i in range(5):
+        try:
+            async with GLOBAL_LLM_SEMAPHORE:
+                return await ai["return_probs_async"](
+                    model=model,
+                    return_probs_for=return_probs_for,
+                    prompt=prompt,
+                    messages=messages,
+                    input_string=input_string,
+                    system_message=system_message,
+                    words_in_mouth=words_in_mouth,
+                    top_logprobs=top_logprobs,
+                    temperature=temperature,
+                    cost_log=cost_log,
+                    simulate=simulate,
+                    **kwargs,
+                )
+        except Exception as e:
+            LOGGER.warning(f"Error on attempt {i}: {e}")
+            time.sleep(60)
+    raise Exception("Failed to get response")
