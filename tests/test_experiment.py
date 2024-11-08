@@ -2,9 +2,9 @@ import asyncio  # noqa
 import pytest  # noqa
 from pathlib import Path
 from datetime import datetime
-from solib.protocols.protocols import *  # noqa
+from solib.protocols.protocols import Debate, Blind, Propaganda, Consultancy  # noqa
 from solib.Experiment import Experiment
-from solib.data.math import train_data
+from solib.data.loading import GSM8K
 from solib.tool_use.default_tools import math_eval
 from solib.protocols.abstract import QA_Agent, Judge
 
@@ -36,7 +36,7 @@ def test_get_path():
     assert path.endswith("/Debate_t1_n4/_Jgpt-4o-mini_Agpt-4o-mini_Agpt-4o-mini")
 
 
-questions = train_data()[:3]
+questions = GSM8K.data(limit=3)
 
 test_experiment = Experiment(
     questions=questions,
