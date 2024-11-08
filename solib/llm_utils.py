@@ -202,112 +202,6 @@ class LLM_Simulator(LLM_Simulator_Faker):
         return t(prob=random.random())
 
 
-# async def parallelized_call(
-#     func: Coroutine,
-#     data: list[str],
-#     max_concurrent_queries: int = 100,
-# ) -> list[any]:
-#     """
-#     Run async func in parallel on the given data.
-#     func will usually be a partial which uses query_api or whatever in some way.
-
-#     Example usage:
-#         partial_eval_method = functools.partial(eval_method, model=model, **kwargs)
-#         results = await parallelized_call(partial_eval_method, [format_post(d) for d in data])
-#     """
-
-#     if os.getenv("SINGLE_THREAD"):
-#         LOGGER.info(f"Running {func} on {len(data)} datapoints sequentially")
-#         return [await func(d) for d in data]
-
-#     max_concurrent_queries = min(
-#         max_concurrent_queries,
-#         int(os.getenv("MAX_CONCURRENT_QUERIES", max_concurrent_queries)),
-#     )
-
-#     LOGGER.info(
-#         f"Running {func} on {len(data)} datapoints with {max_concurrent_queries} concurrent queries"
-#     )
-
-#     # Create a local semaphore
-#     local_semaphore = asyncio.Semaphore(max_concurrent_queries)
-
-#     async def call_func(sem, func, datapoint):
-#         async with sem:
-#             return await func(datapoint)
-
-#     LOGGER.info("Calling call_func")
-#     tasks = [call_func(local_semaphore, func, d) for d in data]
-#     return await asyncio.gather(*tasks)
-
-
-# async def parallelized_call(
-#     func: Coroutine,
-#     data: list[str],
-#     max_concurrent_queries: int = 100,
-#     max_tokens_per_minute: int = 30000,  # Max tokens per minute
-#     token_usage_per_call: int = 2000,  # Estimate token usage per call
-# ) -> list[any]:
-#     """
-#     Run async func in parallel on the given data.
-#     func will usually be a partial which uses query_api or whatever in some way.
-
-#     Example usage:
-#         partial_eval_method = functools.partial(eval_method, model=model, **kwargs)
-#         results = await parallelized_call(partial_eval_method, [format_post(d) for d in data])
-#     """
-
-#     total_tokens_used = 0
-#     token_lock = asyncio.Lock()  # Lock for managing token usage safely
-
-#     if os.getenv("SINGLE_THREAD"):
-#         LOGGER.info(f"Running {func} on {len(data)} datapoints sequentially")
-#         return [await func(d) for d in data]
-
-#     max_concurrent_queries = min(
-#         max_concurrent_queries,
-#         int(os.getenv("MAX_CONCURRENT_QUERIES", max_concurrent_queries)),
-#     )
-
-#     LOGGER.info(
-#         f"Running {func} on {len(data)} datapoints with {max_concurrent_queries} concurrent queries"
-#     )
-
-#     # Create a local semaphore
-#     local_semaphore = asyncio.Semaphore(max_concurrent_queries)
-
-#     async def call_func(sem, func, datapoint):
-#         nonlocal total_tokens_used
-#         async with sem:
-#             # Estimate the tokens for this call and update usage
-#             async with token_lock:
-#                 if total_tokens_used + token_usage_per_call > max_tokens_per_minute:
-#                     # If token limit is about to exceed, wait
-#                     await asyncio.sleep(60)  # Wait 60 seconds (1 minute)
-#                     total_tokens_used = 0  # Reset token count after waiting
-
-#                 total_tokens_used += token_usage_per_call
-
-#             return await func(datapoint)
-
-#     LOGGER.info("Calling call_func")
-
-#     # Create tasks for all data points
-#     tasks = [call_func(local_semaphore, func, d) for d in data]
-
-#     # Run tasks with or without tqdm progress bar based on the use_tqdm flag
-#     if use_tqdm:
-#         results = []
-#         # Wrapping the gather call with tqdm for progress tracking
-#         async for result in tqdm(asyncio.as_completed(tasks), total=len(tasks)):
-#             results.append(await result)
-#     else:
-#         # Without tqdm, just await all tasks as usual
-#         results = await asyncio.gather(*tasks)
-
-#     return results
-
-
 async def parallelized_call(
     func: Coroutine,
     data: list[any],
@@ -967,7 +861,7 @@ class RateLimiter:
         self.token_usage = []
         self.lock = threading.Lock()
 
-    def wait_if_needed(self, input_tokens: int = 2048):
+    def wait_if_needed(self, input_tokens: int = 4096):
         LOGGER.info(f"Current request count: {len(self.request_timestamps)}")
 
         current_time = datetime.now()
@@ -1087,21 +981,26 @@ class LLM_Agent:
         rate_limiter = RateLimiter.get_rate_limiter(self.model)
         rate_limiter.wait_if_needed()
 
-        return self.ai["generate"](
-            model=self.model,
-            tools=self.tools,
-            response_model=response_model,
-            prompt=prompt,
-            messages=messages,
-            input_string=input_string,
-            system_message=system_message,
-            words_in_mouth=words_in_mouth,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            cost_log=cost_log,
-            simulate=simulate,
-            **kwargs,
-        )
+        for i in range(5):
+            try:
+                return self.ai["generate"](
+                    model=self.model,
+                    tools=self.tools,
+                    response_model=response_model,
+                    prompt=prompt,
+                    messages=messages,
+                    input_string=input_string,
+                    system_message=system_message,
+                    words_in_mouth=words_in_mouth,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    cost_log=cost_log,
+                    simulate=simulate,
+                    **kwargs,
+                )
+            except Exception as e:
+                LOGGER.warning(f"Error on attempt {i}: {e}")
+        raise Exception("Failed to get response")
 
     @method_cache(ignore=["cost_log"])
     async def get_response_async(
@@ -1122,22 +1021,27 @@ class LLM_Agent:
         rate_limiter = RateLimiter.get_rate_limiter(self.model)
         rate_limiter.wait_if_needed()
 
-        async with GLOBAL_LLM_SEMAPHORE:
-            return await self.ai_async["generate_async"](
-                model=self.model,
-                tools=self.tools,
-                response_model=response_model,
-                prompt=prompt,
-                messages=messages,
-                input_string=input_string,
-                system_message=system_message,
-                words_in_mouth=words_in_mouth,
-                max_tokens=max_tokens,
-                temperature=temperature,
-                cost_log=cost_log,
-                simulate=simulate,
-                **kwargs,
-            )
+        for i in range(5):
+            try:
+                async with GLOBAL_LLM_SEMAPHORE:
+                    return await self.ai_async["generate_async"](
+                        model=self.model,
+                        tools=self.tools,
+                        response_model=response_model,
+                        prompt=prompt,
+                        messages=messages,
+                        input_string=input_string,
+                        system_message=system_message,
+                        words_in_mouth=words_in_mouth,
+                        max_tokens=max_tokens,
+                        temperature=temperature,
+                        cost_log=cost_log,
+                        simulate=simulate,
+                        **kwargs,
+                    )
+            except Exception as e:
+                LOGGER.warning(f"Error on attempt {i}: {e}")
+        raise Exception("Failed to get response")
 
     async def get_response(self, *args, **kwargs):
         if self.supports_async:
@@ -1168,21 +1072,26 @@ class LLM_Agent:
         rate_limiter = RateLimiter.get_rate_limiter(self.model)
         rate_limiter.wait_if_needed()
 
-        return self.ai["return_probs"](
-            model=self.model,
-            tools=self.tools,
-            return_probs_for=return_probs_for,
-            prompt=prompt,
-            messages=messages,
-            input_string=input_string,
-            system_message=system_message,
-            words_in_mouth=words_in_mouth,
-            top_logprobs=top_logprobs,
-            temperature=temperature,
-            cost_log=cost_log,
-            simulate=simulate,
-            **kwargs,
-        )
+        for i in range(5):
+            try:
+                return self.ai["return_probs"](
+                    model=self.model,
+                    tools=self.tools,
+                    return_probs_for=return_probs_for,
+                    prompt=prompt,
+                    messages=messages,
+                    input_string=input_string,
+                    system_message=system_message,
+                    words_in_mouth=words_in_mouth,
+                    top_logprobs=top_logprobs,
+                    temperature=temperature,
+                    cost_log=cost_log,
+                    simulate=simulate,
+                    **kwargs,
+                )
+            except Exception as e:
+                LOGGER.warning(f"Error on attempt {i}: {e}")
+        raise Exception("Failed to get response")
 
     @method_cache(ignore=["cost_log"])
     async def get_probs_async(
@@ -1203,22 +1112,27 @@ class LLM_Agent:
         rate_limiter = RateLimiter.get_rate_limiter(self.model)
         rate_limiter.wait_if_needed()
 
-        async with GLOBAL_LLM_SEMAPHORE:
-            return await self.ai_async["return_probs_async"](
-                model=self.model,
-                tools=self.tools,
-                return_probs_for=return_probs_for,
-                prompt=prompt,
-                messages=messages,
-                input_string=input_string,
-                system_message=system_message,
-                words_in_mouth=words_in_mouth,
-                top_logprobs=top_logprobs,
-                temperature=temperature,
-                cost_log=cost_log,
-                simulate=simulate,
-                **kwargs,
-            )
+        for i in range(5):
+            try:
+                async with GLOBAL_LLM_SEMAPHORE:
+                    return await self.ai_async["return_probs_async"](
+                        model=self.model,
+                        tools=self.tools,
+                        return_probs_for=return_probs_for,
+                        prompt=prompt,
+                        messages=messages,
+                        input_string=input_string,
+                        system_message=system_message,
+                        words_in_mouth=words_in_mouth,
+                        top_logprobs=top_logprobs,
+                        temperature=temperature,
+                        cost_log=cost_log,
+                        simulate=simulate,
+                        **kwargs,
+                    )
+            except Exception as e:
+                LOGGER.warning(f"Error on attempt {i}: {e}")
+        raise Exception("Failed to get response")
 
 
 @cache(ignore="cost_log")
@@ -1248,21 +1162,26 @@ def get_llm_response(
     ai = get_llm(
         model=model, use_async=False, hf_quantization_config=hf_quantization_config
     )
-    return ai["generate"](
-        model=model,
-        prompt=prompt,
-        messages=messages,
-        input_string=input_string,
-        system_message=system_message,
-        words_in_mouth=words_in_mouth,
-        max_tokens=max_tokens,
-        response_model=response_model,
-        tools=tools,
-        temperature=temperature,
-        cost_log=cost_log,
-        simulate=simulate,
-        **kwargs,
-    )
+    for i in range(5):
+        try:
+            return ai["generate"](
+                model=model,
+                prompt=prompt,
+                messages=messages,
+                input_string=input_string,
+                system_message=system_message,
+                words_in_mouth=words_in_mouth,
+                max_tokens=max_tokens,
+                response_model=response_model,
+                tools=tools,
+                temperature=temperature,
+                cost_log=cost_log,
+                simulate=simulate,
+                **kwargs,
+            )
+        except Exception as e:
+            LOGGER.warning(f"Error on attempt {i}: {e}")
+    raise Exception("Failed to get response")
 
 
 @cache(ignore="cost_log")
@@ -1292,22 +1211,27 @@ async def get_llm_response_async(
     ai = get_llm(
         model=model, use_async=True, hf_quantization_config=hf_quantization_config
     )
-    async with GLOBAL_LLM_SEMAPHORE:
-        return await ai["generate_async"](
-            model=model,
-            prompt=prompt,
-            messages=messages,
-            input_string=input_string,
-            system_message=system_message,
-            words_in_mouth=words_in_mouth,
-            max_tokens=max_tokens,
-            response_model=response_model,
-            tools=tools,
-            temperature=temperature,
-            cost_log=cost_log,
-            simulate=simulate,
-            **kwargs,
-        )
+    for i in range(5):
+        try:
+            async with GLOBAL_LLM_SEMAPHORE:
+                return await ai["generate_async"](
+                    model=model,
+                    prompt=prompt,
+                    messages=messages,
+                    input_string=input_string,
+                    system_message=system_message,
+                    words_in_mouth=words_in_mouth,
+                    max_tokens=max_tokens,
+                    response_model=response_model,
+                    tools=tools,
+                    temperature=temperature,
+                    cost_log=cost_log,
+                    simulate=simulate,
+                    **kwargs,
+                )
+        except Exception as e:
+            LOGGER.warning(f"Error on attempt {i}: {e}")
+    raise Exception("Failed to get response")
 
 
 @cache(ignore="cost_log")
@@ -1336,20 +1260,25 @@ def get_llm_probs(
     ai = get_llm(
         model=model, use_async=False, hf_quantization_config=hf_quantization_config
     )
-    return ai["return_probs"](
-        model=model,
-        return_probs_for=return_probs_for,
-        prompt=prompt,
-        messages=messages,
-        input_string=input_string,
-        system_message=system_message,
-        words_in_mouth=words_in_mouth,
-        top_logprobs=top_logprobs,
-        temperature=temperature,
-        cost_log=cost_log,
-        simulate=simulate,
-        **kwargs,
-    )
+    for i in range(5):
+        try:
+            return ai["return_probs"](
+                model=model,
+                return_probs_for=return_probs_for,
+                prompt=prompt,
+                messages=messages,
+                input_string=input_string,
+                system_message=system_message,
+                words_in_mouth=words_in_mouth,
+                top_logprobs=top_logprobs,
+                temperature=temperature,
+                cost_log=cost_log,
+                simulate=simulate,
+                **kwargs,
+            )
+        except Exception as e:
+            LOGGER.warning(f"Error on attempt {i}: {e}")
+    raise Exception("Failed to get response")
 
 
 @cache(ignore="cost_log")
@@ -1378,18 +1307,23 @@ async def get_llm_probs_async(
     ai = get_llm(
         model=model, use_async=True, hf_quantization_config=hf_quantization_config
     )
-    async with GLOBAL_LLM_SEMAPHORE:
-        return await ai["return_probs_async"](
-            model=model,
-            return_probs_for=return_probs_for,
-            prompt=prompt,
-            messages=messages,
-            input_string=input_string,
-            system_message=system_message,
-            words_in_mouth=words_in_mouth,
-            top_logprobs=top_logprobs,
-            temperature=temperature,
-            cost_log=cost_log,
-            simulate=simulate,
-            **kwargs,
-        )
+    for i in range(5):
+        try:
+            async with GLOBAL_LLM_SEMAPHORE:
+                return await ai["return_probs_async"](
+                    model=model,
+                    return_probs_for=return_probs_for,
+                    prompt=prompt,
+                    messages=messages,
+                    input_string=input_string,
+                    system_message=system_message,
+                    words_in_mouth=words_in_mouth,
+                    top_logprobs=top_logprobs,
+                    temperature=temperature,
+                    cost_log=cost_log,
+                    simulate=simulate,
+                    **kwargs,
+                )
+        except Exception as e:
+            LOGGER.warning(f"Error on attempt {i}: {e}")
+    raise Exception("Failed to get response")
