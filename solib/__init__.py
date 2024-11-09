@@ -2,6 +2,7 @@ import os
 from datetime import datetime
 from dotenv import load_dotenv
 import logging
+from logging.handlers import RotatingFileHandler
 
 load_dotenv()
 
@@ -32,8 +33,10 @@ CONSOLE_HANDLER.setLevel(LOG_LEVEL_CONSOLE)
 CONSOLE_HANDLER.setFormatter(FORMATTER)
 LOGGER.addHandler(CONSOLE_HANDLER)
 
-FILE_HANDLER = logging.FileHandler(
-    f".logs/{datetime.now().strftime('%Y-%m-%d_%H:%M:%S')}.log"
+FILE_HANDLER = RotatingFileHandler(
+    f".logs/{datetime.now().strftime('%Y-%m-%d_%H:%M:%S')}.log",
+    maxBytes=1024 * 1024,
+    backupCount=3,
 )
 FILE_HANDLER.setLevel(LOG_LEVEL_FILE)
 FILE_HANDLER.setFormatter(FORMATTER)

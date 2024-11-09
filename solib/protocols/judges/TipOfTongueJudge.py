@@ -15,6 +15,7 @@ class TipOfTongueJudge(Judge):
         self,
         question: Question,
         context: str,
+        cache_breaker: int = 0,
     ) -> Question:
         prompt = self.prompt.format(
             question=question.to_prompt(),
@@ -26,6 +27,7 @@ class TipOfTongueJudge(Judge):
             prompt=prompt,
             return_probs_for=question.answer_cases_short,
             words_in_mouth=self.words_in_mouth,
+            cache_breaker=cache_breaker,
         )
 
         result = Question(

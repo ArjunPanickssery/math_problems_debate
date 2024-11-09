@@ -45,12 +45,14 @@ class Consultancy(Protocol):
         question: Question,
         answer_case: Answer,
         judge: Judge,
+        cache_breaker: int = 0,
     ) -> Question:
         consultant = functools.partial(
             agent,
             prompt=self.consultant_prompt,
             question=question,
             answer_case=answer_case,
+            cache_breaker=cache_breaker,
         )
         client_agent = QA_Agent(
             model=judge.model,
@@ -61,6 +63,7 @@ class Consultancy(Protocol):
             client_agent,
             prompt=self.client_prompt,
             question=question,
+            cache_breaker=cache_breaker,
         )
         if (question.transcript in [None, []] and self.consultant_goes_first) or (
             question.transcript and question.transcript[-1].role == "client"

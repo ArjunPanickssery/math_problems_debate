@@ -10,7 +10,7 @@ LOGGER = logging.getLogger(__name__)
 
 class Judge(LLM_Agent):
     async def __call__(
-        self, question: Question, context: str | None = None
+        self, question: Question, context: str | None = None, cache_breaker: int = 0
     ) -> Question:
         """Add probabilities to each answer_case."""
         raise AbstractionError
@@ -31,6 +31,7 @@ class QA_Agent(LLM_Agent):
         context: str | None = None,
         words_in_mouth: str | None = None,
         max_tokens: int = 2048,
+        cache_breaker: int = 0,
     ) -> str:
         """Simulate an AI arguing to convince the judge in favour of answer_case.
 
@@ -57,6 +58,7 @@ class QA_Agent(LLM_Agent):
             prompt=prompt,
             words_in_mouth=words_in_mouth,
             max_tokens=max_tokens,
+            cache_breaker=cache_breaker,
         )
 
     def __init__(

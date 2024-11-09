@@ -3,8 +3,7 @@ from datetime import datetime
 from pathlib import Path
 
 from solib.data.loading import Dataset
-from solib.utils import str_config
-from solib.utils import str_config, write_json, dump_config
+from solib.utils import str_config, write_json, dump_config, random
 from solib.llm_utils import parallelized_call
 from solib.protocols.protocols import (
     Blind,
@@ -192,6 +191,8 @@ class Experiment:
         return [config for config in self.all_configs if self.filter_config(config)]
 
     async def experiment(self):
+        filtered_configs = self.filtered_configs
+        random(filtered_configs).shuffle(filtered_configs)
         async def run_experiment(config: dict):
             setup = config["protocol"](**config["init_kwargs"])
             stuff = await setup.experiment(
@@ -203,19 +204,19 @@ class Experiment:
             return stats
 
         confirm = input(
-            f"Run {len(self.filtered_configs)} experiments on "
+            f"Run {len(filtered_configs)} experiments on "
             f"{len(self.questions)} questions? (y/N) [l to list]"
         )
         if confirm.lower() == "l":
-            print(str_config(self.filtered_configs))
+            print(str_config(filtered_configs))
             confirm = input("Continue? (y/N)")
         if confirm.lower() != "y":
             return
-        LOGGER.debug(self.filtered_configs)
-        statss = await parallelized_call(run_experiment, self.filtered_configs)
+        LOGGER.debug(filtered_configs)
+        statss = await parallelized_call(run_experiment, filtered_configs)
         all_stats = [
             {"config": config, "stats": stats}
-            for config, stats in zip(self.filtered_configs, statss)
+            for config, stats in zip(filtered_configs, statss)
         ]
         write_json(dump_config(all_stats), path=self.write_path / "all_stats.json")
 

@@ -368,6 +368,47 @@ def load_hf_model(model: str, hf_quantization_config=True):
     return (tokenizer, model)
 
 
+# cache this because it's surprisingly slow
+@functools.cache
+def get_api_model(model):
+    if model.startswith("or:"):  # OpenRouter
+        from langchain_openai import ChatOpenAI
+
+        api_key = os.getenv("OPENROUTER_API_KEY")
+        client = ChatOpenAI(
+            model=model, base_url="https://openrouter.ai/api/v1", api_key=api_key
+        )
+
+    else:
+        if model.startswith(("gpt", "openai", "babbage", "davinci")):
+            from langchain_openai import ChatOpenAI
+
+            api_key = os.getenv("OPENAI_API_KEY")
+            client = ChatOpenAI(model=model, api_key=api_key)
+
+        elif model.startswith(("claude", "anthropic")):
+            from langchain_anthropic import ChatAnthropic
+
+            api_key = os.getenv("ANTHROPIC_API_KEY")
+            client = ChatAnthropic(model=model, api_key=api_key)
+
+        elif model.startswith("mistral"):
+            from langchain_mistralai import ChatMistralAI
+
+            api_key = os.getenv("MISTRAL_API_KEY")
+            client = ChatMistralAI(model=model, api_key=api_key)
+
+        else:
+            raise ValueError(f"Model {model} is not supported for now")
+
+    client = client.configurable_fields(
+        max_tokens=ConfigurableField(id="max_tokens"),
+        temperature=ConfigurableField(id="temperature"),
+    )
+
+    return client
+
+
 def get_llm(model: str, use_async=False, hf_quantization_config=True):
     if model.startswith("hf:"):  # Hugging Face local models
         msg_type = "dict"
@@ -475,40 +516,7 @@ def get_llm(model: str, use_async=False, hf_quantization_config=True):
             True  # assume all chat API models natively support tools
         )
 
-        if model.startswith("or:"):  # OpenRouter
-            from langchain_openai import ChatOpenAI
-
-            api_key = os.getenv("OPENROUTER_API_KEY")
-            client = ChatOpenAI(
-                model=model, base_url="https://openrouter.ai/api/v1", api_key=api_key
-            )
-
-        else:
-            if model.startswith(("gpt", "openai", "babbage", "davinci")):
-                from langchain_openai import ChatOpenAI
-
-                api_key = os.getenv("OPENAI_API_KEY")
-                client = ChatOpenAI(model=model, api_key=api_key)
-
-            elif model.startswith(("claude", "anthropic")):
-                from langchain_anthropic import ChatAnthropic
-
-                api_key = os.getenv("ANTHROPIC_API_KEY")
-                client = ChatAnthropic(model=model, api_key=api_key)
-
-            elif model.startswith("mistral"):
-                from langchain_mistralai import ChatMistralAI
-
-                api_key = os.getenv("MISTRAL_API_KEY")
-                client = ChatMistralAI(model=model, api_key=api_key)
-
-            else:
-                raise ValueError(f"Model {model} is not supported for now")
-
-        client = client.configurable_fields(
-            max_tokens=ConfigurableField(id="max_tokens"),
-            temperature=ConfigurableField(id="temperature"),
-        )
+        client = get_api_model(model)
 
         def process_response(response):
             if isinstance(
@@ -942,15 +950,20 @@ class LLM_Agent:
         model: str = None,
         tools: list[callable] = None,
         hf_quantization_config=True,
+        sync_mode=False,
     ):
         self.model = model or "gpt-4o-mini"
         self.tools = tools
         self.hf_quantization_config = hf_quantization_config
-        self.ai = get_llm(
-            model=self.model,
-            use_async=False,
-            hf_quantization_config=hf_quantization_config,
-        )
+        self.sync_mode = sync_mode
+
+        if sync_mode or not self.supports_async:
+            self.ai = get_llm(
+                model=self.model,
+                use_async=False,
+                hf_quantization_config=hf_quantization_config,
+            )
+
         if self.supports_async:
             self.ai_async = get_llm(
                 model=self.model,
@@ -973,6 +986,7 @@ class LLM_Agent:
         words_in_mouth: str | None = None,
         max_tokens: int = 2048,
         temperature: float = 0.0,
+        cache_breaker: int = 0,
         cost_log: Costlog = GLOBAL_COST_LOG,
         simulate: bool = SIMULATE,
         **kwargs,
@@ -1016,6 +1030,7 @@ class LLM_Agent:
         words_in_mouth: str | None = None,
         max_tokens: int = 2048,
         temperature: float = 0.0,
+        cache_breaker: int = 0,
         cost_log: Costlog = GLOBAL_COST_LOG,
         simulate: bool = SIMULATE,
         **kwargs,
@@ -1070,6 +1085,7 @@ class LLM_Agent:
         words_in_mouth: str | None = None,
         top_logprobs: int = 5,
         temperature: float = 0.0,
+        cache_breaker: int = 0,
         cost_log: Costlog = GLOBAL_COST_LOG,
         simulate: bool = SIMULATE,
         **kwargs,
@@ -1112,6 +1128,7 @@ class LLM_Agent:
         words_in_mouth: str | None = None,
         top_logprobs: int = 5,
         temperature: float = 0.0,
+        cache_breaker: int = 0,
         cost_log: Costlog = GLOBAL_COST_LOG,
         simulate: bool = SIMULATE,
         **kwargs,
@@ -1159,6 +1176,7 @@ def get_llm_response(
     temperature: float = 0.0,
     tools: list[callable] = None,
     hf_quantization_config=None,
+    cache_breaker: int = 0,
     cost_log: Costlog = GLOBAL_COST_LOG,
     simulate: bool = SIMULATE,
     **kwargs,  # kwargs necessary for costly
@@ -1211,6 +1229,7 @@ async def get_llm_response_async(
     temperature: float = 0.0,
     tools: list[callable] = None,
     hf_quantization_config=None,
+    cache_breaker: int = 0,
     cost_log: Costlog = GLOBAL_COST_LOG,
     simulate: bool = SIMULATE,
     **kwargs,
@@ -1263,6 +1282,7 @@ def get_llm_probs(
     top_logprobs: int = 5,
     temperature: float = 0.0,
     hf_quantization_config=None,
+    cache_breaker: int = 0,
     cost_log: Costlog = GLOBAL_COST_LOG,
     simulate: bool = SIMULATE,
     **kwargs,
@@ -1313,6 +1333,7 @@ async def get_llm_probs_async(
     top_logprobs: int = 5,
     temperature: float = 0.0,
     hf_quantization_config=None,
+    cache_breaker: int = 0,
     cost_log: Costlog = GLOBAL_COST_LOG,
     simulate: bool = SIMULATE,
     **kwargs,

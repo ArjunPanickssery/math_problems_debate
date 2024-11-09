@@ -19,6 +19,7 @@ class Debate(Protocol):
         answer_case: Answer,
         adversary: QA_Agent,
         judge: Judge,
+        cache_breaker: int = 0,
     ):
         opp_case = question.neg(answer_case)
         debater_pro = functools.partial(
@@ -26,12 +27,14 @@ class Debate(Protocol):
             prompt=self.prompt,
             question=question,
             answer_case=answer_case,
+            cache_breaker=cache_breaker,
         )
         debater_con = functools.partial(
             adversary,
             prompt=self.prompt,
             question=question,
             answer_case=opp_case,
+            cache_breaker=cache_breaker,
         )
         if self.simultaneous:
             debater_pro_arg = await debater_pro(context=self.ts_to_prompt(question))
@@ -59,13 +62,18 @@ class Debate(Protocol):
         question: Question,
         judge: Judge,
         adversary: QA_Agent,
+        cache_breaker: int = 0,
     ) -> Question:
         """Debate specifically is symmetric, so we can subclass this to only run the
         debate once."""
         if agent != adversary:
             # it's not symmetric if agent and adversary are different
             return await super().run_on_all_answer_cases(
-                agent=agent, question=question, judge=judge, adversary=adversary
+                agent=agent,
+                question=question,
+                judge=judge,
+                adversary=adversary,
+                cache_breaker=cache_breaker,
             )
         case_probs_0 = await self.run(
             agent=agent,
@@ -73,6 +81,7 @@ class Debate(Protocol):
             answer_case=question.answer_cases[0],
             adversary=adversary,
             judge=judge,
+            cache_breaker=cache_breaker,
         )  # elicited probs after arguing for answer_cases[0]
         # but this is the same as the elicited probs after arguing for answer_cases[1]
         # because the adversary is arguing for the opposite answer

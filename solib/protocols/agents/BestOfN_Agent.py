@@ -1,5 +1,5 @@
 import logging
-from solib.llm_utils import parallelized_call, CACHE_BREAKER, reset_cache_breaker
+from solib.llm_utils import parallelized_call
 from solib.datatypes import Question, Answer, Score
 from solib.protocols.abstract import QA_Agent, Protocol, Judge
 from solib.protocols.judges import JustAskProbabilityJudge
@@ -37,16 +37,17 @@ class BestOfN_Agent(QA_Agent):
         context: str | None = None,
         words_in_mouth: str | None = None,
         max_tokens: int = 2048,
+        cache_breaker: int = 0,
     ) -> str:
         async def run_agent(kwargs):
-            global CACHE_BREAKER
-            CACHE_BREAKER = CACHE_BREAKER + "_BON_ATTEMPT_"
-            LOGGER.debug(f"CACHE_BREAKER WHILE BON: {CACHE_BREAKER}")
+            i = kwargs.pop("i")
+            LOGGER.debug(f"local cache_breaker during BON: {i}")
             transcript = await self.protocol.step(
                 agent=self.agent,
                 question=kwargs["question"],
                 answer_case=kwargs["answer_case"],
                 judge=self.judge,
+                cache_breaker=i,
                 **self.other_components,
             )
             response = transcript.transcript[-1].content
@@ -60,15 +61,13 @@ class BestOfN_Agent(QA_Agent):
             run_agent,
             [
                 {
+                    "i": cache_breaker + i,
                     "question": question,
                     "answer_case": answer_case,
                 }
-                for _ in range(self.n)
+                for i in range(self.n)
             ],
         )
-        reset_cache_breaker()
-
-        LOGGER.debug(f"CACHE_BREAKER AFTER BON: {CACHE_BREAKER}")
 
         best_response, best_score = max(results, key=lambda x: x[1])
 
