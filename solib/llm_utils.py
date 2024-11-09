@@ -416,7 +416,17 @@ def get_llm(model: str, use_async=False, hf_quantization_config=True):
         client = load_hf_model(model, hf_quantization_config)
         tokenizer, model = client
 
-        # TODO: add cost logging for local models
+        @costly(
+            simulator=LLM_Simulator.simulate_llm_call,
+            messages=lambda kwargs: format_prompt(
+                prompt=kwargs.get("prompt"),
+                messages=kwargs.get("messages"),
+                input_string=kwargs.get("input_string"),
+                system_message=kwargs.get("system_message"),
+                msg_type=msg_type,
+            )["messages"],
+            disable_costly=DISABLE_COSTLY,
+        )
         def generate(
             prompt: str = None,
             messages: list[dict[str, str]] = None,
@@ -464,7 +474,17 @@ def get_llm(model: str, use_async=False, hf_quantization_config=True):
             decoded = tokenizer.decode(output[input_length:], skip_special_tokens=True)
             return decoded
 
-        # TODO: add cost logging for local models
+        @costly(
+            simulator=LLM_Simulator.simulate_llm_call,
+            messages=lambda kwargs: format_prompt(
+                prompt=kwargs.get("prompt"),
+                messages=kwargs.get("messages"),
+                input_string=kwargs.get("input_string"),
+                system_message=kwargs.get("system_message"),
+                msg_type=msg_type,
+            )["messages"],
+            disable_costly=DISABLE_COSTLY,
+        )
         def return_probs(
             return_probs_for: list[str],
             prompt: str = None,
