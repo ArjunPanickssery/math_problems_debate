@@ -977,10 +977,11 @@ class LLM_Agent:
         simulate: bool = SIMULATE,
         **kwargs,
     ):
-        LOGGER.info(f"Running get_response_sync for {self.model}; NOT FROM CACHE")
-        # Get rate limiter for this model if it exists
-        rate_limiter = RateLimiter.get_rate_limiter(self.model)
-        rate_limiter.wait_if_needed()
+        if not simulate:
+            LOGGER.info(f"Running get_response_sync for {self.model}; NOT FROM CACHE")
+            # Get rate limiter for this model if it exists
+            rate_limiter = RateLimiter.get_rate_limiter(self.model)
+            rate_limiter.wait_if_needed()
 
         for i in range(5):
             try:
@@ -1019,10 +1020,11 @@ class LLM_Agent:
         simulate: bool = SIMULATE,
         **kwargs,
     ):
-        LOGGER.info(f"Running get_response_async for {self.model}; NOT FROM CACHE")
-        # Get rate limiter for this model if it exists
-        rate_limiter = RateLimiter.get_rate_limiter(self.model)
-        rate_limiter.wait_if_needed()
+        if not simulate:
+            LOGGER.info(f"Running get_response_async for {self.model}; NOT FROM CACHE")
+            # Get rate limiter for this model if it exists
+            rate_limiter = RateLimiter.get_rate_limiter(self.model)
+            rate_limiter.wait_if_needed()
 
         for i in range(5):
             try:
@@ -1072,10 +1074,11 @@ class LLM_Agent:
         simulate: bool = SIMULATE,
         **kwargs,
     ):
-        LOGGER.info(f"Running get_probs_sync for {self.model}; NOT FROM CACHE")
-        # Get rate limiter for this model if it exists
-        rate_limiter = RateLimiter.get_rate_limiter(self.model)
-        rate_limiter.wait_if_needed()
+        if not simulate:
+            LOGGER.info(f"Running get_probs_sync for {self.model}; NOT FROM CACHE")
+            # Get rate limiter for this model if it exists
+            rate_limiter = RateLimiter.get_rate_limiter(self.model)
+            rate_limiter.wait_if_needed()
 
         for i in range(5):
             try:
@@ -1113,10 +1116,11 @@ class LLM_Agent:
         simulate: bool = SIMULATE,
         **kwargs,
     ):
-        LOGGER.info(f"Running get_probs_async for {self.model}; NOT FROM CACHE")
-        # Get rate limiter for this model if it exists
-        rate_limiter = RateLimiter.get_rate_limiter(self.model)
-        rate_limiter.wait_if_needed()
+        if not simulate:
+            LOGGER.info(f"Running get_probs_async for {self.model}; NOT FROM CACHE")
+            # Get rate limiter for this model if it exists
+            rate_limiter = RateLimiter.get_rate_limiter(self.model)
+            rate_limiter.wait_if_needed()
 
         for i in range(5):
             try:
@@ -1162,10 +1166,11 @@ def get_llm_response(
     """NOTE: you should generally use the LLM_Agent class instead of this function.
     This is deprecated, or maybe we can just use it for one-time calls etc.
     """
-    LOGGER.info(f"Running get_llm_response for {model}; NOT FROM CACHE")
-    # Get rate limiter for this model if it exists
-    rate_limiter = RateLimiter.get_rate_limiter(model)
-    rate_limiter.wait_if_needed()
+    if not simulate:
+        LOGGER.info(f"Running get_llm_response for {model}; NOT FROM CACHE")
+        # Get rate limiter for this model if it exists
+        rate_limiter = RateLimiter.get_rate_limiter(model)
+        rate_limiter.wait_if_needed()
     model = model or "gpt-4o-mini"
     ai = get_llm(
         model=model, use_async=False, hf_quantization_config=hf_quantization_config
@@ -1213,10 +1218,11 @@ async def get_llm_response_async(
     """NOTE: you should generally use the LLM_Agent class instead of this function.
     This is deprecated, or maybe we can just use it for one-time calls etc.
     """
-    LOGGER.info(f"Running get_llm_response_async for {model}; NOT FROM CACHE")
-    # Get rate limiter for this model if it exists
-    rate_limiter = RateLimiter.get_rate_limiter(model)
-    rate_limiter.wait_if_needed()
+    if not simulate:
+        LOGGER.info(f"Running get_llm_response_async for {model}; NOT FROM CACHE")
+        # Get rate limiter for this model if it exists
+        rate_limiter = RateLimiter.get_rate_limiter(model)
+        rate_limiter.wait_if_needed()
     model = model or "gpt-4o-mini"
     ai = get_llm(
         model=model, use_async=True, hf_quantization_config=hf_quantization_config
@@ -1264,10 +1270,11 @@ def get_llm_probs(
     """NOTE: you should generally use the LLM_Agent class instead of this function.
     This is deprecated, or maybe we can just use it for one-time calls etc.
     """
-    LOGGER.info(f"Running get_llm_probs for {model}; NOT FROM CACHE")
-    # Get rate limiter for this model if it exists
-    rate_limiter = RateLimiter.get_rate_limiter(model)
-    rate_limiter.wait_if_needed()
+    if not simulate:
+        LOGGER.info(f"Running get_llm_probs for {model}; NOT FROM CACHE")
+        # Get rate limiter for this model if it exists
+        rate_limiter = RateLimiter.get_rate_limiter(model)
+        rate_limiter.wait_if_needed()
     model = model or "gpt-4o-mini"
     ai = get_llm(
         model=model, use_async=False, hf_quantization_config=hf_quantization_config
@@ -1313,10 +1320,11 @@ async def get_llm_probs_async(
     """NOTE: you should generally use the LLM_Agent class instead of this function.
     This is deprecated, or maybe we can just use it for one-time calls etc.
     """
-    LOGGER.info(f"Running get_llm_probs_async for {model}; NOT FROM CACHE")
-    # Get rate limiter for this model if it exists
-    rate_limiter = RateLimiter.get_rate_limiter(model)
-    rate_limiter.wait_if_needed()
+    if not simulate:
+        LOGGER.info(f"Running get_llm_probs_async for {model}; NOT FROM CACHE")
+        # Get rate limiter for this model if it exists
+        rate_limiter = RateLimiter.get_rate_limiter(model)
+        rate_limiter.wait_if_needed()
     model = model or "gpt-4o-mini"
     ai = get_llm(
         model=model, use_async=True, hf_quantization_config=hf_quantization_config
