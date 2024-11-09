@@ -37,6 +37,7 @@ class BestOfN_Agent(QA_Agent):
         context: str | None = None,
         words_in_mouth: str | None = None,
         max_tokens: int = 2048,
+        cache_breaker: int = 0,
     ) -> str:
         async def run_agent(kwargs):
             i = kwargs.pop("i")
@@ -60,7 +61,7 @@ class BestOfN_Agent(QA_Agent):
             run_agent,
             [
                 {
-                    "i": i,
+                    "i": cache_breaker + i,
                     "question": question,
                     "answer_case": answer_case,
                 }
