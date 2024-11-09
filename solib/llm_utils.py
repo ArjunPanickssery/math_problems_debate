@@ -367,6 +367,7 @@ def load_hf_model(model: str, hf_quantization_config=True):
 
     return (tokenizer, model)
 
+
 # cache this because it's surprisingly slow
 @functools.cache
 def get_api_model(model):
@@ -375,8 +376,8 @@ def get_api_model(model):
 
         api_key = os.getenv("OPENROUTER_API_KEY")
         client = ChatOpenAI(
-                model=model, base_url="https://openrouter.ai/api/v1", api_key=api_key
-            )
+            model=model, base_url="https://openrouter.ai/api/v1", api_key=api_key
+        )
 
     else:
         if model.startswith(("gpt", "openai", "babbage", "davinci")):
@@ -401,9 +402,9 @@ def get_api_model(model):
             raise ValueError(f"Model {model} is not supported for now")
 
     client = client.configurable_fields(
-            max_tokens=ConfigurableField(id="max_tokens"),
-            temperature=ConfigurableField(id="temperature"),
-        )
+        max_tokens=ConfigurableField(id="max_tokens"),
+        temperature=ConfigurableField(id="temperature"),
+    )
 
     return client
 
@@ -985,6 +986,7 @@ class LLM_Agent:
         words_in_mouth: str | None = None,
         max_tokens: int = 2048,
         temperature: float = 0.0,
+        cache_breaker: int = 0,
         cost_log: Costlog = GLOBAL_COST_LOG,
         simulate: bool = SIMULATE,
         **kwargs,
@@ -1028,6 +1030,7 @@ class LLM_Agent:
         words_in_mouth: str | None = None,
         max_tokens: int = 2048,
         temperature: float = 0.0,
+        cache_breaker: int = 0,
         cost_log: Costlog = GLOBAL_COST_LOG,
         simulate: bool = SIMULATE,
         **kwargs,
@@ -1082,6 +1085,7 @@ class LLM_Agent:
         words_in_mouth: str | None = None,
         top_logprobs: int = 5,
         temperature: float = 0.0,
+        cache_breaker: int = 0,
         cost_log: Costlog = GLOBAL_COST_LOG,
         simulate: bool = SIMULATE,
         **kwargs,
@@ -1124,6 +1128,7 @@ class LLM_Agent:
         words_in_mouth: str | None = None,
         top_logprobs: int = 5,
         temperature: float = 0.0,
+        cache_breaker: int = 0,
         cost_log: Costlog = GLOBAL_COST_LOG,
         simulate: bool = SIMULATE,
         **kwargs,
@@ -1171,6 +1176,7 @@ def get_llm_response(
     temperature: float = 0.0,
     tools: list[callable] = None,
     hf_quantization_config=None,
+    cache_breaker: int = 0,
     cost_log: Costlog = GLOBAL_COST_LOG,
     simulate: bool = SIMULATE,
     **kwargs,  # kwargs necessary for costly
@@ -1223,6 +1229,7 @@ async def get_llm_response_async(
     temperature: float = 0.0,
     tools: list[callable] = None,
     hf_quantization_config=None,
+    cache_breaker: int = 0,
     cost_log: Costlog = GLOBAL_COST_LOG,
     simulate: bool = SIMULATE,
     **kwargs,
@@ -1275,6 +1282,7 @@ def get_llm_probs(
     top_logprobs: int = 5,
     temperature: float = 0.0,
     hf_quantization_config=None,
+    cache_breaker: int = 0,
     cost_log: Costlog = GLOBAL_COST_LOG,
     simulate: bool = SIMULATE,
     **kwargs,
@@ -1325,6 +1333,7 @@ async def get_llm_probs_async(
     top_logprobs: int = 5,
     temperature: float = 0.0,
     hf_quantization_config=None,
+    cache_breaker: int = 0,
     cost_log: Costlog = GLOBAL_COST_LOG,
     simulate: bool = SIMULATE,
     **kwargs,

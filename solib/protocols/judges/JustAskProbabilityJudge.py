@@ -16,6 +16,7 @@ class JustAskProbabilityJudge(Judge):
         self,
         question: Question,
         context: str,
+        cache_breaker: int = 0,
     ) -> Question:
         """Returns a .is_elicited Question."""
 
@@ -31,6 +32,7 @@ class JustAskProbabilityJudge(Judge):
                 response_model=Prob,
                 max_tokens=20,
                 words_in_mouth=words_in_mouth,
+                cache_breaker=cache_breaker,
             )
 
             LOGGER.debug(f"response: {response}")
