@@ -4,7 +4,8 @@ from pathlib import Path
 
 from solib.data.loading import Dataset
 from solib.utils import str_config, write_json, dump_config, random
-from solib.llm_utils import parallelized_call
+from solib.utils import parallelized_call
+from solib.globals import SIMULATE
 from solib.protocols.protocols import (
     Blind,
     Propaganda,
@@ -73,6 +74,12 @@ class Experiment:
         self.agent_models = agent_models
         self.agent_toolss = agent_toolss if agent_toolss is not None else [[]]
         self.judge_models = judge_models
+
+        if SIMULATE:
+            LOGGER.debug("Running in simulation mode, skipping HF models...")
+            self.agent_models = [model for model in self.agent_models if not model.startswith("hf:")]
+            self.judge_models = [model for model in self.judge_models if not model.startswith("hf:")]
+
         if protocols is None:
             pass
         elif isinstance(protocols, list):
@@ -190,8 +197,8 @@ class Experiment:
     def filtered_configs(self):
         return [config for config in self.all_configs if self.filter_config(config)]
 
-    async def experiment(self):
-        filtered_configs = self.filtered_configs
+    async def experiment(self, max_configs=None):
+        filtered_configs = self.filtered_configs[:max_configs]
         random(filtered_configs).shuffle(filtered_configs)
         async def run_experiment(config: dict):
             setup = config["protocol"](**config["init_kwargs"])
@@ -213,7 +220,7 @@ class Experiment:
         if confirm.lower() != "y":
             return
         LOGGER.debug(filtered_configs)
-        statss = await parallelized_call(run_experiment, filtered_configs)
+        statss = await parallelized_call(run_experiment, filtered_configs, use_tqdm=True)
         all_stats = [
             {"config": config, "stats": stats}
             for config, stats in zip(filtered_configs, statss)
@@ -242,9 +249,9 @@ class Experiment:
                     return False
         return True
 
-    def _filter_nononhftot(self, config: dict):
+    def _filter_nonhftot(self, config: dict):   # avoid doing ToT judge for API models
         for component in config["call_kwargs"].values():
-            if isinstance(component, (QA_Agent, TipOfTongueJudge)):
+            if isinstance(component, (TipOfTongueJudge)):
                 if not component.model.startswith("hf:"):
                     return False
         return True

@@ -1,5 +1,5 @@
 import logging
-from solib.llm_utils import parallelized_call
+from solib.utils import parallelized_call
 from solib.datatypes import Question, Answer, Score
 from solib.protocols.abstract import QA_Agent, Protocol, Judge
 from solib.protocols.judges import JustAskProbabilityJudge
@@ -26,7 +26,6 @@ class BestOfN_Agent(QA_Agent):
         self.model = self.agent.model
         self.tools = self.agent.tools
         self.prompt = self.agent.prompt
-        self.words_in_mouth = self.agent.words_in_mouth
         self.dict = self.agent.dict
 
     async def __call__(
@@ -38,16 +37,19 @@ class BestOfN_Agent(QA_Agent):
         words_in_mouth: str | None = None,
         max_tokens: int = 2048,
         cache_breaker: int = 0,
+        temperature: float = None
     ) -> str:
         async def run_agent(kwargs):
             i = kwargs.pop("i")
             LOGGER.debug(f"local cache_breaker during BON: {i}")
+
             transcript = await self.protocol.step(
                 agent=self.agent,
                 question=kwargs["question"],
                 answer_case=kwargs["answer_case"],
                 judge=self.judge,
                 cache_breaker=i,
+                temperature=temperature if temperature is not None else kwargs["temperature"],
                 **self.other_components,
             )
             response = transcript.transcript[-1].content
@@ -64,6 +66,7 @@ class BestOfN_Agent(QA_Agent):
                     "i": cache_breaker + i,
                     "question": question,
                     "answer_case": answer_case,
+                    "temperature": (0.4 if self.n == 0 else 0.8)
                 }
                 for i in range(self.n)
             ],

@@ -1,7 +1,7 @@
 import logging
 from pathlib import Path
-from solib.utils import dump_config, AbstractionError, write_jsonl_async, write_json
-from solib.llm_utils import parallelized_call, LLM_Agent
+from solib.utils import dump_config, AbstractionError, parallelized_call, write_jsonl_async, write_json
+from solib.llm_utils import LLM_Agent
 from solib.datatypes import Answer, Question, TranscriptItem
 from solib.data.loading import Dataset
 
@@ -32,16 +32,19 @@ class QA_Agent(LLM_Agent):
         words_in_mouth: str | None = None,
         max_tokens: int = 2048,
         cache_breaker: int = 0,
+        temperature: float = 0.4
     ) -> str:
         """Simulate an AI arguing to convince the judge in favour of answer_case.
 
         Args:
             prompt (str): formattable prompt that takes in question, answer_case, and context.
-            words_in_mouth (str | None): e.g. " Sure, here's my response:\n\n"
+            words_in_mouth (str | None): e.g. " Sure, here's my response:\n\n". Only supported for HF / local models.
             context (str | None): context e.g. transcript of the conversation so far.
             question (Question): question.
             answer_case (Answer): answer case to argue for.
             max_tokens (int): max tokens for the LLM.
+            cache_breaker (int): dummy integer that is used to invalidate cache entries.
+            temperature (float): temperature for sampling.
         """
         prompt = prompt or self.prompt
         words_in_mouth = words_in_mouth or self.words_in_mouth
@@ -59,6 +62,7 @@ class QA_Agent(LLM_Agent):
             words_in_mouth=words_in_mouth,
             max_tokens=max_tokens,
             cache_breaker=cache_breaker,
+            temperature=temperature
         )
 
     def __init__(
@@ -73,15 +77,13 @@ class QA_Agent(LLM_Agent):
             model=model, tools=tools, hf_quantization_config=hf_quantization_config
         )
         self.prompt = prompt or self.prompt
-        self.words_in_mouth = words_in_mouth or self.words_in_mouth
+        self.words_in_mouth = words_in_mouth
         self.dict = {
             "model": self.model,
             "tools": self.tools,
             "prompt": self.prompt,
             "words_in_mouth": self.words_in_mouth,
         }
-
-    words_in_mouth = " Sure, here's my response:\n\n"
 
     prompt = (
         "I want you to produce a compelling argument for the following "
