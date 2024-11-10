@@ -23,7 +23,6 @@ class JustAskProbabilityJudge(Judge):
         """Returns a .is_elicited Question."""
 
         async def get_prob(answer_case: Answer) -> Prob:
-            words_in_mouth = self.words_in_mouth.format(answer_case=answer_case.short)
             prompt = self.prompt.format(
                 question=question.to_prompt(),
                 context=context,
@@ -33,7 +32,6 @@ class JustAskProbabilityJudge(Judge):
                 prompt=prompt,
                 response_model=Prob,
                 max_tokens=20,
-                words_in_mouth=words_in_mouth,
                 cache_breaker=cache_breaker,
                 temperature=0.4
             )
