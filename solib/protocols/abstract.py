@@ -1,7 +1,7 @@
 import logging
 from pathlib import Path
-from solib.utils import dump_config, AbstractionError, write_jsonl_async, write_json
-from solib.llm_utils import parallelized_call, LLM_Agent
+from solib.utils import dump_config, AbstractionError, parallelized_call, write_jsonl_async, write_json
+from solib.llm_utils import LLM_Agent
 from solib.datatypes import Answer, Question, TranscriptItem
 from solib.data.loading import Dataset
 

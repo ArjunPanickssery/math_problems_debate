@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Coroutine
 from pydantic import BaseModel
 import json
 import jsonlines
@@ -6,6 +7,10 @@ import aiofiles
 import random as rnd
 import hashlib
 import inspect
+import os
+import asyncio
+
+from solib.llm_utils import LOGGER
 
 
 def dump_config(instance):
@@ -52,25 +57,6 @@ class random:
 
     def __getattr__(self, name):
         return getattr(rnd, name, None)
-
-
-
-def apply(func, *args, **kwargs):
-    """Apply a function tolerant to extra parameters"""
-    import inspect
-
-    allowed_params = inspect.signature(func).parameters.keys()
-    filtered_params = {k: v for k, v in kwargs.items() if k in allowed_params}
-    return func(*args, **filtered_params)
-
-
-async def apply_async(func, *args, **kwargs):
-    """Apply a function tolerant to extra parameters (async version)"""
-    import inspect
-
-    allowed_params = inspect.signature(func).parameters.keys()
-    filtered_params = {k: v for k, v in kwargs.items() if k in allowed_params}
-    return await func(*args, **filtered_params)
 
 
 def update_recursive(source, overrides):
@@ -173,3 +159,40 @@ def str_config(config: dict | list[dict]):
                 for k, v in config.items()
             }
         )
+
+
+async def parallelized_call(
+    func: Coroutine,
+    data: list[any],
+    max_concurrent_queries: int = 100,
+) -> list[any]:
+    """
+    Run async func in parallel on the given data.
+    func will usually be a partial which uses query_api or whatever in some way.
+
+    Example usage:
+        partial_eval_method = functools.partial(eval_method, model=model, **kwargs)
+        results = await parallelized_call(partial_eval_method, [format_post(d) for d in data])
+    """
+
+    if os.getenv("SINGLE_THREAD"):
+        LOGGER.info(f"Running {func} on {len(data)} datapoints sequentially")
+        return [await func(d) for d in data]
+
+    max_concurrent_queries = min(
+        max_concurrent_queries,
+        int(os.getenv("MAX_CONCURRENT_QUERIES", max_concurrent_queries)),
+    )
+
+    LOGGER.info(
+        f"Running {func} on {len(data)} datapoints with {max_concurrent_queries} concurrent queries"
+    )
+
+    local_semaphore = asyncio.Semaphore(max_concurrent_queries)
+
+    async def call_func(sem, func, datapoint):
+        async with sem:
+            return await func(datapoint)
+
+    tasks = [call_func(local_semaphore, func, d) for d in data]
+    return await asyncio.gather(*tasks)

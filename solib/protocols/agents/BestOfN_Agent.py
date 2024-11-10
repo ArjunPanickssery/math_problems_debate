@@ -1,5 +1,5 @@
 import logging
-from solib.llm_utils import parallelized_call
+from solib.utils import parallelized_call
 from solib.datatypes import Question, Answer, Score
 from solib.protocols.abstract import QA_Agent, Protocol, Judge
 from solib.protocols.judges import JustAskProbabilityJudge
