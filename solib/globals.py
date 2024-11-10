@@ -11,6 +11,8 @@ SIMULATE = os.getenv("SIMULATE", "False").lower() == "true"
 DISABLE_COSTLY = os.getenv("DISABLE_COSTLY", "False").lower() == "true"
 USE_TQDM = os.getenv("USE_TQDM", "True").lower() == "true"
 MAX_CONCURRENT_QUERIES = int(os.getenv("MAX_CONCURRENT_QUERIES", 10))
+if SIMULATE:
+    MAX_CONCURRENT_QUERIES = 10_000
 LOGGER = logging.getLogger(__name__)
 
 

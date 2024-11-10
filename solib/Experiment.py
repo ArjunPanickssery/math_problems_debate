@@ -220,7 +220,7 @@ class Experiment:
         if confirm.lower() != "y":
             return
         LOGGER.debug(filtered_configs)
-        statss = await parallelized_call(run_experiment, filtered_configs)
+        statss = await parallelized_call(run_experiment, filtered_configs, use_tqdm=True)
         all_stats = [
             {"config": config, "stats": stats}
             for config, stats in zip(filtered_configs, statss)

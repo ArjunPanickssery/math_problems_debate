@@ -11,6 +11,7 @@ import hashlib
 import inspect
 import os
 import asyncio
+from tqdm.asyncio import tqdm
 
 from solib.globals import LOGGER, GLOBAL_LLM_SEMAPHORE
 
@@ -166,6 +167,7 @@ async def parallelized_call(
     func: Coroutine,
     data: list[any],
     max_concurrent_queries: int = 100,
+    use_tqdm: bool = False,
 ) -> list[any]:
     """
     Run async func in parallel on the given data.
@@ -196,7 +198,7 @@ async def parallelized_call(
             return await func(datapoint)
 
     tasks = [call_func(local_semaphore, func, d) for d in data]
-    return await asyncio.gather(*tasks)
+    return await tqdm.gather(*tasks, disable=not use_tqdm)
 
 
 def retry(attempts: int = 5):
