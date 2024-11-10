@@ -126,8 +126,9 @@ def format_prompt(
                 )
             else:
                 input_string = tokenizer.apply_chat_template(messages, tokenize=False)
-        if words_in_mouth is not None:
-            input_string += words_in_mouth
+
+            if words_in_mouth is not None:
+                input_string += words_in_mouth
     return {"messages": messages, "input_string": input_string}
 
 

@@ -249,9 +249,9 @@ class Experiment:
                     return False
         return True
 
-    def _filter_nononhftot(self, config: dict):
+    def _filter_nonhftot(self, config: dict):   # avoid doing ToT judge for API models
         for component in config["call_kwargs"].values():
-            if isinstance(component, (QA_Agent, TipOfTongueJudge)):
+            if isinstance(component, (TipOfTongueJudge)):
                 if not component.model.startswith("hf:"):
                     return False
         return True

@@ -26,7 +26,6 @@ class BestOfN_Agent(QA_Agent):
         self.model = self.agent.model
         self.tools = self.agent.tools
         self.prompt = self.agent.prompt
-        self.words_in_mouth = self.agent.words_in_mouth
         self.dict = self.agent.dict
 
     async def __call__(

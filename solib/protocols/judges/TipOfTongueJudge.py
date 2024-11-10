@@ -61,7 +61,12 @@ class TipOfTongueJudge(Judge):
         """
 
         self.prompt = prompt or self.prompt
-        self.words_in_mouth = words_in_mouth or self.words_in_mouth
+
+        if model.startswith("hf:"):  # only allow hf models to default to using words_in_mouth
+            self.words_in_mouth = words_in_mouth or " The answer is:\n\n("
+        else:
+            self.words_in_mouth = words_in_mouth
+
         self.dict = {
             "model": model,
             "tools": tools,
@@ -81,5 +86,3 @@ class TipOfTongueJudge(Judge):
         f"{TRUST_TOOL_USE_PROMPT}\n\n"
         "{context}\n\n"
     )
-
-    words_in_mouth = " The answer is:\n\n("

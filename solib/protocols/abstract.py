@@ -38,7 +38,7 @@ class QA_Agent(LLM_Agent):
 
         Args:
             prompt (str): formattable prompt that takes in question, answer_case, and context.
-            words_in_mouth (str | None): e.g. " Sure, here's my response:\n\n"
+            words_in_mouth (str | None): e.g. " Sure, here's my response:\n\n". Only supported for HF / local models.
             context (str | None): context e.g. transcript of the conversation so far.
             question (Question): question.
             answer_case (Answer): answer case to argue for.
@@ -77,15 +77,13 @@ class QA_Agent(LLM_Agent):
             model=model, tools=tools, hf_quantization_config=hf_quantization_config
         )
         self.prompt = prompt or self.prompt
-        self.words_in_mouth = words_in_mouth or self.words_in_mouth
+        self.words_in_mouth = words_in_mouth
         self.dict = {
             "model": self.model,
             "tools": self.tools,
             "prompt": self.prompt,
             "words_in_mouth": self.words_in_mouth,
         }
-
-    words_in_mouth = " Sure, here's my response:\n\n"
 
     prompt = (
         "I want you to produce a compelling argument for the following "

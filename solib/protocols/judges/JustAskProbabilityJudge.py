@@ -68,7 +68,7 @@ class JustAskProbabilityJudge(Judge):
             model (str): model for the judge. Default None.
         """
         self.prompt = prompt or self.prompt
-        self.words_in_mouth = words_in_mouth or self.words_in_mouth
+        self.words_in_mouth = words_in_mouth
         self.dict = {
             "model": model,
             "tools": tools,
@@ -88,5 +88,3 @@ class JustAskProbabilityJudge(Judge):
         f"{TRUST_TOOL_USE_PROMPT}\n\n"
         "{context}"
     )
-
-    words_in_mouth = " The probability that the answer is {answer_case} is:\n\n"
