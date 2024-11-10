@@ -1,4 +1,6 @@
+import functools
 from pathlib import Path
+import time
 from typing import Coroutine
 from pydantic import BaseModel
 import json
@@ -10,8 +12,7 @@ import inspect
 import os
 import asyncio
 
-from solib.llm_utils import LOGGER
-
+from solib.globals import LOGGER, GLOBAL_LLM_SEMAPHORE
 
 def dump_config(instance):
     if inspect.isfunction(instance):
@@ -196,3 +197,36 @@ async def parallelized_call(
 
     tasks = [call_func(local_semaphore, func, d) for d in data]
     return await asyncio.gather(*tasks)
+
+
+def retry(attempts: int = 5):
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            for i in range(attempts):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    LOGGER.warning(f"Error on attempt {i}: {e}")
+                    time.sleep(60)
+            raise Exception("Failed to get response")
+
+        return wrapper
+    return decorator
+
+
+def aretry(attempts: int = 5):
+    def decorator(func):
+        @functools.wraps(func)
+        async def wrapper(*args, **kwargs):
+            for i in range(attempts):
+                try:
+                    async with GLOBAL_LLM_SEMAPHORE:
+                        return await func(*args, **kwargs)
+                except Exception as e:
+                    LOGGER.warning(f"Error on attempt {i}: {e}")
+                    time.sleep(60)
+            raise Exception("Failed to get response")
+
+        return wrapper
+    return decorator

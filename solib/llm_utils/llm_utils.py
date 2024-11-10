@@ -2,18 +2,10 @@ from collections import defaultdict
 from functools import partial
 import functools
 import os
-import asyncio
-import json
 import math
-import logging
-from dotenv import load_dotenv
 from typing import Literal, Union, TYPE_CHECKING
 from transformers import BitsAndBytesConfig
 from pydantic import BaseModel
-from perscache import Cache
-from perscache.serializers import (
-    JSONSerializer,
-)
 from costly import Costlog, CostlyResponse, costly
 from costly.simulators.llm_simulator_faker import LLM_Simulator_Faker
 import warnings
@@ -31,34 +23,17 @@ from langchain_core.messages import (
 )
 from langchain_core.runnables import ConfigurableField
 
+from solib.globals import *
+
 from solib.llm_utils.caching import method_cache
 import solib.tool_use.tool_rendering
 from solib.datatypes import Prob
 from solib.tool_use import tool_use
-from solib.tool_use.tool_use import HuggingFaceToolCaller  # noqa
+from solib.tool_use.tool_use import HuggingFaceToolCaller
+from solib.utils import retry, aretry
 
 if TYPE_CHECKING:
     from transformers import AutoTokenizer
-
-LOGGER = logging.getLogger(__name__)
-
-load_dotenv()
-GLOBAL_COST_LOG = Costlog(mode="jsonl", discard_extras=True)
-SIMULATE = os.getenv("SIMULATE", "False").lower() == "true"
-DISABLE_COSTLY = os.getenv("DISABLE_COSTLY", "False").lower() == "true"
-USE_TQDM = os.getenv("USE_TQDM", "True").lower() == "true"
-MAX_CONCURRENT_QUERIES = int(os.getenv("MAX_CONCURRENT_QUERIES", 10))
-
-
-def reset_global_semaphore():
-    global GLOBAL_LLM_SEMAPHORE
-    GLOBAL_LLM_SEMAPHORE = asyncio.Semaphore(MAX_CONCURRENT_QUERIES)
-    LOGGER.info(
-        f"Resetting global semaphore, max concurrent queries: {MAX_CONCURRENT_QUERIES}"
-    )
-
-reset_global_semaphore()
-
 
 class LLM_Simulator(LLM_Simulator_Faker):
     @classmethod
@@ -786,44 +761,15 @@ RATE_LIMITERS: dict[str, RateLimiter] = {
     "gpt-4-turbo": RateLimiter(requests_per_minute=500, tokens_per_minute=30000),
     "gpt-4o": RateLimiter(requests_per_minute=500, tokens_per_minute=30000),
     "gpt-4o-mini": RateLimiter(requests_per_minute=500, tokens_per_minute=200000),
-    "claude-3-opus": RateLimiter(requests_per_minute=500, tokens_per_minute=15000),
-    "claude-3-sonnet": RateLimiter(requests_per_minute=500, tokens_per_minute=15000),
+
+    # match any claude model
+    "claude-3": RateLimiter(requests_per_minute=4000, tokens_per_minute=400_000),
+
     "mistral-medium": RateLimiter(requests_per_minute=500, tokens_per_minute=15000),
     "mistral-small": RateLimiter(requests_per_minute=500, tokens_per_minute=15000),
     "__DEFAULT__": RateLimiter(requests_per_minute=500, tokens_per_minute=15000),
 }
 
-
-def retry(attempts: int = 5):
-    def decorator(func):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            for i in range(attempts):
-                try:
-                    return func(*args, **kwargs)
-                except Exception as e:
-                    LOGGER.warning(f"Error on attempt {i}: {e}")
-                    time.sleep(60)
-            raise Exception("Failed to get response")
-
-        return wrapper
-    return decorator
-
-def aretry(attempts: int = 5):
-    def decorator(func):
-        @functools.wraps(func)
-        async def wrapper(*args, **kwargs):
-            for i in range(attempts):
-                try:
-                    async with GLOBAL_LLM_SEMAPHORE:
-                        return await func(*args, **kwargs)
-                except Exception as e:
-                    LOGGER.warning(f"Error on attempt {i}: {e}")
-                    time.sleep(60)
-            raise Exception("Failed to get response")
-
-        return wrapper
-    return decorator
 
 class LLM_Agent:
     def __init__(

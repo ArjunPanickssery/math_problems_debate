@@ -1,10 +1,13 @@
 from typing import Union
+from solib.globals import GLOBAL_COST_LOG, LOGGER, SIMULATE
 from solib.llm_utils.caching import cache
-from solib.llm_utils.llm_utils import GLOBAL_COST_LOG, LOGGER, SIMULATE, RateLimiter, aretry, get_llm, retry
+from solib.llm_utils.llm_utils import RateLimiter, get_llm
 
 
 from costly import Costlog
 from pydantic import BaseModel
+
+from solib.utils import aretry, retry
 
 
 @cache(ignore="cost_log")

@@ -24,7 +24,7 @@ class BetterCache(Cache):
         serializer: Serializer,
         ignore: Iterable[str],
     ) -> str:
-        from solib.llm_utils import SIMULATE
+        from solib.globals import SIMULATE
 
         # Get the argument dictionary by binding the function signature with args and kwargs
         arg_dict = inspect.signature(fn).bind(*args, **kwargs).arguments
