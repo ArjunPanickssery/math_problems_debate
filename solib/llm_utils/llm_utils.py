@@ -450,7 +450,7 @@ def get_api_llm(model: str):
         use_async,
         **kwargs,
     ):
-        if "words_in_mouth" in kwargs:
+        if kwargs.get('words_in_mouth'):
             warnings.warn(
                 f"words_in_mouth is not supported for model type `{model}`",
                 UserWarning,
