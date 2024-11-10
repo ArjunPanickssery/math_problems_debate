@@ -5,6 +5,7 @@ from pathlib import Path
 from solib.data.loading import Dataset
 from solib.utils import str_config, write_json, dump_config, random
 from solib.utils import parallelized_call
+from solib.globals import SIMULATE
 from solib.protocols.protocols import (
     Blind,
     Propaganda,
@@ -73,6 +74,12 @@ class Experiment:
         self.agent_models = agent_models
         self.agent_toolss = agent_toolss if agent_toolss is not None else [[]]
         self.judge_models = judge_models
+
+        if SIMULATE:
+            LOGGER.debug("Running in simulation mode, skipping HF models...")
+            self.agent_models = [model for model in self.agent_models if not model.startswith("hf:")]
+            self.judge_models = [model for model in self.judge_models if not model.startswith("hf:")]
+
         if protocols is None:
             pass
         elif isinstance(protocols, list):
