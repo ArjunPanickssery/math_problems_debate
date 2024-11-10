@@ -13,7 +13,7 @@ init_exp = Experiment(
     questions=questions,
     agent_models=[
         "gpt-4o-2024-08-06",
-        "gpt-4-turbo-2024-04-09",
+        # "gpt-4-turbo-2024-04-09",
         "claude-3-5-sonnet-20241022",
         "claude-3-5-haiku-20241022",
         "claude-3-opus-20240229",
@@ -23,6 +23,8 @@ init_exp = Experiment(
     agent_toolss=[[], [math_eval]],
     judge_models=[
         "gpt-4o-mini-2024-07-18",
+        "gpt-3.5-turbo-0125",
+        "gpt-4o-2024-08-06",
         # "claude-3-5-haiku-20241022",
         "hf:meta-llama/Llama-2-7b-chat-hf",
         "hf:meta-llama/Meta-Llama-3-8B-Instruct",

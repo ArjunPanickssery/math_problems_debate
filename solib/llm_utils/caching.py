@@ -7,7 +7,6 @@ from perscache import Cache
 from perscache.cache import hash_it
 from perscache.serializers import CloudPickleSerializer, Serializer
 from typing import Callable, Iterable
-from perscache.storage import Storage
 from pydantic import BaseModel
 
 
