@@ -398,7 +398,7 @@ def get_api_llm(model: str):
         max_tokens: int = 2048,
         temperature: float = 0.0,
         response_model: Union["BaseModel", None] = None,
-        top_logprobs: int = 5,
+        top_logprobs: int = 0,
         use_async=False,
     ):
         if tools and response_model:
