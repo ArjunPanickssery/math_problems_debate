@@ -175,7 +175,7 @@ def load_hf_model(model: str, hf_quantization_config=True):
 
 # cache this because it's surprisingly slow
 @functools.cache
-def get_api_model(model):
+def load_api_model(model):
     if model.startswith("or:"):  # OpenRouter
         from langchain_openai import ChatOpenAI
 
@@ -214,231 +214,285 @@ def get_api_model(model):
     return client
 
 
-def get_llm(model: str, use_async=False, hf_quantization_config=True):
-    if model.startswith("hf:"):  # Hugging Face local models
-        msg_type = "dict"
+def get_hf_llm(model: str, hf_quantization_config=True):
+    msg_type = "dict"
 
-        client = load_hf_model(model, hf_quantization_config)
-        tokenizer, model = client
+    client = load_hf_model(model, hf_quantization_config)
+    tokenizer, model = client
 
-        @costly(
-            simulator=LLM_Simulator.simulate_llm_call,
-            messages=lambda kwargs: format_prompt(
-                prompt=kwargs.get("prompt"),
-                messages=kwargs.get("messages"),
-                input_string=kwargs.get("input_string"),
-                system_message=kwargs.get("system_message"),
-                msg_type=msg_type,
-            )["messages"],
-            disable_costly=DISABLE_COSTLY,
+    @costly(
+        simulator=LLM_Simulator.simulate_llm_call,
+        messages=lambda kwargs: format_prompt(
+            prompt=kwargs.get("prompt"),
+            messages=kwargs.get("messages"),
+            input_string=kwargs.get("input_string"),
+            system_message=kwargs.get("system_message"),
+            msg_type=msg_type,
+        )["messages"],
+        disable_costly=DISABLE_COSTLY,
+    )
+    def generate(
+        prompt: str = None,
+        messages: list[dict[str, str]] = None,
+        input_string: str = None,
+        system_message: str | None = None,
+        words_in_mouth: str | None = None,
+        tools: list[callable] = None,
+        max_tokens: int = 2048,
+        **kwargs,
+    ):
+        natively_supports_tools = False
+        if tools:
+            bmodel = HuggingFaceToolCaller(tokenizer, model, tools)
+            natively_supports_tools = bmodel.natively_supports_tools()
+        else:
+            bmodel = model
+
+        input_string = format_prompt(
+            prompt=prompt,
+            messages=messages,
+            input_string=input_string,
+            tokenizer=tokenizer,
+            system_message=system_message,
+            words_in_mouth=words_in_mouth,
+            tools=tools,
+            natively_supports_tools=natively_supports_tools,
+            msg_type=msg_type,
         )
-        def generate(
-            prompt: str = None,
-            messages: list[dict[str, str]] = None,
-            input_string: str = None,
-            system_message: str | None = None,
-            words_in_mouth: str | None = None,
-            tools: list[callable] = None,
-            max_tokens: int = 2048,
-            **kwargs,
-        ):
-            natively_supports_tools = False
-            if tools:
-                bmodel = HuggingFaceToolCaller(tokenizer, model, tools)
-                natively_supports_tools = bmodel.natively_supports_tools()
+
+        input_ids = tokenizer.encode(
+            input_string["input_string"],
+            return_tensors="pt",
+            add_special_tokens=False,
+        ).to(bmodel.device)
+
+        input_length = input_ids.shape[1]
+        output = bmodel.generate(
+            input_ids,
+            max_length=max_tokens,
+            do_sample=False,
+            temperature=None,
+            top_p=None,
+        )[0]
+
+        decoded = tokenizer.decode(output[input_length:], skip_special_tokens=True)
+        return decoded
+
+    @costly(
+        simulator=LLM_Simulator.simulate_llm_call,
+        messages=lambda kwargs: format_prompt(
+            prompt=kwargs.get("prompt"),
+            messages=kwargs.get("messages"),
+            input_string=kwargs.get("input_string"),
+            system_message=kwargs.get("system_message"),
+            msg_type=msg_type,
+        )["messages"],
+        disable_costly=DISABLE_COSTLY,
+    )
+    def return_probs(
+        return_probs_for: list[str],
+        prompt: str = None,
+        messages: list[dict[str, str]] = None,
+        input_string: str = None,
+        system_message: str | None = None,
+        words_in_mouth: str | None = None,
+        **kwargs,
+    ):
+        input_string = format_prompt(  # don't pass tools to judges
+            prompt=prompt,
+            messages=messages,
+            input_string=input_string,
+            tokenizer=tokenizer,
+            system_message=system_message,
+            words_in_mouth=words_in_mouth,
+            msg_type=msg_type,
+        )
+        input_ids = tokenizer.encode(
+            input_string["input_string"], return_tensors="pt"
+        ).to(model.device)
+        output = model(input_ids).logits[0, -1, :]
+        output_probs = output.softmax(dim=0)
+        probs = {token: 0 for token in return_probs_for}
+        for token in probs:
+            # workaround for weird difference between word as a continuation vs standalone
+            token_enc = tokenizer.encode(f"({token}", add_special_tokens=False)[-1]
+            probs[token] = output_probs[token_enc].item()
+        total_prob = sum(probs.values())
+        try:
+            probs_relative = {
+                token: prob / total_prob for token, prob in probs.items()
+            }
+        except ZeroDivisionError:
+            import pdb
+
+            pdb.set_trace()
+        return probs_relative
+
+    return {
+        "client": client,
+        "generate": generate,
+        "return_probs": return_probs,
+    }
+
+def get_api_llm(model: str):
+    msg_type = "langchain"
+    natively_supports_tools = (
+        True  # assume all chat API models natively support tools
+    )
+
+    client = load_api_model(model)
+
+    def process_response(response):
+        if isinstance(
+            response, list
+        ):  # handle tool calling case, make the output match the hugging face case somewhat
+            raw_response = (
+                solib.tool_use.tool_rendering.render_tool_call_conversation(
+                    response
+                )
+            )
+            token_types = [
+                k
+                for k, v in response[0].usage_metadata.items()
+                if isinstance(v, int)
+            ]
+            usage = defaultdict(int)
+            for token_type in token_types:
+                for r in response:
+                    if not hasattr(r, "usage_metadata"):
+                        continue
+                    usage[token_type] += r.usage_metadata[token_type]
+
+        elif isinstance(response, BaseMessage):  # handle singleton messages
+            raw_response = response.content
+            usage = response.usage_metadata
+        elif isinstance(
+            response, dict
+        ):  # otherwise, we are using structured output
+            raw = response["raw"]
+            # probably should do some error handling here if 'parsing_error' is set
+            parsed = response["parsed"]
+            if response["parsing_error"] is not None:
+                LOGGER.error(raw)
+                raise ValueError(
+                    f"Error parsing structured output: {response['parsing_error']}"
+                )
+
+            raw_response = parsed
+            usage = raw.usage_metadata
+
+        return raw_response, usage
+
+    _get_messages = lambda kwargs: convert_langchain_to_dict(  # noqa
+        format_prompt(
+            prompt=kwargs.get("prompt"),
+            messages=kwargs.get("messages"),
+            system_message=kwargs.get("system_message"),
+            msg_type=msg_type,
+            natively_supports_tools=natively_supports_tools,
+        )["messages"]
+    )
+
+    def apply_client_bindings(
+        tools: list[callable] = None,
+        max_tokens: int = 2048,
+        temperature: float = 0.0,
+        response_model: Union["BaseModel", None] = None,
+        top_logprobs: int = 5,
+        use_async=False,
+    ):
+        if tools and response_model:
+            raise ValueError("Cannot use tools with response_model")
+
+        bclient = client.with_config(
+            configurable={"max_tokens": max_tokens, "temperature": temperature}
+        )
+
+        if top_logprobs:
+            bclient = bclient.bind(top_logprobs=top_logprobs, logprobs=True)
+
+        if response_model:
+            bclient = bclient.with_structured_output(
+                response_model, include_raw=True
+            )
+
+        get_response = bclient.ainvoke if use_async else bclient.invoke
+
+        if tools:
+            tool_map, structured_tools = (
+                solib.tool_use.tool_rendering.get_structured_tools(tools)
+            )
+            bclient = bclient.bind_tools(structured_tools)
+            if use_async:
+                get_response = partial(
+                    tool_use.tool_use_loop_generate_async,
+                    get_response=bclient.ainvoke,
+                    tool_map=tool_map,
+                )
             else:
-                bmodel = model
-
-            input_string = format_prompt(
-                prompt=prompt,
-                messages=messages,
-                input_string=input_string,
-                tokenizer=tokenizer,
-                system_message=system_message,
-                words_in_mouth=words_in_mouth,
-                tools=tools,
-                natively_supports_tools=natively_supports_tools,
-                msg_type=msg_type,
-            )
-
-            input_ids = tokenizer.encode(
-                input_string["input_string"],
-                return_tensors="pt",
-                add_special_tokens=False,
-            ).to(bmodel.device)
-
-            input_length = input_ids.shape[1]
-            output = bmodel.generate(
-                input_ids,
-                max_length=max_tokens,
-                do_sample=False,
-                temperature=None,
-                top_p=None,
-            )[0]
-
-            decoded = tokenizer.decode(output[input_length:], skip_special_tokens=True)
-            return decoded
-
-        @costly(
-            simulator=LLM_Simulator.simulate_llm_call,
-            messages=lambda kwargs: format_prompt(
-                prompt=kwargs.get("prompt"),
-                messages=kwargs.get("messages"),
-                input_string=kwargs.get("input_string"),
-                system_message=kwargs.get("system_message"),
-                msg_type=msg_type,
-            )["messages"],
-            disable_costly=DISABLE_COSTLY,
-        )
-        def return_probs(
-            return_probs_for: list[str],
-            prompt: str = None,
-            messages: list[dict[str, str]] = None,
-            input_string: str = None,
-            system_message: str | None = None,
-            words_in_mouth: str | None = None,
-            **kwargs,
-        ):
-            input_string = format_prompt(  # don't pass tools to judges
-                prompt=prompt,
-                messages=messages,
-                input_string=input_string,
-                tokenizer=tokenizer,
-                system_message=system_message,
-                words_in_mouth=words_in_mouth,
-                msg_type=msg_type,
-            )
-            input_ids = tokenizer.encode(
-                input_string["input_string"], return_tensors="pt"
-            ).to(model.device)
-            output = model(input_ids).logits[0, -1, :]
-            output_probs = output.softmax(dim=0)
-            probs = {token: 0 for token in return_probs_for}
-            for token in probs:
-                # workaround for weird difference between word as a continuation vs standalone
-                token_enc = tokenizer.encode(f"({token}", add_special_tokens=False)[-1]
-                probs[token] = output_probs[token_enc].item()
-            total_prob = sum(probs.values())
-            try:
-                probs_relative = {
-                    token: prob / total_prob for token, prob in probs.items()
-                }
-            except ZeroDivisionError:
-                import pdb
-
-                pdb.set_trace()
-            return probs_relative
-
-        return {
-            "client": client,
-            "generate": generate,
-            "return_probs": return_probs,
-        }
-
-    else:
-        msg_type = "langchain"
-        natively_supports_tools = (
-            True  # assume all chat API models natively support tools
-        )
-
-        client = get_api_model(model)
-
-        def process_response(response):
-            if isinstance(
-                response, list
-            ):  # handle tool calling case, make the output match the hugging face case somewhat
-                raw_response = (
-                    solib.tool_use.tool_rendering.render_tool_call_conversation(
-                        response
-                    )
-                )
-                token_types = [
-                    k
-                    for k, v in response[0].usage_metadata.items()
-                    if isinstance(v, int)
-                ]
-                usage = defaultdict(int)
-                for token_type in token_types:
-                    for r in response:
-                        if not hasattr(r, "usage_metadata"):
-                            continue
-                        usage[token_type] += r.usage_metadata[token_type]
-
-            elif isinstance(response, BaseMessage):  # handle singleton messages
-                raw_response = response.content
-                usage = response.usage_metadata
-            elif isinstance(
-                response, dict
-            ):  # otherwise, we are using structured output
-                raw = response["raw"]
-                # probably should do some error handling here if 'parsing_error' is set
-                parsed = response["parsed"]
-                if response["parsing_error"] is not None:
-                    LOGGER.error(raw)
-                    raise ValueError(
-                        f"Error parsing structured output: {response['parsing_error']}"
-                    )
-
-                raw_response = parsed
-                usage = raw.usage_metadata
-
-            return raw_response, usage
-
-        _get_messages = lambda kwargs: convert_langchain_to_dict(  # noqa
-            format_prompt(
-                prompt=kwargs.get("prompt"),
-                messages=kwargs.get("messages"),
-                system_message=kwargs.get("system_message"),
-                msg_type=msg_type,
-                natively_supports_tools=natively_supports_tools,
-            )["messages"]
-        )
-
-        def apply_client_bindings(
-            tools: list[callable] = None,
-            max_tokens: int = 2048,
-            temperature: float = 0.0,
-            response_model: Union["BaseModel", None] = None,
-            top_logprobs: int = 5,
-        ):
-            if tools and response_model:
-                raise ValueError("Cannot use tools with response_model")
-
-            bclient = client.with_config(
-                configurable={"max_tokens": max_tokens, "temperature": temperature}
-            )
-
-            if top_logprobs:
-                bclient = bclient.bind(top_logprobs=top_logprobs, logprobs=True)
-
-            if response_model:
-                bclient = bclient.with_structured_output(
-                    response_model, include_raw=True
+                get_response = partial(
+                    tool_use.tool_use_loop_generate,
+                    get_response=bclient.invoke,
+                    tool_map=tool_map,
                 )
 
-            get_response = bclient.ainvoke if use_async else bclient.invoke
+        return get_response
 
-            if tools:
-                tool_map, structured_tools = (
-                    solib.tool_use.tool_rendering.get_structured_tools(tools)
-                )
-                bclient = bclient.bind_tools(structured_tools)
-                if use_async:
-                    get_response = partial(
-                        tool_use.tool_use_loop_generate_async,
-                        get_response=bclient.ainvoke,
-                        tool_map=tool_map,
-                    )
-                else:
-                    get_response = partial(
-                        tool_use.tool_use_loop_generate,
-                        get_response=bclient.invoke,
-                        tool_map=tool_map,
-                    )
+    def generate_format_and_bind(
+        prompt,
+        messages,
+        system_message,
+        max_tokens,
+        response_model,
+        tools,
+        temperature,
+        use_async,
+        **kwargs,
+    ):
+        if "words_in_mouth" in kwargs:
+            warnings.warn(
+                f"words_in_mouth is not supported for model type `{model}`",
+                UserWarning,
+            )
 
-            return get_response
+        get_response = apply_client_bindings(
+            tools=tools,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            response_model=response_model,
+            use_async=use_async
+        )
 
-        def generate_format_and_bind(
+        messages = format_prompt(
+            prompt=prompt,
+            messages=messages,
+            system_message=system_message,
+            tools=tools,
+            msg_type=msg_type,
+            natively_supports_tools=natively_supports_tools,
+        )["messages"]
+
+        return get_response, messages
+
+    @costly(
+        simulator=LLM_Simulator.simulate_llm_call,
+        messages=_get_messages,
+        disable_costly=DISABLE_COSTLY,
+    )
+    def generate(
+        model: str = model,
+        prompt: str = None,
+        messages: list[dict[str, str]] = None,
+        system_message: str | None = None,
+        max_tokens: int = 2048,
+        response_model: Union["BaseModel", None] = None,
+        tools: list[callable] = None,
+        temperature: float = 0.0,
+        cost_log: Costlog = GLOBAL_COST_LOG,
+        simulate: bool = SIMULATE,
+        **kwargs,
+    ):
+        get_response, messages = generate_format_and_bind(
             prompt,
             messages,
             system_message,
@@ -446,242 +500,202 @@ def get_llm(model: str, use_async=False, hf_quantization_config=True):
             response_model,
             tools,
             temperature,
+            use_async=False,
             **kwargs,
-        ):
-            if "words_in_mouth" in kwargs:
-                warnings.warn(
-                    f"words_in_mouth is not supported for model type `{model}`",
-                    UserWarning,
-                )
-
-            get_response = apply_client_bindings(
-                tools=tools,
-                max_tokens=max_tokens,
-                temperature=temperature,
-                response_model=response_model,
-            )
-
-            messages = format_prompt(
-                prompt=prompt,
-                messages=messages,
-                system_message=system_message,
-                tools=tools,
-                msg_type=msg_type,
-                natively_supports_tools=natively_supports_tools,
-            )["messages"]
-
-            return get_response, messages
-
-        @costly(
-            simulator=LLM_Simulator.simulate_llm_call,
-            messages=_get_messages,
-            disable_costly=DISABLE_COSTLY,
         )
-        def generate(
-            model: str = model,
-            prompt: str = None,
-            messages: list[dict[str, str]] = None,
-            system_message: str | None = None,
-            max_tokens: int = 2048,
-            response_model: Union["BaseModel", None] = None,
-            tools: list[callable] = None,
-            temperature: float = 0.0,
-            cost_log: Costlog = GLOBAL_COST_LOG,
-            simulate: bool = SIMULATE,
-            **kwargs,
-        ):
-            get_response, messages = generate_format_and_bind(
-                prompt,
-                messages,
-                system_message,
-                max_tokens,
-                response_model,
-                tools,
-                temperature,
-                **kwargs,
-            )
-            LOGGER.debug(messages)
-            response = get_response(messages)
+        LOGGER.debug(messages)
+        response = get_response(messages)
 
-            raw_response, usage = process_response(response)
+        raw_response, usage = process_response(response)
 
-            LOGGER.debug(f"raw_response: {raw_response}")
+        LOGGER.debug(f"raw_response: {raw_response}")
 
-            if response_model is not None and isinstance(raw_response, dict):
-                raw_response = response_model(**raw_response)
+        if response_model is not None and isinstance(raw_response, dict):
+            raw_response = response_model(**raw_response)
 
-            LOGGER.debug(f"raw_response: {raw_response}")
+        LOGGER.debug(f"raw_response: {raw_response}")
 
-            return CostlyResponse(
-                output=raw_response,
-                cost_info=usage,
-            )
-
-        @costly(
-            simulator=LLM_Simulator.simulate_llm_call,
-            messages=_get_messages,
-            disable_costly=DISABLE_COSTLY,
+        return CostlyResponse(
+            output=raw_response,
+            cost_info=usage,
         )
-        async def generate_async(
-            model: str = model,
-            prompt: str = None,
-            messages: list[dict[str, str]] = None,
-            system_message: str | None = None,
-            max_tokens: int = 2048,
-            response_model: Union["BaseModel", None] = None,
-            tools: list[callable] = None,
-            temperature: float = 0.0,
-            cost_log: Costlog = GLOBAL_COST_LOG,
-            simulate: bool = SIMULATE,
+
+    @costly(
+        simulator=LLM_Simulator.simulate_llm_call,
+        messages=_get_messages,
+        disable_costly=DISABLE_COSTLY,
+    )
+    async def generate_async(
+        model: str = model,
+        prompt: str = None,
+        messages: list[dict[str, str]] = None,
+        system_message: str | None = None,
+        max_tokens: int = 2048,
+        response_model: Union["BaseModel", None] = None,
+        tools: list[callable] = None,
+        temperature: float = 0.0,
+        cost_log: Costlog = GLOBAL_COST_LOG,
+        simulate: bool = SIMULATE,
+        **kwargs,
+    ):
+        get_response, messages = generate_format_and_bind(
+            prompt,
+            messages,
+            system_message,
+            max_tokens,
+            response_model,
+            tools,
+            temperature,
+            use_async=True,
             **kwargs,
-        ):
-            get_response, messages = generate_format_and_bind(
-                prompt,
-                messages,
-                system_message,
-                max_tokens,
-                response_model,
-                tools,
-                temperature,
-                **kwargs,
-            )
+        )
 
-            response = await get_response(messages)
+        response = await get_response(messages)
 
-            raw_response, usage = process_response(response)
+        raw_response, usage = process_response(response)
 
-            LOGGER.debug(f"raw_response: {raw_response}")
+        LOGGER.debug(f"raw_response: {raw_response}")
 
-            if response_model is not None and isinstance(raw_response, dict):
-                raw_response = response_model(**raw_response)
+        if response_model is not None and isinstance(raw_response, dict):
+            raw_response = response_model(**raw_response)
 
-            LOGGER.debug(f"raw_response: {raw_response}")
+        LOGGER.debug(f"raw_response: {raw_response}")
 
-            return CostlyResponse(
-                output=raw_response,
-                cost_info=usage,
-            )
+        return CostlyResponse(
+            output=raw_response,
+            cost_info=usage,
+        )
 
-        def extract_probability(response, return_probs_for):
-            all_logprobs = response.response_metadata["logprobs"]["content"][0][
-                "top_logprobs"
-            ]
-            all_logprobs_dict = {x["token"]: x["logprob"] for x in all_logprobs}
-            probs = {token: 0 for token in return_probs_for}
-            for token, prob in all_logprobs_dict.items():
-                if token in probs:
-                    probs[token] = math.exp(prob)
-            total_prob = sum(probs.values())
-            probs_relative = {token: prob / total_prob for token, prob in probs.items()}
-            return probs_relative
+    def extract_probability(response, return_probs_for):
+        all_logprobs = response.response_metadata["logprobs"]["content"][0][
+            "top_logprobs"
+        ]
+        all_logprobs_dict = {x["token"]: x["logprob"] for x in all_logprobs}
+        probs = {token: 0 for token in return_probs_for}
+        for token, prob in all_logprobs_dict.items():
+            if token in probs:
+                probs[token] = math.exp(prob)
+        total_prob = sum(probs.values())
+        probs_relative = {token: prob / total_prob for token, prob in probs.items()}
+        return probs_relative
 
-        def probability_format_and_bind(
+    def probability_format_and_bind(
+        prompt,
+        messages,
+        system_message,
+        return_probs_for,
+        top_logprobs,
+        temperature,
+        use_async,
+        **kwargs,
+    ):
+        max_tokens = max(len(token) for token in return_probs_for)
+
+        get_response = apply_client_bindings(
+            max_tokens=max_tokens,
+            temperature=temperature,
+            top_logprobs=top_logprobs,
+            use_async=use_async,
+        )
+
+        messages = format_prompt(
+            prompt=prompt,
+            messages=messages,
+            system_message=system_message,
+            msg_type=msg_type,
+        )["messages"]
+
+        return get_response, messages
+
+    @costly(
+        simulator=LLM_Simulator.simulate_llm_probs,
+        messages=_get_messages,
+        disable_costly=DISABLE_COSTLY,
+    )
+    def return_probs(
+        return_probs_for: list[str],
+        model: str = model,
+        prompt: str = None,
+        messages: list[dict[str, str]] = None,
+        system_message: str | None = None,
+        top_logprobs: int = 5,
+        temperature: float = 0.0,
+        cost_log: Costlog = GLOBAL_COST_LOG,
+        simulate: bool = SIMULATE,
+        **kwargs,
+    ):
+        get_response, messages = probability_format_and_bind(
             prompt,
             messages,
             system_message,
             return_probs_for,
             top_logprobs,
             temperature,
+            use_async=False,
             **kwargs,
-        ):
-            max_tokens = max(len(token) for token in return_probs_for)
-
-            get_response = apply_client_bindings(
-                max_tokens=max_tokens,
-                temperature=temperature,
-                top_logprobs=top_logprobs,
-            )
-
-            messages = format_prompt(
-                prompt=prompt,
-                messages=messages,
-                system_message=system_message,
-                msg_type=msg_type,
-            )["messages"]
-
-            return get_response, messages
-
-        @costly(
-            simulator=LLM_Simulator.simulate_llm_probs,
-            messages=_get_messages,
-            disable_costly=DISABLE_COSTLY,
         )
-        def return_probs(
-            return_probs_for: list[str],
-            model: str = model,
-            prompt: str = None,
-            messages: list[dict[str, str]] = None,
-            system_message: str | None = None,
-            top_logprobs: int = 5,
-            temperature: float = 0.0,
-            cost_log: Costlog = GLOBAL_COST_LOG,
-            simulate: bool = SIMULATE,
-            **kwargs,
-        ):
-            get_response, messages = probability_format_and_bind(
-                prompt,
-                messages,
-                system_message,
-                return_probs_for,
-                top_logprobs,
-                temperature,
-                **kwargs,
-            )
 
-            response = get_response(messages)
+        response = get_response(messages)
 
-            raw_response, usage = process_response(response)
-            probs_relative = extract_probability(response, return_probs_for)
+        raw_response, usage = process_response(response)
+        probs_relative = extract_probability(response, return_probs_for)
 
-            return CostlyResponse(
-                output=probs_relative,
-                cost_info=usage,
-            )
-
-        @costly(
-            simulator=LLM_Simulator.simulate_llm_probs,
-            messages=_get_messages,
-            disable_costly=DISABLE_COSTLY,
+        return CostlyResponse(
+            output=probs_relative,
+            cost_info=usage,
         )
-        async def return_probs_async(
-            return_probs_for: list[str],
-            model: str = model,
-            prompt: str = None,
-            messages: list[dict[str, str]] = None,
-            system_message: str | None = None,
-            top_logprobs: int = 5,
-            temperature: float = 0.0,
-            cost_log: Costlog = GLOBAL_COST_LOG,
-            simulate: bool = SIMULATE,
+
+    @costly(
+        simulator=LLM_Simulator.simulate_llm_probs,
+        messages=_get_messages,
+        disable_costly=DISABLE_COSTLY,
+    )
+    async def return_probs_async(
+        return_probs_for: list[str],
+        model: str = model,
+        prompt: str = None,
+        messages: list[dict[str, str]] = None,
+        system_message: str | None = None,
+        top_logprobs: int = 5,
+        temperature: float = 0.0,
+        cost_log: Costlog = GLOBAL_COST_LOG,
+        simulate: bool = SIMULATE,
+        **kwargs,
+    ):
+        get_response, messages = probability_format_and_bind(
+            prompt,
+            messages,
+            system_message,
+            return_probs_for,
+            top_logprobs,
+            temperature,
+            use_async=True,
             **kwargs,
-        ):
-            get_response, messages = probability_format_and_bind(
-                prompt,
-                messages,
-                system_message,
-                return_probs_for,
-                top_logprobs,
-                temperature,
-                **kwargs,
-            )
+        )
 
-            response = await get_response(messages)
+        response = await get_response(messages)
 
-            raw_response, usage = process_response(response)
-            probs_relative = extract_probability(response, return_probs_for)
+        raw_response, usage = process_response(response)
+        probs_relative = extract_probability(response, return_probs_for)
 
-            return CostlyResponse(
-                output=probs_relative,
-                cost_info=usage,
-            )
+        return CostlyResponse(
+            output=probs_relative,
+            cost_info=usage,
+        )
 
-        return {
-            "client": client,
-            "generate": generate,
-            "generate_async": generate_async,
-            "return_probs": return_probs,
-            "return_probs_async": return_probs_async,
-        }
+    return {
+        "client": client,
+        "generate": generate,
+        "generate_async": generate_async,
+        "return_probs": return_probs,
+        "return_probs_async": return_probs_async,
+    }
+
+def get_llm(model: str, hf_quantization_config=True):
+    if model.startswith("hf:"):  # Hugging Face local models
+        return get_hf_llm(model, hf_quantization_config)
+    else:
+        return get_api_llm(model)
 
 
 class RateLimiter:
@@ -784,19 +798,10 @@ class LLM_Agent:
         self.hf_quantization_config = hf_quantization_config
         self.sync_mode = sync_mode
 
-        if sync_mode or not self.supports_async:
-            self.ai = get_llm(
-                model=self.model,
-                use_async=False,
-                hf_quantization_config=hf_quantization_config,
-            )
-
-        if self.supports_async:
-            self.ai_async = get_llm(
-                model=self.model,
-                use_async=True,
-                hf_quantization_config=hf_quantization_config,
-            )
+        self.ai = get_llm(
+            model=self.model,
+            hf_quantization_config=hf_quantization_config,
+        )
 
     @property
     def supports_async(self):
@@ -864,7 +869,7 @@ class LLM_Agent:
             rate_limiter = RateLimiter.get_rate_limiter(self.model)
             rate_limiter.wait_if_needed()
 
-        return await self.ai_async["generate_async"](
+        return await self.ai["generate_async"](
             model=self.model,
             tools=self.tools,
             response_model=response_model,
@@ -881,12 +886,12 @@ class LLM_Agent:
         )
 
     async def get_response(self, *args, **kwargs):
-        if self.supports_async:
+        if self.supports_async and not self.sync_mode:
             return await self.get_response_async(*args, **kwargs)
         return self.get_response_sync(*args, **kwargs)
 
     async def get_probs(self, *args, **kwargs):
-        if self.supports_async:
+        if self.supports_async and not self.sync_mode:
             return await self.get_probs_async(*args, **kwargs)
         return self.get_probs_sync(*args, **kwargs)
 
@@ -953,7 +958,7 @@ class LLM_Agent:
             rate_limiter.wait_if_needed()
 
 
-        return await self.ai_async["return_probs_async"](
+        return await self.ai["return_probs_async"](
             model=self.model,
             tools=self.tools,
             return_probs_for=return_probs_for,
