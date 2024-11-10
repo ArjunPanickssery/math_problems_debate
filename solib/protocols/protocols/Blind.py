@@ -15,10 +15,12 @@ class Blind(Protocol):
         answer_case: Answer,
         judge: Judge,
         cache_breaker: int = 0,
+        temperature: float = 0.0
     ) -> Question:
         result = await judge(
             question=question,
             context=self.ts_to_prompt(question),
             cache_breaker=cache_breaker,
+            temperature=temperature
         )
         return result

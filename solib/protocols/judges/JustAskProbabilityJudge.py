@@ -18,6 +18,8 @@ class JustAskProbabilityJudge(Judge):
         context: str,
         cache_breaker: int = 0,
     ) -> Question:
+        # we don't pass in temperature here since ToT Judge always uses 0.0, and
+        # we don't distinguish between judge type in the code
         """Returns a .is_elicited Question."""
 
         async def get_prob(answer_case: Answer) -> Prob:
@@ -33,6 +35,7 @@ class JustAskProbabilityJudge(Judge):
                 max_tokens=20,
                 words_in_mouth=words_in_mouth,
                 cache_breaker=cache_breaker,
+                temperature=0.4
             )
 
             LOGGER.debug(f"response: {response}")

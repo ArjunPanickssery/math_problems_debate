@@ -53,37 +53,6 @@ if TYPE_CHECKING:
 
 LOGGER = logging.getLogger(__name__)
 
-
-# for cache
-class PydanticJSONSerializer(JSONSerializer):
-    @staticmethod
-    def default(obj):
-        if hasattr(obj, "to_dict"):
-            return obj.to_dict()
-        elif isinstance(obj, BaseModel) and issubclass(
-            type(obj), BaseModel
-        ):  # check for subclass
-            # If it's a Pydantic model class, return its name for serialization
-            return f"{obj.__module__}.{obj.__class__.__name__}"
-        elif isinstance(obj, BaseModel):
-            return obj.model_dump()
-        else:
-            try:
-                return dict(obj)
-            except:  # noqa
-                raise TypeError(
-                    f"Object of type {obj.__class__.__name__} is not JSON serializable"
-                )
-
-    @classmethod
-    def dumps(cls, data):
-        return json.dumps(data, default=cls.default).encode("utf-8")
-
-    @classmethod
-    def loads(cls, data):
-        return json.loads(data.decode("utf-8"))
-
-
 class DisabledStorage(Storage):  # class that disables storage
     def read(self, path, deadline) -> bytes:
         raise FileNotFoundError
@@ -150,6 +119,7 @@ class SafeCloudPickleSerializer(CloudPickleSerializer):
 load_dotenv()
 cache = BetterCache(serializer=SafeCloudPickleSerializer())
 storageless_cache = Cache(storage=DisabledStorage())
+CACHE_BREAKER = os.getenv("CACHE_BREAKER", 0)
 GLOBAL_COST_LOG = Costlog(mode="jsonl", discard_extras=True)
 SIMULATE = os.getenv("SIMULATE", "False").lower() == "true"
 DISABLE_COSTLY = os.getenv("DISABLE_COSTLY", "False").lower() == "true"
@@ -164,14 +134,7 @@ def reset_global_semaphore():
         f"Resetting global semaphore, max concurrent queries: {MAX_CONCURRENT_QUERIES}"
     )
 
-
-def reset_cache_breaker():
-    global CACHE_BREAKER
-    CACHE_BREAKER = os.getenv("CACHE_BREAKER", "")
-
-
 reset_global_semaphore()
-reset_cache_breaker()
 
 
 # HACK. I have no idea why this works but just manually adding 'self' to

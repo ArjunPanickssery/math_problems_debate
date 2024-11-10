@@ -13,6 +13,7 @@ class Propaganda(Protocol):
         answer_case: Answer,
         judge: Judge,
         cache_breaker: int = 0,
+        temperature: float = 0.4,
     ) -> Question:
         assert isinstance(question, Question)
         agent_response = await agent(
@@ -21,6 +22,7 @@ class Propaganda(Protocol):
             answer_case=answer_case,
             context=self.ts_to_prompt(question),
             cache_breaker=cache_breaker,
+            temperature=temperature,
         )
         question.append(TranscriptItem(role=answer_case.short, content=agent_response))
         assert question.transcript is not None

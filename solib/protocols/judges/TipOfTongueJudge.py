@@ -28,6 +28,7 @@ class TipOfTongueJudge(Judge):
             return_probs_for=question.answer_cases_short,
             words_in_mouth=self.words_in_mouth,
             cache_breaker=cache_breaker,
+            temperature=0.0
         )
 
         result = Question(
