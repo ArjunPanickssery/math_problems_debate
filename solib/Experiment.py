@@ -198,8 +198,9 @@ class Experiment:
         return [config for config in self.all_configs if self.filter_config(config)]
 
     async def experiment(self, max_configs=None):
-        filtered_configs = self.filtered_configs[:max_configs]
+        filtered_configs = self.filtered_configs
         random(filtered_configs).shuffle(filtered_configs)
+        filtered_configs = filtered_configs[:max_configs]
         async def run_experiment(config: dict):
             setup = config["protocol"](**config["init_kwargs"])
             stuff = await setup.experiment(
