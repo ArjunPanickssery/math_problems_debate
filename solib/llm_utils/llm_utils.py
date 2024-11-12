@@ -580,7 +580,7 @@ def get_api_llm(model: str):
                 probs[token] = math.exp(all_logprobs_dict[f"({token}"])
         total_prob = sum(probs.values())
         try:
-            probs_relative = {token: prob / total_prob for token, prob in probs.items()}
+            probs_relative = {token: probs[token] / total_prob for token in return_probs_for}
         except ZeroDivisionError:
             import pdb
 
@@ -707,17 +707,17 @@ def get_llm(model: str, hf_quantization_config=True):
 
 
 RATE_LIMITERS: dict[str, InMemoryRateLimiter] = {
-    "gpt": InMemoryRateLimiter(requests_per_second=500 / 60,
+    "gpt": InMemoryRateLimiter(requests_per_second=125 / 60,
                                check_every_n_seconds=0.05, # how often to check if we can make a request
                                max_bucket_size=MAX_CONCURRENT_QUERIES
                                ),
 
-    "claude": InMemoryRateLimiter(requests_per_second=4000 / 60,
+    "claude": InMemoryRateLimiter(requests_per_second=1000 / 60,
                                   check_every_n_seconds=0.05,
                                   max_bucket_size=MAX_CONCURRENT_QUERIES
                                   ),
 
-    "mistral": InMemoryRateLimiter(requests_per_second=500 / 60,
+    "mistral": InMemoryRateLimiter(requests_per_second=125 / 60,
                                check_every_n_seconds=0.05, # how often to check if we can make a request
                                max_bucket_size=MAX_CONCURRENT_QUERIES
                                ),
