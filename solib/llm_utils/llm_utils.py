@@ -9,10 +9,6 @@ from pydantic import BaseModel
 from costly import Costlog, CostlyResponse, costly
 from costly.simulators.llm_simulator_faker import LLM_Simulator_Faker
 import warnings
-from datetime import datetime, timedelta
-import time
-from typing import Optional
-import threading
 
 from langchain_core.messages import (
     HumanMessage,
@@ -22,6 +18,7 @@ from langchain_core.messages import (
     AIMessage,
 )
 from langchain_core.runnables import ConfigurableField
+from langchain_core.rate_limiters import InMemoryRateLimiter
 
 from solib.globals import *
 
@@ -190,19 +187,22 @@ def load_api_model(model):
             from langchain_openai import ChatOpenAI
 
             api_key = os.getenv("OPENAI_API_KEY")
-            client = ChatOpenAI(model=model, api_key=api_key)
+            client = ChatOpenAI(model=model, api_key=api_key,
+                                rate_limiter=RATE_LIMITERS["gpt"])
 
         elif model.startswith(("claude", "anthropic")):
             from langchain_anthropic import ChatAnthropic
 
             api_key = os.getenv("ANTHROPIC_API_KEY")
-            client = ChatAnthropic(model=model, api_key=api_key)
+            client = ChatAnthropic(model=model, api_key=api_key,
+                                   rate_limiter=RATE_LIMITERS["claude"])
 
         elif model.startswith("mistral"):
             from langchain_mistralai import ChatMistralAI
 
             api_key = os.getenv("MISTRAL_API_KEY")
-            client = ChatMistralAI(model=model, api_key=api_key)
+            client = ChatMistralAI(model=model, api_key=api_key,
+                                   rate_limiter=RATE_LIMITERS["mistral"])
 
         else:
             raise ValueError(f"Model {model} is not supported for now")
@@ -374,7 +374,7 @@ def get_api_llm(model: str):
             # probably should do some error handling here if 'parsing_error' is set
             parsed = response["parsed"]
             if response["parsing_error"] is not None:
-                LOGGER.error(raw)
+                #LOGGER.error(raw)
                 raise ValueError(
                     f"Error parsing structured output: {response['parsing_error']}"
                 )
@@ -504,17 +504,17 @@ def get_api_llm(model: str):
             use_async=False,
             **kwargs,
         )
-        LOGGER.debug(messages)
+        #LOGGER.debug(messages)
         response = get_response(messages)
 
         raw_response, usage = process_response(response)
 
-        LOGGER.debug(f"raw_response: {raw_response}")
+        #LOGGER.debug(f"raw_response: {raw_response}")
 
         if response_model is not None and isinstance(raw_response, dict):
             raw_response = response_model(**raw_response)
 
-        LOGGER.debug(f"raw_response: {raw_response}")
+        #LOGGER.debug(f"raw_response: {raw_response}")
 
         return CostlyResponse(
             output=raw_response,
@@ -555,12 +555,12 @@ def get_api_llm(model: str):
 
         raw_response, usage = process_response(response)
 
-        LOGGER.debug(f"raw_response: {raw_response}")
+        #LOGGER.debug(f"raw_response: {raw_response}")
 
         if response_model is not None and isinstance(raw_response, dict):
             raw_response = response_model(**raw_response)
 
-        LOGGER.debug(f"raw_response: {raw_response}")
+        #LOGGER.debug(f"raw_response: {raw_response}")
 
         return CostlyResponse(
             output=raw_response,
@@ -572,12 +572,19 @@ def get_api_llm(model: str):
             "top_logprobs"
         ]
         all_logprobs_dict = {x["token"]: x["logprob"] for x in all_logprobs}
-        probs = {token: 0 for token in return_probs_for}
-        for token, prob in all_logprobs_dict.items():
-            if token in probs:
-                probs[token] = math.exp(prob)
+        probs = defaultdict(float)#{token: 0 for token in return_probs_for}
+        for token in return_probs_for:
+            if token in all_logprobs_dict:
+                probs[token] = math.exp(all_logprobs_dict[token])
+            elif f"({token}" in all_logprobs_dict:
+                probs[token] = math.exp(all_logprobs_dict[f"({token}"])
         total_prob = sum(probs.values())
-        probs_relative = {token: prob / total_prob for token, prob in probs.items()}
+        try:
+            probs_relative = {token: prob / total_prob for token, prob in probs.items()}
+        except ZeroDivisionError:
+            import pdb
+
+            pdb.set_trace()
         return probs_relative
 
     def probability_format_and_bind(
@@ -699,90 +706,21 @@ def get_llm(model: str, hf_quantization_config=True):
         return get_api_llm(model)
 
 
-class RateLimiter:
-    def __init__(
-        self, requests_per_minute: int, tokens_per_minute: Optional[int] = None
-    ):
-        self.requests_per_minute = requests_per_minute
-        self.tokens_per_minute = tokens_per_minute
-        self.request_timestamps = []
-        self.token_usage = []
-        self.lock = threading.Lock()
+RATE_LIMITERS: dict[str, InMemoryRateLimiter] = {
+    "gpt": InMemoryRateLimiter(requests_per_second=500 / 60,
+                               check_every_n_seconds=0.05, # how often to check if we can make a request
+                               max_bucket_size=MAX_CONCURRENT_QUERIES
+                               ),
 
-    def wait_if_needed(self, input_tokens: int = 4096):
-        LOGGER.info(f"Current request count: {len(self.request_timestamps)}")
+    "claude": InMemoryRateLimiter(requests_per_second=4000 / 60,
+                                  check_every_n_seconds=0.05,
+                                  max_bucket_size=MAX_CONCURRENT_QUERIES
+                                  ),
 
-        current_time = datetime.now()
-        minute_ago = current_time - timedelta(minutes=1)
-
-        estimated_tokens = input_tokens + 2048
-
-        with self.lock:
-            # Clean up old timestamps
-            self.request_timestamps = [
-                ts for ts in self.request_timestamps if ts > minute_ago
-            ]
-            self.token_usage = [
-                (ts, tokens) for ts, tokens in self.token_usage if ts > minute_ago
-            ]
-
-            # Check request rate limit
-            while len(self.request_timestamps) >= self.requests_per_minute:
-                sleep_time = (self.request_timestamps[0] - minute_ago).total_seconds()
-                LOGGER.info(f"Sleeping for {sleep_time} seconds")
-                time.sleep(max(0, sleep_time))
-                minute_ago = datetime.now() - timedelta(minutes=1)
-                self.request_timestamps = [
-                    ts for ts in self.request_timestamps if ts > minute_ago
-                ]
-
-            # Check token rate limit if applicable
-            if self.tokens_per_minute and estimated_tokens:
-                total_tokens = sum(tokens for _, tokens in self.token_usage)
-                LOGGER.info(f"Current token usage: {total_tokens}")
-                while total_tokens + estimated_tokens > self.tokens_per_minute:
-                    sleep_time = (self.token_usage[0][0] - minute_ago).total_seconds()
-                    LOGGER.info(f"Sleeping for {sleep_time} seconds")
-                    time.sleep(max(0, sleep_time))
-                    minute_ago = datetime.now() - timedelta(minutes=1)
-                    self.token_usage = [
-                        (ts, tokens)
-                        for ts, tokens in self.token_usage
-                        if ts > minute_ago
-                    ]
-                    total_tokens = sum(tokens for _, tokens in self.token_usage)
-
-            # Record this request
-            self.request_timestamps.append(current_time)
-            if estimated_tokens:
-                self.token_usage.append((current_time, estimated_tokens))
-
-    @classmethod
-    def get_rate_limiter(cls, model: str):
-        matching_keys = [key for key in RATE_LIMITERS if model.startswith(key)]
-        if not matching_keys:
-            LOGGER.warning(
-                f"No rate limiter found for model {model}, assuming __DEFAULT__"
-            )
-            k = "__DEFAULT__"
-        else:
-            k = max(matching_keys, key=len)
-        return RATE_LIMITERS[k]
-
-
-RATE_LIMITERS: dict[str, RateLimiter] = {
-    "gpt-3.5-turbo": RateLimiter(requests_per_minute=3500, tokens_per_minute=200000),
-    "gpt-4": RateLimiter(requests_per_minute=500, tokens_per_minute=10000),
-    "gpt-4-turbo": RateLimiter(requests_per_minute=500, tokens_per_minute=30000),
-    "gpt-4o": RateLimiter(requests_per_minute=500, tokens_per_minute=30000),
-    "gpt-4o-mini": RateLimiter(requests_per_minute=500, tokens_per_minute=200000),
-
-    # match any claude model
-    "claude-3": RateLimiter(requests_per_minute=4000, tokens_per_minute=400_000),
-
-    "mistral-medium": RateLimiter(requests_per_minute=500, tokens_per_minute=15000),
-    "mistral-small": RateLimiter(requests_per_minute=500, tokens_per_minute=15000),
-    "__DEFAULT__": RateLimiter(requests_per_minute=500, tokens_per_minute=15000),
+    "mistral": InMemoryRateLimiter(requests_per_second=500 / 60,
+                               check_every_n_seconds=0.05, # how often to check if we can make a request
+                               max_bucket_size=MAX_CONCURRENT_QUERIES
+                               ),
 }
 
 
@@ -826,10 +764,10 @@ class LLM_Agent:
         **kwargs,
     ):
         if not simulate:
-            LOGGER.info(f"Running get_response_sync for {self.model}; NOT FROM CACHE")
+            #LOGGER.info(f"Running get_response_sync for {self.model}; NOT FROM CACHE")
             # Get rate limiter for this model if it exists
-            rate_limiter = RateLimiter.get_rate_limiter(self.model)
-            rate_limiter.wait_if_needed()
+            pass
+
 
         return self.ai["generate"](
             model=self.model,
@@ -865,10 +803,9 @@ class LLM_Agent:
         **kwargs,
     ):
         if not simulate:
-            LOGGER.info(f"Running get_response_async for {self.model}; NOT FROM CACHE")
+            #LOGGER.info(f"Running get_response_async for {self.model}; NOT FROM CACHE")
             # Get rate limiter for this model if it exists
-            rate_limiter = RateLimiter.get_rate_limiter(self.model)
-            rate_limiter.wait_if_needed()
+            pass
 
         return await self.ai["generate_async"](
             model=self.model,
@@ -914,10 +851,9 @@ class LLM_Agent:
         **kwargs,
     ):
         if not simulate:
-            LOGGER.info(f"Running get_probs_sync for {self.model}; NOT FROM CACHE")
+            #LOGGER.info(f"Running get_probs_sync for {self.model}; NOT FROM CACHE")
             # Get rate limiter for this model if it exists
-            rate_limiter = RateLimiter.get_rate_limiter(self.model)
-            rate_limiter.wait_if_needed()
+            pass
 
         return self.ai["return_probs"](
             model=self.model,
@@ -953,10 +889,9 @@ class LLM_Agent:
         **kwargs,
     ):
         if not simulate:
-            LOGGER.info(f"Running get_probs_async for {self.model}; NOT FROM CACHE")
+            #LOGGER.info(f"Running get_probs_async for {self.model}; NOT FROM CACHE")
             # Get rate limiter for this model if it exists
-            rate_limiter = RateLimiter.get_rate_limiter(self.model)
-            rate_limiter.wait_if_needed()
+            pass
 
 
         return await self.ai["return_probs_async"](

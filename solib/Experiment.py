@@ -19,7 +19,7 @@ from solib.protocols.judges import (
 from solib.protocols.agents import BestOfN_Agent
 from solib.protocols.abstract import QA_Agent, Judge, Protocol
 
-LOGGER = logging.getLogger(__name__)
+#LOGGER = logging.get#LOGGER(__name__)
 
 
 class Experiment:
@@ -76,7 +76,7 @@ class Experiment:
         self.judge_models = judge_models
 
         if SIMULATE:
-            LOGGER.debug("Running in simulation mode, skipping HF models...")
+            #LOGGER.debug("Running in simulation mode, skipping HF models...")
             self.agent_models = [model for model in self.agent_models if not model.startswith("hf:")]
             self.judge_models = [model for model in self.judge_models if not model.startswith("hf:")]
 
@@ -220,8 +220,8 @@ class Experiment:
             confirm = input("Continue? (y/N)")
         if confirm.lower() != "y":
             return
-        LOGGER.debug(filtered_configs)
-        statss = await parallelized_call(run_experiment, filtered_configs, use_tqdm=True)
+        #LOGGER.debug(filtered_configs)
+        statss = await parallelized_call(run_experiment, filtered_configs, use_tqdm=True, max_concurrent_queries=5)
         all_stats = [
             {"config": config, "stats": stats}
             for config, stats in zip(filtered_configs, statss)

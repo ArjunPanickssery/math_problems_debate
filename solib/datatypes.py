@@ -5,7 +5,7 @@ import numpy as np
 from typing import Any, Literal, Optional, Union, Callable, Self
 from pydantic import BaseModel, field_validator, computed_field, model_validator
 
-LOGGER = logging.getLogger(__name__)
+#LOGGER = logging.get#LOGGER(__name__)
 
 
 class Prob(BaseModel):
@@ -542,11 +542,11 @@ class Question(BaseModel):
 
     def normalize_probs(self) -> "Question":
         assert self.is_elicited
-        if self.total_prob == 0.0:
-            LOGGER.warning(
-                f"Total probability is 0.0 for question {self.question}. "
-                "Normalizing probs to 1 / len(answer_cases)."
-            )
+        # if self.total_prob == 0.0:
+        #     #LOGGER.warning(
+        #         f"Total probability is 0.0 for question {self.question}. "
+        #         "Normalizing probs to 1 / len(answer_cases)."
+        #     )
         return Question(
             question=self.question,
             answer_cases=[

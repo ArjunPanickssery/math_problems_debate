@@ -5,7 +5,7 @@ from solib.protocols.abstract import QA_Agent, Protocol, Judge
 from solib.protocols.judges import JustAskProbabilityJudge
 from solib.protocols.protocols import Propaganda
 
-LOGGER = logging.getLogger(__name__)
+#LOGGER = logging.get#LOGGER(__name__)
 
 
 class BestOfN_Agent(QA_Agent):
@@ -41,7 +41,7 @@ class BestOfN_Agent(QA_Agent):
     ) -> str:
         async def run_agent(kwargs):
             i = kwargs.pop("i")
-            LOGGER.debug(f"local cache_breaker during BON: {i}")
+            #LOGGER.debug(f"local cache_breaker during BON: {i}")
 
             transcript = await self.protocol.step(
                 agent=self.agent,

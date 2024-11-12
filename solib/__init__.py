@@ -19,8 +19,8 @@ LOG_LEVEL = os.getenv("LOG_LEVEL", "DEBUG")
 LOG_LEVEL_CONSOLE = os.getenv("LOG_LEVEL_CONSOLE", "WARNING")
 LOG_LEVEL_FILE = os.getenv("LOG_LEVEL_FILE", "DEBUG")
 
-LOGGER = logging.getLogger(__name__)
-LOGGER.setLevel(LOG_LEVEL)
+#LOGGER = logging.get#LOGGER(__name__)
+#LOGGER.setLevel(LOG_LEVEL)
 
 FORMATTER = logging.Formatter(
     "{asctime} - {levelname} - {message}",
@@ -31,7 +31,7 @@ FORMATTER = logging.Formatter(
 CONSOLE_HANDLER = logging.StreamHandler()
 CONSOLE_HANDLER.setLevel(LOG_LEVEL_CONSOLE)
 CONSOLE_HANDLER.setFormatter(FORMATTER)
-LOGGER.addHandler(CONSOLE_HANDLER)
+#LOGGER.addHandler(CONSOLE_HANDLER)
 
 FILE_HANDLER = RotatingFileHandler(
     f".logs/{datetime.now().strftime('%Y-%m-%d_%H:%M:%S')}.log",
@@ -40,4 +40,4 @@ FILE_HANDLER = RotatingFileHandler(
 )
 FILE_HANDLER.setLevel(LOG_LEVEL_FILE)
 FILE_HANDLER.setFormatter(FORMATTER)
-LOGGER.addHandler(FILE_HANDLER)
+#LOGGER.addHandler(FILE_HANDLER)

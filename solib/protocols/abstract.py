@@ -5,7 +5,7 @@ from solib.llm_utils import LLM_Agent
 from solib.datatypes import Answer, Question, TranscriptItem
 from solib.data.loading import Dataset
 
-LOGGER = logging.getLogger(__name__)
+#LOGGER = logging.get#LOGGER(__name__)
 
 
 class Judge(LLM_Agent):
@@ -258,7 +258,7 @@ class Protocol:
             assert result.is_grounded
             return result
 
-        results = await parallelized_call(process_question, questions)
+        results = await parallelized_call(process_question, questions, use_tqdm=True)
         stats = Question.compute_stats(results)
 
         write_json(stats, path=write_stats)
