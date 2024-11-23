@@ -78,8 +78,12 @@ class Experiment:
 
         if SIMULATE:
             LOGGER.debug("Running in simulation mode, skipping HF models...")
-            self.agent_models = [model for model in self.agent_models if not model.startswith("hf:")]
-            self.judge_models = [model for model in self.judge_models if not model.startswith("hf:")]
+            self.agent_models = [
+                model for model in self.agent_models if not model.startswith("hf:")
+            ]
+            self.judge_models = [
+                model for model in self.judge_models if not model.startswith("hf:")
+            ]
 
         if protocols is None:
             pass
@@ -141,7 +145,7 @@ class Experiment:
             )
             for model in self.judge_models
         ]
-        japs_judges = [ 
+        japs_judges = [
             JustAskProbabilitiesJudge(
                 model, hf_quantization_config=self.default_quant_config
             )
@@ -212,6 +216,7 @@ class Experiment:
         filtered_configs = self.filtered_configs
         random(filtered_configs).shuffle(filtered_configs)
         filtered_configs = filtered_configs[:max_configs]
+
         async def run_experiment(config: dict):
             setup = config["protocol"](**config["init_kwargs"])
             stuff = await setup.experiment(
@@ -232,7 +237,9 @@ class Experiment:
         if confirm.lower() != "y":
             return
         LOGGER.debug(filtered_configs)
-        statss = await parallelized_call(run_experiment, filtered_configs, use_tqdm=True)
+        statss = await parallelized_call(
+            run_experiment, filtered_configs, use_tqdm=True
+        )
         all_stats = [
             {"config": config, "stats": stats}
             for config, stats in zip(filtered_configs, statss)
@@ -244,7 +251,9 @@ class Experiment:
 
     def _filter_nojap(self, config: dict):
         for component in config["call_kwargs"].values():
-            if isinstance(component, JustAskProbabilitiesJudge):
+            if isinstance(component, JustAskProbabilityJudge) and not isinstance(
+                component, JustAskProbabilitiesJudge
+            ):
                 return False
         return True
 
@@ -262,12 +271,14 @@ class Experiment:
 
     def _filter_nohfjap(self, config: dict):
         for component in config["call_kwargs"].values():
-            if isinstance(component, (JustAskProbabilitiesJudge, JustAskProbabilityJudge)):
+            if isinstance(
+                component, (JustAskProbabilitiesJudge, JustAskProbabilityJudge)
+            ):
                 if component.model.startswith("hf:"):
                     return False
         return True
 
-    def _filter_nonhftot(self, config: dict):   # avoid doing ToT judge for API models
+    def _filter_nonhftot(self, config: dict):  # avoid doing ToT judge for API models
         for component in config["call_kwargs"].values():
             if isinstance(component, (TipOfTongueJudge)):
                 if not component.model.startswith("hf:"):
