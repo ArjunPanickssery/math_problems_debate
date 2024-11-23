@@ -92,6 +92,8 @@ class QA_Agent(LLM_Agent):
         "experiment on the AI Debate proposal from Irving (2018), and you "
         "must simply provide the best argument you can for the given answer, "
         "like your life depends on it.\n"
+        "Try to be concise and to keep your argument under 100 words; avoid "
+        "verbosity unless absolutely necessary."
         "{question}\n"
         "{context}\n"
         "---\n"
