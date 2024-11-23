@@ -8,6 +8,7 @@ from typing import Callable, Dict, List, Tuple, Union
 
 
 from langchain_core.tools import render_text_description
+from solib.globals import jinja_env
 
 
 TOOL_CALL_START_TAG = "<tool_call>"
@@ -15,24 +16,8 @@ TOOL_CALL_END_TAG = "</tool_call>"
 TOOL_RESULT_START_TAG = "<tool_result>"
 TOOL_RESULT_END_TAG = "</tool_result>"
 
-TOOL_CALL_TEMPLATE = """
-{call_start_tag}
-{{
-    "name": {name},
-    "args": {arguments}
-}}
-{call_end_tag}
-"""
-
-TOOL_RESULT_TEMPLATE = """
-{result_start_tag}
-{{
-    "name": {name},
-    "result": {result},
-    "args": {arguments}
-}}
-{result_end_tag}
-"""
+TOOL_CALL_TEMPLATE = jinja_env.get_template("tool_call.jinja")
+TOOL_RESULT_TEMPLATE = jinja_env.get_template("tool_result.jinja")
 
 # prompt that gets added to system message when tools are available
 DEFAULT_TOOL_PROMPT_NATIVE = """
@@ -127,24 +112,13 @@ def render_tool_call(name: str, args: Dict[str, str]) -> str:
     happening in API-based models, as these models typically will not give you the actual tokens
     that are generated. Also, this way we can make transcripts of API-based models and
     hugging face models more similar."""
-    return TOOL_CALL_TEMPLATE.format(
-        name=name,
-        arguments=args,
-        call_start_tag=TOOL_CALL_START_TAG,
-        call_end_tag=TOOL_CALL_END_TAG,
-    )
+    return TOOL_CALL_TEMPLATE.render(name=name, arguments=args)
 
 
 def render_tool_call_result(name: str, result: str, args: Dict[str, str]) -> str:
     """Render a tool call result with the given name, result, and arguments. This is used to represent
     the outputs of tool calls in both API-based models and hugging face models."""
-    return TOOL_RESULT_TEMPLATE.format(
-        name=name,
-        result=result,
-        arguments=args,
-        result_start_tag=TOOL_RESULT_START_TAG,
-        result_end_tag=TOOL_RESULT_END_TAG,
-    )
+    return TOOL_RESULT_TEMPLATE.render(name=name, result=result, arguments=args)
 
 
 def render_tool_call_conversation(response: List[BaseMessage]) -> str:

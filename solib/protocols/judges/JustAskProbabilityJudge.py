@@ -1,10 +1,10 @@
-import logging
 from solib.utils import parallelized_call
 from solib.datatypes import Question, Answer, Prob
 from solib.tool_use.tool_rendering import TRUST_TOOL_USE_PROMPT
 from solib.protocols.abstract import Judge
+from solib.globals import jinja_env
 
-#LOGGER = logging.get#LOGGER(__name__)
+# LOGGER = logging.get#LOGGER(__name__)
 
 
 class JustAskProbabilityJudge(Judge):
@@ -33,10 +33,10 @@ class JustAskProbabilityJudge(Judge):
                 response_model=Prob,
                 max_tokens=20,
                 cache_breaker=cache_breaker,
-                temperature=0.4
+                temperature=0.4,
             )
 
-            #LOGGER.debug(f"response: {response}")
+            # LOGGER.debug(f"response: {response}")
             return response
 
         probs_ = await parallelized_call(get_prob, question.answer_cases)
@@ -77,12 +77,11 @@ class JustAskProbabilityJudge(Judge):
             model=model, tools=tools, hf_quantization_config=hf_quantization_config
         )
 
-    prompt = (
-        "{question}\n\n"
-        "I want you to give me your most informed judgment on whether the answer "
-        "is {answer_case}. Your response should simply be your credence/probability "
-        "for the answer {answer_case}, expressed as a decimal number between 0 and 1, "
-        "and nothing else. "
-        f"{TRUST_TOOL_USE_PROMPT}\n\n"
-        "{context}"
+    prompt_template = jinja_env.get_template("judge_prompt.jinja")
+
+    prompt = prompt_template.render(
+        question="{question}",
+        answer_case="{answer_case}",
+        context="{context}",
+        trust_tool_use_prompt=TRUST_TOOL_USE_PROMPT,
     )
