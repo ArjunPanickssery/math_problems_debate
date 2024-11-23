@@ -15,6 +15,7 @@ from solib.protocols.protocols import (
 from solib.protocols.judges import (
     TipOfTongueJudge,
     JustAskProbabilityJudge,
+    JustAskProbabilitiesJudge,
 )
 from solib.protocols.agents import BestOfN_Agent
 from solib.protocols.abstract import QA_Agent, Judge, Protocol
@@ -77,8 +78,12 @@ class Experiment:
 
         if SIMULATE:
             LOGGER.debug("Running in simulation mode, skipping HF models...")
-            self.agent_models = [model for model in self.agent_models if not model.startswith("hf:")]
-            self.judge_models = [model for model in self.judge_models if not model.startswith("hf:")]
+            self.agent_models = [
+                model for model in self.agent_models if not model.startswith("hf:")
+            ]
+            self.judge_models = [
+                model for model in self.judge_models if not model.startswith("hf:")
+            ]
 
         if protocols is None:
             pass
@@ -140,7 +145,13 @@ class Experiment:
             )
             for model in self.judge_models
         ]
-        return tot_judges + jap_judges
+        japs_judges = [
+            JustAskProbabilitiesJudge(
+                model, hf_quantization_config=self.default_quant_config
+            )
+            for model in self.judge_models
+        ]
+        return tot_judges + jap_judges + japs_judges
 
     @property
     def other_componentss(self):
@@ -191,7 +202,11 @@ class Experiment:
 
     def filter_config(self, config: dict):
         """Subclass this. By default, uses _filter_selfplay and _filter_nohfjap."""
-        return self._filter_selfplay(config) and self._filter_nohfjap(config)
+        return (
+            self._filter_selfplay(config)
+            and self._filter_nohfjap(config)
+            and self._filter_nojap(config)
+        )
 
     @property
     def filtered_configs(self):
@@ -201,6 +216,7 @@ class Experiment:
         filtered_configs = self.filtered_configs
         random(filtered_configs).shuffle(filtered_configs)
         filtered_configs = filtered_configs[:max_configs]
+
         async def run_experiment(config: dict):
             setup = config["protocol"](**config["init_kwargs"])
             stuff = await setup.experiment(
@@ -221,7 +237,9 @@ class Experiment:
         if confirm.lower() != "y":
             return
         LOGGER.debug(filtered_configs)
-        statss = await parallelized_call(run_experiment, filtered_configs, use_tqdm=True)
+        statss = await parallelized_call(
+            run_experiment, filtered_configs, use_tqdm=True
+        )
         all_stats = [
             {"config": config, "stats": stats}
             for config, stats in zip(filtered_configs, statss)
@@ -229,6 +247,14 @@ class Experiment:
         write_json(dump_config(all_stats), path=self.write_path / "all_stats.json")
 
     def _filter_trivial(self, config: dict):
+        return True
+
+    def _filter_nojap(self, config: dict):
+        for component in config["call_kwargs"].values():
+            if isinstance(component, JustAskProbabilityJudge) and not isinstance(
+                component, JustAskProbabilitiesJudge
+            ):
+                return False
         return True
 
     def _filter_selfplay(self, config: dict):
@@ -245,12 +271,14 @@ class Experiment:
 
     def _filter_nohfjap(self, config: dict):
         for component in config["call_kwargs"].values():
-            if isinstance(component, (QA_Agent, JustAskProbabilityJudge)):
+            if isinstance(
+                component, (JustAskProbabilitiesJudge, JustAskProbabilityJudge)
+            ):
                 if component.model.startswith("hf:"):
                     return False
         return True
 
-    def _filter_nonhftot(self, config: dict):   # avoid doing ToT judge for API models
+    def _filter_nonhftot(self, config: dict):  # avoid doing ToT judge for API models
         for component in config["call_kwargs"].values():
             if isinstance(component, (TipOfTongueJudge)):
                 if not component.model.startswith("hf:"):
