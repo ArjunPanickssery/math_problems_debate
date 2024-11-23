@@ -1,11 +1,16 @@
-import logging
 from pathlib import Path
-from solib.utils import dump_config, AbstractionError, parallelized_call, write_jsonl_async, write_json
+from solib.utils import (
+    dump_config,
+    AbstractionError,
+    parallelized_call,
+    write_jsonl_async,
+    write_json,
+)
 from solib.llm_utils import LLM_Agent
 from solib.datatypes import Answer, Question, TranscriptItem
 from solib.data.loading import Dataset
 
-#LOGGER = logging.get#LOGGER(__name__)
+# LOGGER = logging.get#LOGGER(__name__)
 
 
 class Judge(LLM_Agent):
@@ -32,7 +37,7 @@ class QA_Agent(LLM_Agent):
         words_in_mouth: str | None = None,
         max_tokens: int = 2048,
         cache_breaker: int = 0,
-        temperature: float = 0.4
+        temperature: float = 0.4,
     ) -> str:
         """Simulate an AI arguing to convince the judge in favour of answer_case.
 
@@ -62,7 +67,7 @@ class QA_Agent(LLM_Agent):
             words_in_mouth=words_in_mouth,
             max_tokens=max_tokens,
             cache_breaker=cache_breaker,
-            temperature=temperature
+            temperature=temperature,
         )
 
     def __init__(
