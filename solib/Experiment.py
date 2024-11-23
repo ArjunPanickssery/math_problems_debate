@@ -15,6 +15,7 @@ from solib.protocols.protocols import (
 from solib.protocols.judges import (
     TipOfTongueJudge,
     JustAskProbabilityJudge,
+    JustAskProbabilitiesJudge,
 )
 from solib.protocols.agents import BestOfN_Agent
 from solib.protocols.abstract import QA_Agent, Judge, Protocol
@@ -140,7 +141,13 @@ class Experiment:
             )
             for model in self.judge_models
         ]
-        return tot_judges + jap_judges
+        japs_judges = [ 
+            JustAskProbabilitiesJudge(
+                model, hf_quantization_config=self.default_quant_config
+            )
+            for model in self.judge_models
+        ]
+        return tot_judges + jap_judges + japs_judges
 
     @property
     def other_componentss(self):
@@ -191,7 +198,11 @@ class Experiment:
 
     def filter_config(self, config: dict):
         """Subclass this. By default, uses _filter_selfplay and _filter_nohfjap."""
-        return self._filter_selfplay(config) and self._filter_nohfjap(config)
+        return (
+            self._filter_selfplay(config)
+            and self._filter_nohfjap(config)
+            and self._filter_nojap(config)
+        )
 
     @property
     def filtered_configs(self):
@@ -231,6 +242,12 @@ class Experiment:
     def _filter_trivial(self, config: dict):
         return True
 
+    def _filter_nojap(self, config: dict):
+        for component in config["call_kwargs"].values():
+            if isinstance(component, JustAskProbabilitiesJudge):
+                return False
+        return True
+
     def _filter_selfplay(self, config: dict):
         if config["protocol"] == "debate":
             return config["call_kwargs"]["adversary"] != config["call_kwargs"]["agent"]
@@ -245,7 +262,7 @@ class Experiment:
 
     def _filter_nohfjap(self, config: dict):
         for component in config["call_kwargs"].values():
-            if isinstance(component, (QA_Agent, JustAskProbabilityJudge)):
+            if isinstance(component, (JustAskProbabilitiesJudge, JustAskProbabilityJudge)):
                 if component.model.startswith("hf:"):
                     return False
         return True
