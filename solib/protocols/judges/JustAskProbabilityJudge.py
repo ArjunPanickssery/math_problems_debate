@@ -23,10 +23,11 @@ class JustAskProbabilityJudge(Judge):
         """Returns a .is_elicited Question."""
 
         async def get_prob(answer_case: Answer) -> Prob:
-            prompt = self.prompt.format(
+            prompt = self.prompt_template.render(
                 question=question.to_prompt(),
-                context=context,
                 answer_case=answer_case.short,
+                context=context,
+                trust_tool_use=TRUST_TOOL_USE_PROMPT,
             )
             response = await self.get_response(
                 prompt=prompt,
@@ -78,10 +79,3 @@ class JustAskProbabilityJudge(Judge):
         )
 
     prompt_template = jinja_env.get_template("judge_prompt.jinja")
-
-    prompt = prompt_template.render(
-        question="{question}",
-        answer_case="{answer_case}",
-        context="{context}",
-        trust_tool_use_prompt=TRUST_TOOL_USE_PROMPT,
-    )

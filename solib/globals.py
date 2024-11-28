@@ -14,6 +14,20 @@ if SIMULATE:
 MAX_WORDS = int(os.getenv("MAX_WORDS", 100))
 # LOGGER = logging.get#LOGGER(__name__)
 
+# Define constants
+TOOL_CALL_START_TAG = "<tool_call>"
+TOOL_CALL_END_TAG = "</tool_call>"
+TOOL_RESULT_START_TAG = "<tool_result>"
+TOOL_RESULT_END_TAG = "</tool_result>"
+
 # Setup Jinja environment
 TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), "prompts")
 jinja_env = Environment(loader=FileSystemLoader(TEMPLATES_DIR))
+jinja_env.globals.update(
+    {
+        "TOOL_CALL_START_TAG": TOOL_CALL_START_TAG,
+        "TOOL_CALL_END_TAG": TOOL_CALL_END_TAG,
+        "TOOL_RESULT_START_TAG": TOOL_RESULT_START_TAG,
+        "TOOL_RESULT_END_TAG": TOOL_RESULT_END_TAG,
+    }
+)

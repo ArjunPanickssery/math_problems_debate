@@ -1,52 +1,15 @@
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
-
-
 from langchain.tools import StructuredTool, tool
-
-
 from typing import Callable, Dict, List, Tuple, Union
-
-
 from langchain_core.tools import render_text_description
-from solib.globals import jinja_env
-
-
-TOOL_CALL_START_TAG = "<tool_call>"
-TOOL_CALL_END_TAG = "</tool_call>"
-TOOL_RESULT_START_TAG = "<tool_result>"
-TOOL_RESULT_END_TAG = "</tool_result>"
-
-TOOL_CALL_TEMPLATE = jinja_env.get_template("tool_call.jinja")
-TOOL_RESULT_TEMPLATE = jinja_env.get_template("tool_result.jinja")
-
-# prompt that gets added to system message when tools are available
-DEFAULT_TOOL_PROMPT_NATIVE = """
-You are a tool-calling LLM that has access to the attached tools. The use of the tools will be likely very important for the following task.
-"""
-
-# system message template that gets added when an llm has access to tools but doesn't natively support them
-DEFAULT_TOOL_PROMPT_NONNATIVE = """
-You are a tool calling LLM that has access to the following set of tools.
-You are provided with function signatures within <tools></tools> XML tags.
-You may call one or more functions to assist with the user query.
-Don\'t make assumptions about what values to plug into functions. Here are the available tools:
-
-<tools>
-{rendered_tools}
-</tools>
-
-Every tool call should be surrounded by {start_call_tag}{end_call_tag} tags, and should take the form of a JSON object with the following format:
-{call_template}
-
-The result will then be automatically supplied in the form of a JSON object with the following format:
-{result_template}
-"""
-
-TRUST_TOOL_USE_PROMPT = (
-    "Please note that anything that is included in "
-    f"{TOOL_RESULT_START_TAG}{TOOL_RESULT_END_TAG} "
-    "tags is guaranteed to be true."
+from solib.globals import (
+    jinja_env,
 )
+
+TOOL_CALL_TEMPLATE = jinja_env.get_template("tool_use/tool_call.jinja")
+TOOL_RESULT_TEMPLATE = jinja_env.get_template("tool_use/tool_result.jinja")
+
+TRUST_TOOL_USE_PROMPT = jinja_env.get_template("tool_use/tool_trust.jinja").render()
 
 
 def get_structured_tools(
@@ -69,32 +32,26 @@ def render_tools(tools: List[Union[Callable, StructuredTool]]) -> str:
 
 
 def get_tool_prompt_for_nonnative(tools: List[Union[Callable, StructuredTool]]) -> str:
-    """Get the tool prompt for the given tools."""
-    # prompt format based off of https://huggingface.co/NousResearch/Hermes-2-Pro-Llama-3-8B/tree/main
+    """Get the tool prompt for the given tools.
+
+    System message template that gets added when an llm has access to tools but
+    doesn't natively support them."""
+
     rendered_tools = render_tools(tools)
-    return DEFAULT_TOOL_PROMPT_NONNATIVE.format(
-        start_call_tag=TOOL_CALL_START_TAG,
-        end_call_tag=TOOL_CALL_END_TAG,
-        call_template=TOOL_CALL_TEMPLATE.format(
-            call_start_tag=TOOL_CALL_START_TAG,
-            call_end_tag=TOOL_CALL_END_TAG,
-            name="<function-name>",
-            arguments="<args-dict>",
-        ),
-        result_template=TOOL_RESULT_TEMPLATE.format(
-            result_start_tag=TOOL_RESULT_START_TAG,
-            result_end_tag=TOOL_RESULT_END_TAG,
-            name="<function-name>",
-            result="<result>",
-            arguments="<args-dict>",
-        ),
+    return jinja_env.get_template("tool_use/tool_prompt_nonnative.jinja").render(
         rendered_tools=rendered_tools,
+        name="<function-name>",
+        arguments="<args-dict>",
+        result="<result>",
     )
 
 
 def get_tool_prompt_for_native() -> str:
-    """Get the tool prompt for a native tool-calling LLM."""
-    return DEFAULT_TOOL_PROMPT_NATIVE
+    """Get the tool prompt for a native tool-calling LLM.
+
+    Will be added to system messages when tools are available."""
+
+    return jinja_env.get_template("tool_use/tool_prompt.jinja")
 
 
 def get_tool_prompt(

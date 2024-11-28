@@ -15,7 +15,7 @@ class Consultancy(Protocol):
         consultant_goes_first: bool = False,
     ):
         self.consultant_prompt = consultant_prompt or self.load_consultant_prompt()
-        self.client_prompt = client_prompt or self.client_prompt
+        self.client_prompt = client_prompt or self.load_client_prompt()
         self.num_turns = num_turns
         self.consultant_goes_first = consultant_goes_first
         super().__init__(
@@ -27,6 +27,10 @@ class Consultancy(Protocol):
 
     def load_consultant_prompt(self):
         template = jinja_env.get_template("consultant.jinja")
+        return template.render(MAX_WORDS=MAX_WORDS)
+
+    def load_client_prompt(self):
+        template = jinja_env.get_template("client.jinja")
         return template.render(MAX_WORDS=MAX_WORDS)
 
     def end_communication(self, question: Question) -> bool:
