@@ -9,8 +9,6 @@ from solib.globals import (
 TOOL_CALL_TEMPLATE = jinja_env.get_template("tool_use/tool_call.jinja")
 TOOL_RESULT_TEMPLATE = jinja_env.get_template("tool_use/tool_result.jinja")
 
-TRUST_TOOL_USE_PROMPT = jinja_env.get_template("tool_use/tool_trust.jinja").render()
-
 
 def get_structured_tools(
     tools: List[Callable | StructuredTool],

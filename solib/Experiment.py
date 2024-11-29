@@ -19,7 +19,7 @@ from solib.protocols.judges import (
 from solib.protocols.agents import BestOfN_Agent
 from solib.protocols.abstract import QA_Agent, Judge, Protocol
 
-LOGGER = logging.getLOGGER(__name__)
+LOGGER = logging.getLogger(__name__)
 
 
 class Experiment:

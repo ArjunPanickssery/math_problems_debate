@@ -5,7 +5,7 @@ from solib.protocols.abstract import QA_Agent, Protocol, Judge
 from solib.protocols.judges import JustAskProbabilityJudge
 from solib.protocols.protocols import Propaganda
 
-LOGGER = logging.getLOGGER(__name__)
+LOGGER = logging.getLogger(__name__)
 
 
 class BestOfN_Agent(QA_Agent):
@@ -25,12 +25,11 @@ class BestOfN_Agent(QA_Agent):
         # inherit other stuff
         self.model = self.agent.model
         self.tools = self.agent.tools
-        self.prompt = self.agent.prompt
+        self.prompt_template = self.agent.prompt_template
         self.dict = self.agent.dict
 
     async def __call__(
         self,
-        prompt: str = None,
         question: Question = None,
         answer_case: Answer = None,
         context: str | None = None,

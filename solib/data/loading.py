@@ -13,7 +13,7 @@ import re
 from solib.datatypes import Question, Answer
 from solib.utils import random
 
-LOGGER = logging.getLOGGER(__name__)
+LOGGER = logging.getLogger(__name__)
 
 
 def file_path():

@@ -213,7 +213,6 @@ def retry(attempts: int = 5):
                 except Exception as e:
                     LOGGER.warning(f"Error on attempt {i}: {e}")
                     time.sleep(60)
-                    print("error, sleeping", e, i)
             raise Exception("Failed to get response")
 
         return wrapper
@@ -231,7 +230,6 @@ def aretry(attempts: int = 5):
                 except Exception as e:
                     LOGGER.warning(f"Error on attempt {i}: {e}")
                     time.sleep(60)
-                    print("error, sleeping", e, i)
             raise Exception("Failed to get response")
 
         return wrapper

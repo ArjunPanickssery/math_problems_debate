@@ -5,7 +5,7 @@ import numpy as np
 from typing import Any, Literal, Optional, Union, Callable, Self
 from pydantic import BaseModel, field_validator, computed_field, model_validator
 
-LOGGER = logging.getLOGGER(__name__)
+LOGGER = logging.getLogger(__name__)
 
 
 class Prob(BaseModel):

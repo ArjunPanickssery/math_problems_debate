@@ -1,7 +1,6 @@
 import logging
 from solib.utils import parallelized_call
 from solib.datatypes import Question, Answer, Prob
-from solib.tool_use.tool_rendering import TRUST_TOOL_USE_PROMPT
 from solib.protocols.abstract import Judge
 from solib.globals import jinja_env
 
@@ -28,7 +27,6 @@ class JustAskProbabilityJudge(Judge):
                 question=question.to_prompt(),
                 answer_case=answer_case.short,
                 context=context,
-                trust_tool_use=TRUST_TOOL_USE_PROMPT,
             )
             response = await self.get_response(
                 prompt=prompt,
@@ -58,25 +56,24 @@ class JustAskProbabilityJudge(Judge):
         model: str = None,
         tools: list[callable] | None = None,
         hf_quantization_config=None,
-        prompt: str = None,
+        prompt_file: str = "judge_prompt.jinja",
         words_in_mouth: str = None,
     ):
         """Initialize basic / default Judge. Can be overriden in subclasses.
 
         Args:
-            prompt (str): prompt for the judge. Default None.
+            prompt_file (str): file for the prompt. Default 'judge_prompt.jinja'.
             model (str): model for the judge. Default None.
         """
-        self.prompt = prompt or self.prompt
+        self.prompt_file = prompt_file
         self.words_in_mouth = words_in_mouth
+        self.prompt_template = jinja_env.get_template(prompt_file)
         self.dict = {
             "model": model,
             "tools": tools,
-            "prompt": self.prompt,
+            "prompt": jinja_env.get_source(prompt_file),
             "words_in_mouth": self.words_in_mouth,
         }
         super().__init__(
             model=model, tools=tools, hf_quantization_config=hf_quantization_config
         )
-
-    prompt_template = jinja_env.get_template("judge_prompt.jinja")
