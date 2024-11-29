@@ -13,7 +13,8 @@ import os
 import asyncio
 from tqdm.asyncio import tqdm
 
-# from solib.globals import #LOGGER, GLOBAL_LLM_SEMAPHORE
+from solib.globals import LOGGER
+
 
 def dump_config(instance):
     if inspect.isfunction(instance):
@@ -154,9 +155,7 @@ def str_config(config: dict | list[dict]):
                 k: (
                     v.__name__
                     if isinstance(v, type)
-                    else str_config(v)
-                    if isinstance(v, dict)
-                    else v
+                    else str_config(v) if isinstance(v, dict) else v
                 )
                 for k, v in config.items()
             }
@@ -179,7 +178,7 @@ async def parallelized_call(
     """
 
     if os.getenv("SINGLE_THREAD"):
-        #LOGGER.info(f"Running {func} on {len(data)} datapoints sequentially")
+        LOGGER.info(f"Running {func} on {len(data)} datapoints sequentially")
         return [await func(d) for d in data]
 
     # max_concurrent_queries = min(
@@ -187,9 +186,9 @@ async def parallelized_call(
     #     int(os.getenv("MAX_CONCURRENT_QUERIES", max_concurrent_queries)),
     # )
 
-    #LOGGER.info(
-    #     f"Running {func} on {len(data)} datapoints with {max_concurrent_queries} concurrent queries"
-    # )
+    LOGGER.info(
+        f"Running {func} on {len(data)} datapoints with {max_concurrent_queries} concurrent queries"
+    )
 
     if max_concurrent_queries is not None:
         local_semaphore = asyncio.Semaphore(max_concurrent_queries)
@@ -197,6 +196,7 @@ async def parallelized_call(
         async def call_func(func, datapoint):
             async with local_semaphore:
                 return await func(datapoint)
+
         tasks = [call_func(func, d) for d in data]
     else:
         tasks = [func(d) for d in data]
@@ -211,12 +211,13 @@ def retry(attempts: int = 5):
                 try:
                     return func(*args, **kwargs)
                 except Exception as e:
-                    #LOGGER.warning(f"Error on attempt {i}: {e}")
+                    LOGGER.warning(f"Error on attempt {i}: {e}")
                     time.sleep(60)
                     print("error, sleeping", e, i)
             raise Exception("Failed to get response")
 
         return wrapper
+
     return decorator
 
 
@@ -228,10 +229,11 @@ def aretry(attempts: int = 5):
                 try:
                     return await func(*args, **kwargs)
                 except Exception as e:
-                    #LOGGER.warning(f"Error on attempt {i}: {e}")
+                    LOGGER.warning(f"Error on attempt {i}: {e}")
                     time.sleep(60)
                     print("error, sleeping", e, i)
             raise Exception("Failed to get response")
 
         return wrapper
+
     return decorator

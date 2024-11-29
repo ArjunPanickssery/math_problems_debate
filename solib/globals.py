@@ -2,6 +2,7 @@ import os
 from costly import Costlog
 from dotenv import load_dotenv
 from jinja2 import Environment, FileSystemLoader
+import logging
 
 load_dotenv()
 GLOBAL_COST_LOG = Costlog(mode="jsonl", discard_extras=True)
@@ -12,7 +13,7 @@ MAX_CONCURRENT_QUERIES = int(os.getenv("MAX_CONCURRENT_QUERIES", 10))
 if SIMULATE:
     MAX_CONCURRENT_QUERIES = 10_000
 MAX_WORDS = int(os.getenv("MAX_WORDS", 100))
-# LOGGER = logging.get#LOGGER(__name__)
+LOGGER = logging.getLOGGER(__name__)
 
 # Define constants
 TOOL_CALL_START_TAG = "<tool_call>"

@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 from solib.utils import (
     dump_config,
@@ -10,7 +11,7 @@ from solib.llm_utils import LLM_Agent
 from solib.datatypes import Answer, Question, TranscriptItem
 from solib.data.loading import Dataset
 
-# LOGGER = logging.get#LOGGER(__name__)
+LOGGER = logging.getLOGGER(__name__)
 
 
 class Judge(LLM_Agent):

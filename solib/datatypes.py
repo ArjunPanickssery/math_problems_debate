@@ -5,7 +5,7 @@ import numpy as np
 from typing import Any, Literal, Optional, Union, Callable, Self
 from pydantic import BaseModel, field_validator, computed_field, model_validator
 
-#LOGGER = logging.get#LOGGER(__name__)
+LOGGER = logging.getLOGGER(__name__)
 
 
 class Prob(BaseModel):
@@ -542,11 +542,11 @@ class Question(BaseModel):
 
     def normalize_probs(self) -> "Question":
         assert self.is_elicited
-        # if self.total_prob == 0.0:
-        #     #LOGGER.warning(
-        #         f"Total probability is 0.0 for question {self.question}. "
-        #         "Normalizing probs to 1 / len(answer_cases)."
-        #     )
+        if self.total_prob == 0.0:
+            LOGGER.warning(
+                f"Total probability is 0.0 for question {self.question}. "
+                "Normalizing probs to 1 / len(answer_cases)."
+            )
         return Question(
             question=self.question,
             answer_cases=[
@@ -588,9 +588,11 @@ class Question(BaseModel):
         max_agent_score = max(answer.agent_score.log for answer in self.answer_cases)
         if beta == 0.0:
             return {
-                answer.short: Prob(prob=1.0)
-                if answer.agent_score.log == max_agent_score
-                else Prob(prob=0.0)
+                answer.short: (
+                    Prob(prob=1.0)
+                    if answer.agent_score.log == max_agent_score
+                    else Prob(prob=0.0)
+                )
                 for answer in self.answer_cases
             }
         elif beta == np.inf:

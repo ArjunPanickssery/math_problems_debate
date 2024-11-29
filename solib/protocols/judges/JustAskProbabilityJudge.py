@@ -1,10 +1,11 @@
+import logging
 from solib.utils import parallelized_call
 from solib.datatypes import Question, Answer, Prob
 from solib.tool_use.tool_rendering import TRUST_TOOL_USE_PROMPT
 from solib.protocols.abstract import Judge
 from solib.globals import jinja_env
 
-# LOGGER = logging.get#LOGGER(__name__)
+LOGGER = logging.getLogger(__name__)
 
 
 class JustAskProbabilityJudge(Judge):
@@ -37,7 +38,7 @@ class JustAskProbabilityJudge(Judge):
                 temperature=0.4,
             )
 
-            # LOGGER.debug(f"response: {response}")
+            LOGGER.debug(f"response: {response}")
             return response
 
         probs_ = await parallelized_call(get_prob, question.answer_cases)

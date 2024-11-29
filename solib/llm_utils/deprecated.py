@@ -1,5 +1,5 @@
 from typing import Union
-from solib.globals import GLOBAL_COST_LOG, #LOGGER, SIMULATE
+from solib.globals import GLOBAL_COST_LOG, LOGGER, SIMULATE
 from solib.llm_utils.caching import cache
 from solib.llm_utils.llm_utils import RateLimiter, get_llm
 
@@ -33,7 +33,7 @@ def get_llm_response(
     This is deprecated, or maybe we can just use it for one-time calls etc.
     """
     if not simulate:
-        #LOGGER.info(f"Running get_llm_response for {model}; NOT FROM CACHE")
+        LOGGER.info(f"Running get_llm_response for {model}; NOT FROM CACHE")
         # Get rate limiter for this model if it exists
         rate_limiter = RateLimiter.get_rate_limiter(model)
         rate_limiter.wait_if_needed()
@@ -82,7 +82,7 @@ async def get_llm_response_async(
     This is deprecated, or maybe we can just use it for one-time calls etc.
     """
     if not simulate:
-        #LOGGER.info(f"Running get_llm_response_async for {model}; NOT FROM CACHE")
+        LOGGER.info(f"Running get_llm_response_async for {model}; NOT FROM CACHE")
         # Get rate limiter for this model if it exists
         rate_limiter = RateLimiter.get_rate_limiter(model)
         rate_limiter.wait_if_needed()
@@ -129,7 +129,7 @@ def get_llm_probs(
     This is deprecated, or maybe we can just use it for one-time calls etc.
     """
     if not simulate:
-        #LOGGER.info(f"Running get_llm_probs for {model}; NOT FROM CACHE")
+        LOGGER.info(f"Running get_llm_probs for {model}; NOT FROM CACHE")
         # Get rate limiter for this model if it exists
         rate_limiter = RateLimiter.get_rate_limiter(model)
         rate_limiter.wait_if_needed()
@@ -175,7 +175,7 @@ async def get_llm_probs_async(
     This is deprecated, or maybe we can just use it for one-time calls etc.
     """
     if not simulate:
-        #LOGGER.info(f"Running get_llm_probs_async for {model}; NOT FROM CACHE")
+        LOGGER.info(f"Running get_llm_probs_async for {model}; NOT FROM CACHE")
         # Get rate limiter for this model if it exists
         rate_limiter = RateLimiter.get_rate_limiter(model)
         rate_limiter.wait_if_needed()

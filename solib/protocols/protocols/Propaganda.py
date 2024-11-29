@@ -1,7 +1,8 @@
+import logging
 from solib.datatypes import Question, Answer, TranscriptItem
 from solib.protocols.abstract import Protocol, QA_Agent, Judge
 
-# LOGGER = logging.get#LOGGER(__name__)
+LOGGER = logging.getLogger(__name__)
 
 
 class Propaganda(Protocol):

@@ -32,6 +32,7 @@ from solib.utils import retry, aretry
 if TYPE_CHECKING:
     from transformers import AutoTokenizer
 
+
 class LLM_Simulator(LLM_Simulator_Faker):
     @classmethod
     def _fake_custom(cls, t: type):
@@ -107,7 +108,9 @@ def format_prompt(
             )
             if msg_type == "langchain":
                 messages.insert(0, SystemMessage(content=tool_msg))
-            elif not natively_supports_tools:  # local models (where msg_type="dict") that natively support tools will have the tool prompt added by apply_chat_template
+            elif (
+                not natively_supports_tools
+            ):  # local models (where msg_type="dict") that natively support tools will have the tool prompt added by apply_chat_template
                 messages.insert(  # otherwise, we manually create one
                     0,
                     {
@@ -187,22 +190,25 @@ def load_api_model(model):
             from langchain_openai import ChatOpenAI
 
             api_key = os.getenv("OPENAI_API_KEY")
-            client = ChatOpenAI(model=model, api_key=api_key,
-                                rate_limiter=RATE_LIMITERS["gpt"])
+            client = ChatOpenAI(
+                model=model, api_key=api_key, rate_limiter=RATE_LIMITERS["gpt"]
+            )
 
         elif model.startswith(("claude", "anthropic")):
             from langchain_anthropic import ChatAnthropic
 
             api_key = os.getenv("ANTHROPIC_API_KEY")
-            client = ChatAnthropic(model=model, api_key=api_key,
-                                   rate_limiter=RATE_LIMITERS["claude"])
+            client = ChatAnthropic(
+                model=model, api_key=api_key, rate_limiter=RATE_LIMITERS["claude"]
+            )
 
         elif model.startswith("mistral"):
             from langchain_mistralai import ChatMistralAI
 
             api_key = os.getenv("MISTRAL_API_KEY")
-            client = ChatMistralAI(model=model, api_key=api_key,
-                                   rate_limiter=RATE_LIMITERS["mistral"])
+            client = ChatMistralAI(
+                model=model, api_key=api_key, rate_limiter=RATE_LIMITERS["mistral"]
+            )
 
         else:
             raise ValueError(f"Model {model} is not supported for now")
@@ -320,9 +326,7 @@ def get_hf_llm(model: str, hf_quantization_config=True):
             probs[token] = output_probs[token_enc].item()
         total_prob = sum(probs.values())
         try:
-            probs_relative = {
-                token: prob / total_prob for token, prob in probs.items()
-            }
+            probs_relative = {token: prob / total_prob for token, prob in probs.items()}
         except ZeroDivisionError:
             import pdb
 
@@ -335,11 +339,10 @@ def get_hf_llm(model: str, hf_quantization_config=True):
         "return_probs": return_probs,
     }
 
+
 def get_api_llm(model: str):
     msg_type = "langchain"
-    natively_supports_tools = (
-        True  # assume all chat API models natively support tools
-    )
+    natively_supports_tools = True  # assume all chat API models natively support tools
 
     client = load_api_model(model)
 
@@ -347,15 +350,11 @@ def get_api_llm(model: str):
         if isinstance(
             response, list
         ):  # handle tool calling case, make the output match the hugging face case somewhat
-            raw_response = (
-                solib.tool_use.tool_rendering.render_tool_call_conversation(
-                    response
-                )
+            raw_response = solib.tool_use.tool_rendering.render_tool_call_conversation(
+                response
             )
             token_types = [
-                k
-                for k, v in response[0].usage_metadata.items()
-                if isinstance(v, int)
+                k for k, v in response[0].usage_metadata.items() if isinstance(v, int)
             ]
             usage = defaultdict(int)
             for token_type in token_types:
@@ -367,14 +366,12 @@ def get_api_llm(model: str):
         elif isinstance(response, BaseMessage):  # handle singleton messages
             raw_response = response.content
             usage = response.usage_metadata
-        elif isinstance(
-            response, dict
-        ):  # otherwise, we are using structured output
+        elif isinstance(response, dict):  # otherwise, we are using structured output
             raw = response["raw"]
             # probably should do some error handling here if 'parsing_error' is set
             parsed = response["parsed"]
             if response["parsing_error"] is not None:
-                #LOGGER.error(raw)
+                LOGGER.error(raw)
                 raise ValueError(
                     f"Error parsing structured output: {response['parsing_error']}"
                 )
@@ -413,9 +410,7 @@ def get_api_llm(model: str):
             bclient = bclient.bind(top_logprobs=top_logprobs, logprobs=True)
 
         if response_model:
-            bclient = bclient.with_structured_output(
-                response_model, include_raw=True
-            )
+            bclient = bclient.with_structured_output(response_model, include_raw=True)
 
         get_response = bclient.ainvoke if use_async else bclient.invoke
 
@@ -450,7 +445,7 @@ def get_api_llm(model: str):
         use_async,
         **kwargs,
     ):
-        if kwargs.get('words_in_mouth'):
+        if kwargs.get("words_in_mouth"):
             warnings.warn(
                 f"words_in_mouth is not supported for model type `{model}`",
                 UserWarning,
@@ -461,7 +456,7 @@ def get_api_llm(model: str):
             max_tokens=max_tokens,
             temperature=temperature,
             response_model=response_model,
-            use_async=use_async
+            use_async=use_async,
         )
 
         messages = format_prompt(
@@ -504,17 +499,17 @@ def get_api_llm(model: str):
             use_async=False,
             **kwargs,
         )
-        #LOGGER.debug(messages)
+        LOGGER.debug(messages)
         response = get_response(messages)
 
         raw_response, usage = process_response(response)
 
-        #LOGGER.debug(f"raw_response: {raw_response}")
+        LOGGER.debug(f"raw_response: {raw_response}")
 
         if response_model is not None and isinstance(raw_response, dict):
             raw_response = response_model(**raw_response)
 
-        #LOGGER.debug(f"raw_response: {raw_response}")
+        LOGGER.debug(f"raw_response: {raw_response}")
 
         return CostlyResponse(
             output=raw_response,
@@ -555,12 +550,12 @@ def get_api_llm(model: str):
 
         raw_response, usage = process_response(response)
 
-        #LOGGER.debug(f"raw_response: {raw_response}")
+        LOGGER.debug(f"raw_response: {raw_response}")
 
         if response_model is not None and isinstance(raw_response, dict):
             raw_response = response_model(**raw_response)
 
-        #LOGGER.debug(f"raw_response: {raw_response}")
+        LOGGER.debug(f"raw_response: {raw_response}")
 
         return CostlyResponse(
             output=raw_response,
@@ -572,7 +567,7 @@ def get_api_llm(model: str):
             "top_logprobs"
         ]
         all_logprobs_dict = {x["token"]: x["logprob"] for x in all_logprobs}
-        probs = defaultdict(float)#{token: 0 for token in return_probs_for}
+        probs = defaultdict(float)  # {token: 0 for token in return_probs_for}
         for token in return_probs_for:
             if token in all_logprobs_dict:
                 probs[token] = math.exp(all_logprobs_dict[token])
@@ -580,7 +575,9 @@ def get_api_llm(model: str):
                 probs[token] = math.exp(all_logprobs_dict[f"({token}"])
         total_prob = sum(probs.values())
         try:
-            probs_relative = {token: probs[token] / total_prob for token in return_probs_for}
+            probs_relative = {
+                token: probs[token] / total_prob for token in return_probs_for
+            }
         except ZeroDivisionError:
             import pdb
 
@@ -699,6 +696,7 @@ def get_api_llm(model: str):
         "return_probs_async": return_probs_async,
     }
 
+
 def get_llm(model: str, hf_quantization_config=True):
     if model.startswith("hf:"):  # Hugging Face local models
         return get_hf_llm(model, hf_quantization_config)
@@ -707,20 +705,21 @@ def get_llm(model: str, hf_quantization_config=True):
 
 
 RATE_LIMITERS: dict[str, InMemoryRateLimiter] = {
-    "gpt": InMemoryRateLimiter(requests_per_second=125 / 60,
-                               check_every_n_seconds=0.05, # how often to check if we can make a request
-                               max_bucket_size=MAX_CONCURRENT_QUERIES
-                               ),
-
-    "claude": InMemoryRateLimiter(requests_per_second=1000 / 60,
-                                  check_every_n_seconds=0.05,
-                                  max_bucket_size=MAX_CONCURRENT_QUERIES
-                                  ),
-
-    "mistral": InMemoryRateLimiter(requests_per_second=125 / 60,
-                               check_every_n_seconds=0.05, # how often to check if we can make a request
-                               max_bucket_size=MAX_CONCURRENT_QUERIES
-                               ),
+    "gpt": InMemoryRateLimiter(
+        requests_per_second=125 / 60,
+        check_every_n_seconds=0.05,  # how often to check if we can make a request
+        max_bucket_size=MAX_CONCURRENT_QUERIES,
+    ),
+    "claude": InMemoryRateLimiter(
+        requests_per_second=1000 / 60,
+        check_every_n_seconds=0.05,
+        max_bucket_size=MAX_CONCURRENT_QUERIES,
+    ),
+    "mistral": InMemoryRateLimiter(
+        requests_per_second=125 / 60,
+        check_every_n_seconds=0.05,  # how often to check if we can make a request
+        max_bucket_size=MAX_CONCURRENT_QUERIES,
+    ),
 }
 
 
@@ -764,10 +763,9 @@ class LLM_Agent:
         **kwargs,
     ):
         if not simulate:
-            #LOGGER.info(f"Running get_response_sync for {self.model}; NOT FROM CACHE")
+            LOGGER.info(f"Running get_response_sync for {self.model}; NOT FROM CACHE")
             # Get rate limiter for this model if it exists
             pass
-
 
         return self.ai["generate"](
             model=self.model,
@@ -803,7 +801,7 @@ class LLM_Agent:
         **kwargs,
     ):
         if not simulate:
-            #LOGGER.info(f"Running get_response_async for {self.model}; NOT FROM CACHE")
+            LOGGER.info(f"Running get_response_async for {self.model}; NOT FROM CACHE")
             # Get rate limiter for this model if it exists
             pass
 
@@ -851,7 +849,7 @@ class LLM_Agent:
         **kwargs,
     ):
         if not simulate:
-            #LOGGER.info(f"Running get_probs_sync for {self.model}; NOT FROM CACHE")
+            LOGGER.info(f"Running get_probs_sync for {self.model}; NOT FROM CACHE")
             # Get rate limiter for this model if it exists
             pass
 
@@ -889,10 +887,9 @@ class LLM_Agent:
         **kwargs,
     ):
         if not simulate:
-            #LOGGER.info(f"Running get_probs_async for {self.model}; NOT FROM CACHE")
+            LOGGER.info(f"Running get_probs_async for {self.model}; NOT FROM CACHE")
             # Get rate limiter for this model if it exists
             pass
-
 
         return await self.ai["return_probs_async"](
             model=self.model,

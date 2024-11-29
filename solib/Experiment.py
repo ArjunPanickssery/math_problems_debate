@@ -19,7 +19,7 @@ from solib.protocols.judges import (
 from solib.protocols.agents import BestOfN_Agent
 from solib.protocols.abstract import QA_Agent, Judge, Protocol
 
-#LOGGER = logging.get#LOGGER(__name__)
+LOGGER = logging.getLOGGER(__name__)
 
 
 class Experiment:
@@ -76,9 +76,13 @@ class Experiment:
         self.judge_models = judge_models
 
         if SIMULATE:
-            #LOGGER.debug("Running in simulation mode, skipping HF models...")
-            self.agent_models = [model for model in self.agent_models if not model.startswith("hf:")]
-            self.judge_models = [model for model in self.judge_models if not model.startswith("hf:")]
+            LOGGER.debug("Running in simulation mode, skipping HF models...")
+            self.agent_models = [
+                model for model in self.agent_models if not model.startswith("hf:")
+            ]
+            self.judge_models = [
+                model for model in self.judge_models if not model.startswith("hf:")
+            ]
 
         if protocols is None:
             pass
@@ -201,6 +205,7 @@ class Experiment:
         filtered_configs = self.filtered_configs
         random(filtered_configs).shuffle(filtered_configs)
         filtered_configs = filtered_configs[:max_configs]
+
         async def run_experiment(config: dict):
             setup = config["protocol"](**config["init_kwargs"])
             stuff = await setup.experiment(
@@ -220,8 +225,10 @@ class Experiment:
             confirm = input("Continue? (y/N)")
         if confirm.lower() != "y":
             return
-        #LOGGER.debug(filtered_configs)
-        statss = await parallelized_call(run_experiment, filtered_configs, use_tqdm=True, max_concurrent_queries=5)
+        LOGGER.debug(filtered_configs)
+        statss = await parallelized_call(
+            run_experiment, filtered_configs, use_tqdm=True
+        )
         all_stats = [
             {"config": config, "stats": stats}
             for config, stats in zip(filtered_configs, statss)
@@ -250,7 +257,7 @@ class Experiment:
                     return False
         return True
 
-    def _filter_nonhftot(self, config: dict):   # avoid doing ToT judge for API models
+    def _filter_nonhftot(self, config: dict):  # avoid doing ToT judge for API models
         for component in config["call_kwargs"].values():
             if isinstance(component, (TipOfTongueJudge)):
                 if not component.model.startswith("hf:"):

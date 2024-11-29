@@ -3,7 +3,7 @@ from solib.datatypes import Question, Answer, Prob
 from solib.tool_use.tool_rendering import TRUST_TOOL_USE_PROMPT
 from solib.protocols.abstract import Judge
 
-#LOGGER = logging.get#LOGGER(__name__)
+LOGGER = logging.getLogger(__name__)
 
 
 class TipOfTongueJudge(Judge):
@@ -28,7 +28,7 @@ class TipOfTongueJudge(Judge):
             return_probs_for=question.answer_cases_short,
             words_in_mouth=self.words_in_mouth,
             cache_breaker=cache_breaker,
-            temperature=0.0
+            temperature=0.0,
         )
 
         result = Question(
@@ -62,7 +62,9 @@ class TipOfTongueJudge(Judge):
 
         self.prompt = prompt or self.prompt
 
-        if model.startswith("hf:"):  # only allow hf models to default to using words_in_mouth
+        if model.startswith(
+            "hf:"
+        ):  # only allow hf models to default to using words_in_mouth
             self.words_in_mouth = words_in_mouth or " The answer is:\n\n("
         else:
             self.words_in_mouth = words_in_mouth

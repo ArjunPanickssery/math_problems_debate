@@ -18,6 +18,8 @@ def get_structured_tools(
     """Given a list of functions, return a dictionary mapping the function names to the functions, and a list of
     StructuredTool objects that wrap the functions. If the function is already a StructuredTool, it will be included
     in the list as is."""
+    # why not use json representation of the tool?
+    # https://python.langchain.com/docs/how_to/tools_prompting/ suggests using natural language
     tool_map = {tool.__name__: tool for tool in tools}
     structured_tools = [
         (t if isinstance(t, StructuredTool) else tool(t)) for t in tools
