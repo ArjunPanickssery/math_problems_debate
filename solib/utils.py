@@ -1,6 +1,4 @@
-import functools
 from pathlib import Path
-import time
 from typing import Coroutine
 from pydantic import BaseModel
 import json
@@ -201,37 +199,3 @@ async def parallelized_call(
     else:
         tasks = [func(d) for d in data]
     return await tqdm.gather(*tasks, disable=not use_tqdm)
-
-
-def retry(attempts: int = 5):
-    def decorator(func):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            for i in range(attempts):
-                try:
-                    return func(*args, **kwargs)
-                except Exception as e:
-                    LOGGER.warning(f"Error on attempt {i}: {e}")
-                    time.sleep(60)
-            raise Exception("Failed to get response")
-
-        return wrapper
-
-    return decorator
-
-
-def aretry(attempts: int = 5):
-    def decorator(func):
-        @functools.wraps(func)
-        async def wrapper(*args, **kwargs):
-            for i in range(attempts):
-                try:
-                    return await func(*args, **kwargs)
-                except Exception as e:
-                    LOGGER.warning(f"Error on attempt {i}: {e}")
-                    time.sleep(60)
-            raise Exception("Failed to get response")
-
-        return wrapper
-
-    return decorator

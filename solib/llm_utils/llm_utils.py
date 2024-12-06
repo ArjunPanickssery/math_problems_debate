@@ -9,6 +9,8 @@ from pydantic import BaseModel
 from costly import Costlog, CostlyResponse, costly
 from costly.simulators.llm_simulator_faker import LLM_Simulator_Faker
 import warnings
+from tenacity import retry, stop_after_attempt, wait_random_exponential, after_log
+import logging
 
 from langchain_core.messages import (
     HumanMessage,
@@ -18,7 +20,6 @@ from langchain_core.messages import (
     AIMessage,
 )
 from langchain_core.runnables import ConfigurableField
-from langchain_core.rate_limiters import InMemoryRateLimiter
 
 from solib.globals import *
 
@@ -27,7 +28,6 @@ import solib.tool_use.tool_rendering
 from solib.datatypes import Prob
 from solib.tool_use import tool_use
 from solib.tool_use.tool_use import HuggingFaceToolCaller
-from solib.utils import retry, aretry
 
 if TYPE_CHECKING:
     from transformers import AutoTokenizer
@@ -191,7 +191,8 @@ def load_api_model(model):
 
             api_key = os.getenv("OPENAI_API_KEY")
             client = ChatOpenAI(
-                model=model, api_key=api_key, rate_limiter=RATE_LIMITERS["gpt"]
+                model=model,
+                api_key=api_key,
             )
 
         elif model.startswith(("claude", "anthropic")):
@@ -199,7 +200,8 @@ def load_api_model(model):
 
             api_key = os.getenv("ANTHROPIC_API_KEY")
             client = ChatAnthropic(
-                model=model, api_key=api_key, rate_limiter=RATE_LIMITERS["claude"]
+                model=model,
+                api_key=api_key,
             )
 
         elif model.startswith("mistral"):
@@ -207,7 +209,8 @@ def load_api_model(model):
 
             api_key = os.getenv("MISTRAL_API_KEY")
             client = ChatMistralAI(
-                model=model, api_key=api_key, rate_limiter=RATE_LIMITERS["mistral"]
+                model=model,
+                api_key=api_key,
             )
 
         else:
@@ -412,23 +415,30 @@ def get_api_llm(model: str):
         if response_model:
             bclient = bclient.with_structured_output(response_model, include_raw=True)
 
-        get_response = bclient.ainvoke if use_async else bclient.invoke
-
         if tools:
             tool_map, structured_tools = (
                 solib.tool_use.tool_rendering.get_structured_tools(tools)
             )
             bclient = bclient.bind_tools(structured_tools)
+
+        get_response = bclient.ainvoke if use_async else bclient.invoke
+        get_response = retry(
+            stop=stop_after_attempt(6),
+            wait=wait_random_exponential(min=1, max=60),
+            after=after_log(LOGGER, logging.WARNING),
+        )(get_response)
+
+        if tools:
             if use_async:
                 get_response = partial(
                     tool_use.tool_use_loop_generate_async,
-                    get_response=bclient.ainvoke,
+                    get_response=get_response,
                     tool_map=tool_map,
                 )
             else:
                 get_response = partial(
                     tool_use.tool_use_loop_generate,
-                    get_response=bclient.invoke,
+                    get_response=get_response,
                     tool_map=tool_map,
                 )
 
@@ -704,25 +714,6 @@ def get_llm(model: str, hf_quantization_config=True):
         return get_api_llm(model)
 
 
-RATE_LIMITERS: dict[str, InMemoryRateLimiter] = {
-    "gpt": InMemoryRateLimiter(
-        requests_per_second=125 / 60,
-        check_every_n_seconds=0.05,  # how often to check if we can make a request
-        max_bucket_size=MAX_CONCURRENT_QUERIES,
-    ),
-    "claude": InMemoryRateLimiter(
-        requests_per_second=1000 / 60,
-        check_every_n_seconds=0.05,
-        max_bucket_size=MAX_CONCURRENT_QUERIES,
-    ),
-    "mistral": InMemoryRateLimiter(
-        requests_per_second=125 / 60,
-        check_every_n_seconds=0.05,  # how often to check if we can make a request
-        max_bucket_size=MAX_CONCURRENT_QUERIES,
-    ),
-}
-
-
 class LLM_Agent:
     def __init__(
         self,
@@ -746,7 +737,6 @@ class LLM_Agent:
         return not self.model.startswith("hf:")
 
     @method_cache(ignore=["cost_log"])
-    @retry(attempts=5)
     def get_response_sync(
         self,
         response_model: Union["BaseModel", None] = None,
@@ -764,7 +754,6 @@ class LLM_Agent:
     ):
         if not simulate:
             LOGGER.info(f"Running get_response_sync for {self.model}; NOT FROM CACHE")
-            # Get rate limiter for this model if it exists
             pass
 
         return self.ai["generate"](
@@ -784,7 +773,6 @@ class LLM_Agent:
         )
 
     @method_cache(ignore=["cost_log"])
-    @aretry(attempts=5)
     async def get_response_async(
         self,
         response_model: Union["BaseModel", None] = None,
@@ -802,7 +790,6 @@ class LLM_Agent:
     ):
         if not simulate:
             LOGGER.info(f"Running get_response_async for {self.model}; NOT FROM CACHE")
-            # Get rate limiter for this model if it exists
             pass
 
         return await self.ai["generate_async"](
@@ -832,7 +819,6 @@ class LLM_Agent:
         return self.get_probs_sync(*args, **kwargs)
 
     @method_cache(ignore=["cost_log"])
-    @retry(attempts=5)
     def get_probs_sync(
         self,
         return_probs_for: list[str],
@@ -850,7 +836,6 @@ class LLM_Agent:
     ):
         if not simulate:
             LOGGER.info(f"Running get_probs_sync for {self.model}; NOT FROM CACHE")
-            # Get rate limiter for this model if it exists
             pass
 
         return self.ai["return_probs"](
@@ -870,7 +855,6 @@ class LLM_Agent:
         )
 
     @method_cache(ignore=["cost_log"])
-    @aretry(attempts=5)
     async def get_probs_async(
         self,
         return_probs_for: list[str],
@@ -888,7 +872,6 @@ class LLM_Agent:
     ):
         if not simulate:
             LOGGER.info(f"Running get_probs_async for {self.model}; NOT FROM CACHE")
-            # Get rate limiter for this model if it exists
             pass
 
         return await self.ai["return_probs_async"](
