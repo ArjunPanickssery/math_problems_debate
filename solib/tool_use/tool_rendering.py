@@ -51,7 +51,7 @@ def get_tool_prompt_for_native() -> str:
 
     Will be added to system messages when tools are available."""
 
-    return jinja_env.get_template("tool_use/tool_prompt.jinja")
+    return jinja_env.get_template("tool_use/tool_prompt.jinja").render()
 
 
 def get_tool_prompt(

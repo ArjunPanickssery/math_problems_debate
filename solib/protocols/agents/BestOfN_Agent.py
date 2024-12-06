@@ -30,6 +30,7 @@ class BestOfN_Agent(QA_Agent):
 
     async def __call__(
         self,
+        prompt_file: str = None,
         question: Question = None,
         answer_case: Answer = None,
         context: str | None = None,
@@ -38,7 +39,7 @@ class BestOfN_Agent(QA_Agent):
         cache_breaker: int = 0,
         temperature: float = None,
     ) -> str:
-        async def run_agent(kwargs):
+        async def run_agent(kwargs: dict):
             i = kwargs.pop("i")
             LOGGER.debug(f"local cache_breaker during BON: {i}")
 

@@ -53,7 +53,7 @@ class QA_Agent(LLM_Agent):
             cache_breaker (int): dummy integer that is used to invalidate cache entries.
             temperature (float): temperature for sampling.
         """
-        prompt_template = jinja_env.get_template(prompt_file) or self.prompt_template
+        prompt_template = self.prompt_template
         words_in_mouth = words_in_mouth or self.words_in_mouth
         if isinstance(question, Question):
             question = question.to_prompt()
