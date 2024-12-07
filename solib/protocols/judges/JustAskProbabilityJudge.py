@@ -56,7 +56,7 @@ class JustAskProbabilityJudge(Judge):
         model: str = None,
         tools: list[callable] | None = None,
         hf_quantization_config=None,
-        prompt_file: str = "just_ask_judge.jinja",
+        prompt_file: str = None,
         words_in_mouth: str = None,
     ):
         """Initialize basic / default Judge. Can be overriden in subclasses.
@@ -65,15 +65,17 @@ class JustAskProbabilityJudge(Judge):
             prompt_file (str): file for the prompt. Default 'just_ask_judge.jinja'.
             model (str): model for the judge. Default None.
         """
-        self.prompt_file = prompt_file
+        self.prompt_file = prompt_file or self.prompt_file
         self.words_in_mouth = words_in_mouth
-        self.prompt_template = jinja_env.get_template(prompt_file)
+        self.prompt_template = jinja_env.get_template(self.prompt_file)
         self.dict = {
             "model": model,
             "tools": tools,
-            "prompt": jinja_env.get_source(prompt_file),
+            "prompt": jinja_env.get_source(self.prompt_file),
             "words_in_mouth": self.words_in_mouth,
         }
         super().__init__(
             model=model, tools=tools, hf_quantization_config=hf_quantization_config
         )
+
+    prompt_file = "just_ask_judge.jinja"

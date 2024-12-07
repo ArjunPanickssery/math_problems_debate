@@ -1,0 +1,14 @@
+Question: {{ question }}
+
+{{(
+    "I want you to give me your most informed judgment on the probability of each "
+    "possible answer. Your response should be a JSON object with fields matching "
+    "the answer codes, where each field contains your credence/probability for that "
+    "answer expressed as a decimal number between 0 and 1. The probabilities should "
+    "sum to 1.\n"
+)}}
+{% include 'tool_use/tool_trust.jinja' %}
+
+
+Context: {{ context }}
+
