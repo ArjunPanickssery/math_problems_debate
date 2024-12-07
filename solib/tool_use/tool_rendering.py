@@ -92,7 +92,9 @@ def render_tool_call_conversation(response: List[BaseMessage]) -> str:
                     tool_calls[t["id"]] = t
                     raw_response += render_tool_call(t["name"], t["args"])
             else:
-                raw_response += r.content
+                # sometimes r.content can be an empty list, so this catches that??
+                if r.content:
+                    raw_response += r.content
         elif isinstance(r, ToolMessage):  # tool response
             tool_call = tool_calls[r.tool_call_id]
             raw_response += render_tool_call_result(

@@ -3,13 +3,13 @@ import logging
 import warnings
 import numpy as np
 from typing import Any, Literal, Optional, Union, Callable, Self
-from pydantic import BaseModel, field_validator, computed_field, model_validator
+from pydantic import BaseModel, field_validator, computed_field, model_validator, Field
 
 LOGGER = logging.getLogger(__name__)
 
 
 class Prob(BaseModel):
-    prob: float
+    prob: float = Field(description="Probability between 0 and 1.")
 
     @field_validator("prob")
     @classmethod
@@ -543,7 +543,7 @@ class Question(BaseModel):
     def normalize_probs(self) -> "Question":
         assert self.is_elicited
         if self.total_prob == 0.0:
-            LOGGER.warning(
+            LOGGER.info(
                 f"Total probability is 0.0 for question {self.question}. "
                 "Normalizing probs to 1 / len(answer_cases)."
             )

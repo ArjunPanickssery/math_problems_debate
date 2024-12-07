@@ -9,7 +9,13 @@ from pydantic import BaseModel
 from costly import Costlog, CostlyResponse, costly
 from costly.simulators.llm_simulator_faker import LLM_Simulator_Faker
 import warnings
-from tenacity import retry, stop_after_attempt, wait_random_exponential, after_log
+from tenacity import (
+    before_sleep_log,
+    retry,
+    stop_after_attempt,
+    wait_random_exponential,
+    after_log,
+)
 import logging
 
 from langchain_core.messages import (
@@ -20,6 +26,7 @@ from langchain_core.messages import (
     AIMessage,
 )
 from langchain_core.runnables import ConfigurableField
+from langchain_core.rate_limiters import InMemoryRateLimiter
 
 from solib.globals import *
 
@@ -193,6 +200,7 @@ def load_api_model(model):
             client = ChatOpenAI(
                 model=model,
                 api_key=api_key,
+                rate_limiter=RATE_LIMITERS["gpt"],
             )
 
         elif model.startswith(("claude", "anthropic")):
@@ -202,6 +210,7 @@ def load_api_model(model):
             client = ChatAnthropic(
                 model=model,
                 api_key=api_key,
+                rate_limiter=RATE_LIMITERS["claude"],
             )
 
         elif model.startswith("mistral"):
@@ -211,6 +220,7 @@ def load_api_model(model):
             client = ChatMistralAI(
                 model=model,
                 api_key=api_key,
+                rate_limiter=RATE_LIMITERS["mistral"],
             )
 
         else:
@@ -222,6 +232,25 @@ def load_api_model(model):
     )
 
     return client
+
+
+RATE_LIMITERS: dict[str, InMemoryRateLimiter] = {
+    "gpt": InMemoryRateLimiter(
+        requests_per_second=125 / 60,
+        check_every_n_seconds=0.5,  # how often to check if we can make a request
+        max_bucket_size=MAX_CONCURRENT_QUERIES,
+    ),
+    "claude": InMemoryRateLimiter(
+        requests_per_second=1000 / 60,
+        check_every_n_seconds=0.5,
+        max_bucket_size=MAX_CONCURRENT_QUERIES,
+    ),
+    "mistral": InMemoryRateLimiter(
+        requests_per_second=125 / 60,
+        check_every_n_seconds=0.5,  # how often to check if we can make a request
+        max_bucket_size=MAX_CONCURRENT_QUERIES,
+    ),
+}
 
 
 def get_hf_llm(model: str, hf_quantization_config=True):
@@ -423,9 +452,9 @@ def get_api_llm(model: str):
 
         get_response = bclient.ainvoke if use_async else bclient.invoke
         get_response = retry(
-            stop=stop_after_attempt(6),
-            wait=wait_random_exponential(min=1, max=60),
-            after=after_log(LOGGER, logging.WARNING),
+            wait=wait_random_exponential(multiplier=0.5, max=60),
+            after=after_log(LOGGER, logging.DEBUG),
+            before_sleep=before_sleep_log(LOGGER, logging.DEBUG, exc_info=True),
         )(get_response)
 
         if tools:
