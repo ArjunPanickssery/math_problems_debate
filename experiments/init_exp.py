@@ -35,4 +35,4 @@ init_exp = Experiment(
 )
 
 
-asyncio.run(init_exp.experiment(max_configs=1000))
+asyncio.run(init_exp.experiment(max_configs=100))

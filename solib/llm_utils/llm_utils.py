@@ -4,6 +4,7 @@ import functools
 import os
 import math
 from typing import Literal, Union, TYPE_CHECKING
+import requests
 from transformers import BitsAndBytesConfig
 from pydantic import BaseModel
 from costly import Costlog, CostlyResponse, costly
@@ -27,6 +28,7 @@ from langchain_core.messages import (
 )
 from langchain_core.runnables import ConfigurableField
 from langchain_core.rate_limiters import InMemoryRateLimiter
+from zmq import REQ
 
 from solib.globals import *
 
@@ -200,7 +202,7 @@ def load_api_model(model):
             client = ChatOpenAI(
                 model=model,
                 api_key=api_key,
-                rate_limiter=RATE_LIMITERS["gpt"],
+                rate_limiter=get_rate_limiter(model),
             )
 
         elif model.startswith(("claude", "anthropic")):
@@ -210,7 +212,7 @@ def load_api_model(model):
             client = ChatAnthropic(
                 model=model,
                 api_key=api_key,
-                rate_limiter=RATE_LIMITERS["claude"],
+                rate_limiter=get_rate_limiter(model),
             )
 
         elif model.startswith("mistral"):
@@ -220,7 +222,7 @@ def load_api_model(model):
             client = ChatMistralAI(
                 model=model,
                 api_key=api_key,
-                rate_limiter=RATE_LIMITERS["mistral"],
+                rate_limiter=get_rate_limiter(model),
             )
 
         else:
@@ -234,23 +236,20 @@ def load_api_model(model):
     return client
 
 
-RATE_LIMITERS: dict[str, InMemoryRateLimiter] = {
-    "gpt": InMemoryRateLimiter(
-        requests_per_second=125 / 60,
-        check_every_n_seconds=0.5,  # how often to check if we can make a request
-        max_bucket_size=MAX_CONCURRENT_QUERIES,
-    ),
-    "claude": InMemoryRateLimiter(
-        requests_per_second=1000 / 60,
+@functools.cache
+def get_rate_limiter(model: str):
+    requests_per_second = {
+        "gpt": 125 / 60,
+        "claude": 1000 / 60,
+        "mistral": 125 / 60,
+    }
+
+    model_type = model.split("-")[0]
+    return InMemoryRateLimiter(
+        requests_per_second=requests_per_second[model_type],
         check_every_n_seconds=0.5,
         max_bucket_size=MAX_CONCURRENT_QUERIES,
-    ),
-    "mistral": InMemoryRateLimiter(
-        requests_per_second=125 / 60,
-        check_every_n_seconds=0.5,  # how often to check if we can make a request
-        max_bucket_size=MAX_CONCURRENT_QUERIES,
-    ),
-}
+    )
 
 
 def get_hf_llm(model: str, hf_quantization_config=True):
