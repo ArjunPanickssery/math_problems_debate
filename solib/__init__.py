@@ -33,6 +33,8 @@ CONSOLE_HANDLER.setLevel(LOG_LEVEL_CONSOLE)
 CONSOLE_HANDLER.setFormatter(FORMATTER)
 LOGGER.addHandler(CONSOLE_HANDLER)
 
+os.makedirs(".logs", exist_ok=True)
+
 FILE_HANDLER = RotatingFileHandler(
     f".logs/{datetime.now().strftime('%Y-%m-%d_%H:%M:%S')}.log",
     maxBytes=1024 * 1024,
