@@ -1,7 +1,7 @@
 import logging
 from solib.datatypes import Question, Answer, Prob
 from solib.protocols.judges.JustAskProbabilityJudge import JustAskProbabilityJudge
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, create_model, field_validator
 
 LOGGER = logging.getLogger(__name__)
 
@@ -18,19 +18,33 @@ class JustAskProbabilitiesJudge(JustAskProbabilityJudge):
     ) -> Question:
         """Returns a .is_elicited Question."""
         # Create dynamic response model with fields for each answer's probability
-        response_model = type(
-            "ProbResponse",
-            (BaseModel,),
-            {
-                answer.short: (
-                    float,
-                    field_validator(answer.short)(
-                        classmethod(lambda cls, v: Prob(prob=v).prob)
-                    ),
+        fields = {}
+        for answer in question.answer_cases:
+            fields[answer.short] = (
+                float,
+                Field(
+                    default=...,
+                    validation_alias=answer.short,
+                    json_schema_extra={
+                        "minimum": 0.0,
+                        "maximum": 1.0,
+                    }
                 )
-                for answer in question.answer_cases
-            },
+            )
+        
+        # Create the model class
+        response_model = create_model(
+            "ProbResponse",
+            **fields
         )
+
+        # Add validators after model creation
+        for answer in question.answer_cases:
+            @field_validator(answer.short, mode="after")
+            def validate_prob(cls, v, field):
+                return Prob(prob=v).prob
+
+            setattr(response_model, f"validate_{answer.short}", classmethod(validate_prob))
 
         prompt = self.prompt_template.render(
             question=question.to_prompt(),
