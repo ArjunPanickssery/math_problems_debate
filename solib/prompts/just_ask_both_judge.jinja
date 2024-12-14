@@ -1,14 +1,21 @@
 Question: {{ question }}
 
-{{(
-    "I want you to give me your most informed judgment on the probability of each "
-    "possible answer. Your response should be a JSON object with fields matching "
-    "the answer codes, where each field contains your credence/probability for that "
-    "answer expressed as a decimal number between 0 and 1. The probabilities should "
-    "sum to 1.\n"
-)}}
-{% include 'tool_use/tool_trust.jinja' %}
+I want you to give me your most informed judgment on the probability of each possible answer. Your response must be a JSON object in exactly this format:
 
+{
+    "probabilities": {
+        "A": 0.7,  // example probability for answer A
+        "B": 0.3   // example probability for answer B
+    }
+}
+
+Requirements:
+- Each probability must be a number between 0 and 1
+- The probabilities must sum to 1
+- Use the exact answer codes from the question (A, B, etc.)
+- Do not include any explanations or additional text, just the JSON object
+
+{% include 'tool_use/tool_trust.jinja' %}
 
 Context: {{ context }}
 
