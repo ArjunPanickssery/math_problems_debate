@@ -1,7 +1,7 @@
 import logging
 from solib.datatypes import Question, Answer, Prob
-from solib.tool_use.tool_rendering import TRUST_TOOL_USE_PROMPT
 from solib.protocols.abstract import Judge
+from solib.globals import jinja_env
 
 LOGGER = logging.getLogger(__name__)
 
@@ -17,7 +17,7 @@ class TipOfTongueJudge(Judge):
         context: str,
         cache_breaker: int = 0,
     ) -> Question:
-        prompt = self.prompt.format(
+        prompt = self.prompt_template.render(
             question=question.to_prompt(),
             context=context,
             answer_cases_short=", ".join(f"({a})" for a in question.answer_cases_short),
@@ -28,7 +28,7 @@ class TipOfTongueJudge(Judge):
             return_probs_for=question.answer_cases_short,
             words_in_mouth=self.words_in_mouth,
             cache_breaker=cache_breaker,
-            temperature=0.0
+            temperature=0.0,
         )
 
         result = Question(
@@ -50,7 +50,7 @@ class TipOfTongueJudge(Judge):
         model: str = None,
         tools: list[callable] | None = None,
         hf_quantization_config=None,
-        prompt: str = None,
+        prompt_file: str = "tot_judge.jinja",
         words_in_mouth: str = None,
     ):
         """Initialize basic / default Judge. Can be overriden in subclasses.
@@ -60,9 +60,11 @@ class TipOfTongueJudge(Judge):
             model (str): model for the judge. Default None.
         """
 
-        self.prompt = prompt or self.prompt
+        self.prompt_template = jinja_env.get_template(prompt_file)
 
-        if model.startswith("hf:"):  # only allow hf models to default to using words_in_mouth
+        if model.startswith(
+            "hf:"
+        ):  # only allow hf models to default to using words_in_mouth
             self.words_in_mouth = words_in_mouth or " The answer is:\n\n("
         else:
             self.words_in_mouth = words_in_mouth
@@ -70,19 +72,9 @@ class TipOfTongueJudge(Judge):
         self.dict = {
             "model": model,
             "tools": tools,
-            "prompt": self.prompt,
+            "prompt": jinja_env.get_source(prompt_file),
             "words_in_mouth": self.words_in_mouth,
         }
         super().__init__(
             model=model, tools=tools, hf_quantization_config=hf_quantization_config
         )
-
-    prompt = (
-        "{question}\n\n"
-        "I want you to give me your most informed judgment on which answer "
-        "is correct, based on any information I provide. Your response "
-        "should simply be the option symbol of one of the items from "
-        "POSSIBLE ANSWERS, i.e. {answer_cases_short}, and nothing else. "
-        f"{TRUST_TOOL_USE_PROMPT}\n\n"
-        "{context}\n\n"
-    )

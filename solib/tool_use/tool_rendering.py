@@ -1,67 +1,13 @@
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
-
-
 from langchain.tools import StructuredTool, tool
-
-
 from typing import Callable, Dict, List, Tuple, Union
-
-
 from langchain_core.tools import render_text_description
-
-
-TOOL_CALL_START_TAG = "<tool_call>"
-TOOL_CALL_END_TAG = "</tool_call>"
-TOOL_RESULT_START_TAG = "<tool_result>"
-TOOL_RESULT_END_TAG = "</tool_result>"
-
-TOOL_CALL_TEMPLATE = """
-{call_start_tag}
-{{
-    "name": {name},
-    "args": {arguments}
-}}
-{call_end_tag}
-"""
-
-TOOL_RESULT_TEMPLATE = """
-{result_start_tag}
-{{
-    "name": {name},
-    "result": {result},
-    "args": {arguments}
-}}
-{result_end_tag}
-"""
-
-# prompt that gets added to system message when tools are available
-DEFAULT_TOOL_PROMPT_NATIVE = """
-You are a tool-calling LLM that has access to the attached tools. The use of the tools will be likely very important for the following task.
-"""
-
-# system message template that gets added when an llm has access to tools but doesn't natively support them
-DEFAULT_TOOL_PROMPT_NONNATIVE = """
-You are a tool calling LLM that has access to the following set of tools.
-You are provided with function signatures within <tools></tools> XML tags.
-You may call one or more functions to assist with the user query.
-Don\'t make assumptions about what values to plug into functions. Here are the available tools:
-
-<tools>
-{rendered_tools}
-</tools>
-
-Every tool call should be surrounded by {start_call_tag}{end_call_tag} tags, and should take the form of a JSON object with the following format:
-{call_template}
-
-The result will then be automatically supplied in the form of a JSON object with the following format:
-{result_template}
-"""
-
-TRUST_TOOL_USE_PROMPT = (
-    "Please note that anything that is included in "
-    f"{TOOL_RESULT_START_TAG}{TOOL_RESULT_END_TAG} "
-    "tags is guaranteed to be true."
+from solib.globals import (
+    jinja_env,
 )
+
+TOOL_CALL_TEMPLATE = jinja_env.get_template("tool_use/tool_call.jinja")
+TOOL_RESULT_TEMPLATE = jinja_env.get_template("tool_use/tool_result.jinja")
 
 
 def get_structured_tools(
@@ -70,7 +16,9 @@ def get_structured_tools(
     """Given a list of functions, return a dictionary mapping the function names to the functions, and a list of
     StructuredTool objects that wrap the functions. If the function is already a StructuredTool, it will be included
     in the list as is."""
-    tool_map = {tool.__name__: tool for tool in tools}
+    # why not use json representation of the tool?
+    # https://python.langchain.com/docs/how_to/tools_prompting/ suggests using natural language
+    tool_map = {tul.__name__: tul for tul in tools}
     structured_tools = [
         (t if isinstance(t, StructuredTool) else tool(t)) for t in tools
     ]
@@ -84,32 +32,26 @@ def render_tools(tools: List[Union[Callable, StructuredTool]]) -> str:
 
 
 def get_tool_prompt_for_nonnative(tools: List[Union[Callable, StructuredTool]]) -> str:
-    """Get the tool prompt for the given tools."""
-    # prompt format based off of https://huggingface.co/NousResearch/Hermes-2-Pro-Llama-3-8B/tree/main
+    """Get the tool prompt for the given tools.
+
+    System message template that gets added when an llm has access to tools but
+    doesn't natively support them."""
+
     rendered_tools = render_tools(tools)
-    return DEFAULT_TOOL_PROMPT_NONNATIVE.format(
-        start_call_tag=TOOL_CALL_START_TAG,
-        end_call_tag=TOOL_CALL_END_TAG,
-        call_template=TOOL_CALL_TEMPLATE.format(
-            call_start_tag=TOOL_CALL_START_TAG,
-            call_end_tag=TOOL_CALL_END_TAG,
-            name="<function-name>",
-            arguments="<args-dict>",
-        ),
-        result_template=TOOL_RESULT_TEMPLATE.format(
-            result_start_tag=TOOL_RESULT_START_TAG,
-            result_end_tag=TOOL_RESULT_END_TAG,
-            name="<function-name>",
-            result="<result>",
-            arguments="<args-dict>",
-        ),
+    return jinja_env.get_template("tool_use/tool_prompt_nonnative.jinja").render(
         rendered_tools=rendered_tools,
+        name="<function-name>",
+        arguments="<args-dict>",
+        result="<result>",
     )
 
 
 def get_tool_prompt_for_native() -> str:
-    """Get the tool prompt for a native tool-calling LLM."""
-    return DEFAULT_TOOL_PROMPT_NATIVE
+    """Get the tool prompt for a native tool-calling LLM.
+
+    Will be added to system messages when tools are available."""
+
+    return jinja_env.get_template("tool_use/tool_prompt.jinja").render()
 
 
 def get_tool_prompt(
@@ -127,24 +69,13 @@ def render_tool_call(name: str, args: Dict[str, str]) -> str:
     happening in API-based models, as these models typically will not give you the actual tokens
     that are generated. Also, this way we can make transcripts of API-based models and
     hugging face models more similar."""
-    return TOOL_CALL_TEMPLATE.format(
-        name=name,
-        arguments=args,
-        call_start_tag=TOOL_CALL_START_TAG,
-        call_end_tag=TOOL_CALL_END_TAG,
-    )
+    return TOOL_CALL_TEMPLATE.render(name=name, arguments=args)
 
 
 def render_tool_call_result(name: str, result: str, args: Dict[str, str]) -> str:
     """Render a tool call result with the given name, result, and arguments. This is used to represent
     the outputs of tool calls in both API-based models and hugging face models."""
-    return TOOL_RESULT_TEMPLATE.format(
-        name=name,
-        result=result,
-        arguments=args,
-        result_start_tag=TOOL_RESULT_START_TAG,
-        result_end_tag=TOOL_RESULT_END_TAG,
-    )
+    return TOOL_RESULT_TEMPLATE.render(name=name, result=result, arguments=args)
 
 
 def render_tool_call_conversation(response: List[BaseMessage]) -> str:
@@ -161,7 +92,9 @@ def render_tool_call_conversation(response: List[BaseMessage]) -> str:
                     tool_calls[t["id"]] = t
                     raw_response += render_tool_call(t["name"], t["args"])
             else:
-                raw_response += r.content
+                # sometimes r.content can be an empty list, so this catches that??
+                if r.content:
+                    raw_response += r.content
         elif isinstance(r, ToolMessage):  # tool response
             tool_call = tool_calls[r.tool_call_id]
             raw_response += render_tool_call_result(

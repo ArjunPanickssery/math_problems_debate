@@ -17,7 +17,6 @@ class Propaganda(Protocol):
     ) -> Question:
         assert isinstance(question, Question)
         agent_response = await agent(
-            prompt=self.prompt,
             question=question,
             answer_case=answer_case,
             context=self.ts_to_prompt(question),

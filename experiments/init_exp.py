@@ -1,4 +1,3 @@
-import pytest  # noqa
 import asyncio  # noqa
 from pathlib import Path
 from datetime import datetime
@@ -18,21 +17,22 @@ init_exp = Experiment(
         "claude-3-5-haiku-20241022",
         "claude-3-opus-20240229",
         "claude-3-sonnet-20240229",
-        "hf:meta-llama/Meta-Llama-3-8B-Instruct",
+        # "hf:meta-llama/Meta-Llama-3-8B-Instruct",
     ],
     agent_toolss=[[], [math_eval]],
     judge_models=[
         "hf:meta-llama/Llama-2-7b-chat-hf",
         "hf:meta-llama/Meta-Llama-3-8B-Instruct",
-        "gpt-3.5-turbo-0613",
+        "gpt-3.5-turbo",
         "gpt-4o-mini-2024-07-18",
         "gpt-4o-2024-08-06",
     ],
     protocols=["blind", "propaganda", "debate", "consultancy"],
     bon_ns=[4],  # , 8],#, 16, 32],
     write_path=Path(__file__).parent
+    / "results"
     / f"init_exp_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}",
 )
 
 
-asyncio.run(init_exp.experiment(max_configs=1000))
+asyncio.run(init_exp.experiment(max_configs=100))

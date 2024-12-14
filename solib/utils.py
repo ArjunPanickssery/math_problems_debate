@@ -1,6 +1,4 @@
-import functools
 from pathlib import Path
-import time
 from typing import Coroutine
 from pydantic import BaseModel
 import json
@@ -13,7 +11,8 @@ import os
 import asyncio
 from tqdm.asyncio import tqdm
 
-from solib.globals import LOGGER, GLOBAL_LLM_SEMAPHORE
+from solib.globals import LOGGER
+
 
 def dump_config(instance):
     if inspect.isfunction(instance):
@@ -154,9 +153,7 @@ def str_config(config: dict | list[dict]):
                 k: (
                     v.__name__
                     if isinstance(v, type)
-                    else str_config(v)
-                    if isinstance(v, dict)
-                    else v
+                    else str_config(v) if isinstance(v, dict) else v
                 )
                 for k, v in config.items()
             }
@@ -166,7 +163,7 @@ def str_config(config: dict | list[dict]):
 async def parallelized_call(
     func: Coroutine,
     data: list[any],
-    max_concurrent_queries: int = 100,
+    max_concurrent_queries: int = None,
     use_tqdm: bool = False,
 ) -> list[any]:
     """
@@ -182,53 +179,23 @@ async def parallelized_call(
         LOGGER.info(f"Running {func} on {len(data)} datapoints sequentially")
         return [await func(d) for d in data]
 
-    max_concurrent_queries = min(
-        max_concurrent_queries,
-        int(os.getenv("MAX_CONCURRENT_QUERIES", max_concurrent_queries)),
-    )
+    # max_concurrent_queries = min(
+    #     max_concurrent_queries,
+    #     int(os.getenv("MAX_CONCURRENT_QUERIES", max_concurrent_queries)),
+    # )
 
     LOGGER.info(
         f"Running {func} on {len(data)} datapoints with {max_concurrent_queries} concurrent queries"
     )
 
-    local_semaphore = asyncio.Semaphore(max_concurrent_queries)
+    if max_concurrent_queries is not None:
+        local_semaphore = asyncio.Semaphore(max_concurrent_queries)
 
-    async def call_func(sem, func, datapoint):
-        async with sem:
-            return await func(datapoint)
+        async def call_func(func, datapoint):
+            async with local_semaphore:
+                return await func(datapoint)
 
-    tasks = [call_func(local_semaphore, func, d) for d in data]
+        tasks = [call_func(func, d) for d in data]
+    else:
+        tasks = [func(d) for d in data]
     return await tqdm.gather(*tasks, disable=not use_tqdm)
-
-
-def retry(attempts: int = 5):
-    def decorator(func):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            for i in range(attempts):
-                try:
-                    return func(*args, **kwargs)
-                except Exception as e:
-                    LOGGER.warning(f"Error on attempt {i}: {e}")
-                    time.sleep(60)
-            raise Exception("Failed to get response")
-
-        return wrapper
-    return decorator
-
-
-def aretry(attempts: int = 5):
-    def decorator(func):
-        @functools.wraps(func)
-        async def wrapper(*args, **kwargs):
-            for i in range(attempts):
-                try:
-                    async with GLOBAL_LLM_SEMAPHORE:
-                        return await func(*args, **kwargs)
-                except Exception as e:
-                    LOGGER.warning(f"Error on attempt {i}: {e}")
-                    time.sleep(60)
-            raise Exception("Failed to get response")
-
-        return wrapper
-    return decorator

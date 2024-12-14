@@ -218,6 +218,7 @@ class Experiment:
         filtered_configs = filtered_configs[:max_configs]
 
         async def run_experiment(config: dict):
+            LOGGER.status(f"Running experiment {self.get_path(config)}")
             setup = config["protocol"](**config["init_kwargs"])
             stuff = await setup.experiment(
                 questions=self.questions,
@@ -238,7 +239,7 @@ class Experiment:
             return
         LOGGER.debug(filtered_configs)
         statss = await parallelized_call(
-            run_experiment, filtered_configs, use_tqdm=True
+            run_experiment, filtered_configs, use_tqdm=True, max_concurrent_queries=5
         )
         all_stats = [
             {"config": config, "stats": stats}

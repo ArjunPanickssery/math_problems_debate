@@ -2,15 +2,23 @@ import functools
 import logging
 from solib.datatypes import Question, Answer, TranscriptItem
 from solib.protocols.abstract import Protocol, QA_Agent, Judge
+from solib.globals import jinja_env
 
 LOGGER = logging.getLogger(__name__)
 
 
 class Debate(Protocol):
-    def __init__(self, num_turns: int = 2, simultaneous=True, prompt: str = None):
+    def __init__(
+        self, num_turns: int = 2, simultaneous=True, prompt_file: str = "qa_agent.jinja"
+    ):
         self.num_turns = num_turns
         self.simultaneous = simultaneous
-        super().__init__(prompt=prompt, num_turns=num_turns, simultaneous=simultaneous)
+        self.prompt_file = prompt_file
+        super().__init__(
+            prompt=jinja_env.get_source(prompt_file),
+            num_turns=num_turns,
+            simultaneous=simultaneous,
+        )
 
     async def step(
         self,
@@ -25,7 +33,7 @@ class Debate(Protocol):
         opp_case = question.neg(answer_case)
         debater_pro = functools.partial(
             agent,
-            prompt=self.prompt,
+            prompt_file=self.prompt_file,
             question=question,
             answer_case=answer_case,
             cache_breaker=cache_breaker,
@@ -33,7 +41,7 @@ class Debate(Protocol):
         )
         debater_con = functools.partial(
             adversary,
-            prompt=self.prompt,
+            prompt_file=self.prompt_file,
             question=question,
             answer_case=opp_case,
             cache_breaker=cache_breaker,
