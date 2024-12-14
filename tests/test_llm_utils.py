@@ -8,8 +8,8 @@ pytest_plugins = ("anyio",)
 @pytest.fixture(
     params=[
         "gpt-4o-mini",
-        # "hf:meta-llama/Llama-2-7b-chat-hf",
-        # "hf:meta-llama/Meta-Llama-3-8B-Instruct",
+        "hf:meta-llama/Llama-2-7b-chat-hf",
+        "hf:meta-llama/Meta-Llama-3-8B-Instruct",
     ]
 )
 def model(request):

@@ -6,14 +6,16 @@ from logging.handlers import RotatingFileHandler
 
 load_dotenv()
 
-# LOG_LEVEL_MAP = {
-#     "DEBUG": logging.DEBUG,
-#     "INFO": logging.INFO,
-#     "WARNING": logging.WARNING,
-#     "ERROR": logging.ERROR,
-#     "CRITICAL": logging.CRITICAL,
-# }
-# LOG_LEVEL = LOG_LEVEL_MAP[os.getenv("LOG_LEVEL", "INFO")]
+# Define custom STATUS level (35 is between WARNING-30 and ERROR-40)
+STATUS_LEVEL = 35
+logging.addLevelName(STATUS_LEVEL, 'STATUS')
+
+# Add status method to logger
+def status(self, message, *args, **kwargs):
+    if self.isEnabledFor(STATUS_LEVEL):
+        self._log(STATUS_LEVEL, message, args, **kwargs)
+
+logging.Logger.status = status
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "DEBUG")
 LOG_LEVEL_CONSOLE = os.getenv("LOG_LEVEL_CONSOLE", "WARNING")

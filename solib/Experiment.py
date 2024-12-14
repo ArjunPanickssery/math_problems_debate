@@ -218,6 +218,7 @@ class Experiment:
         filtered_configs = filtered_configs[:max_configs]
 
         async def run_experiment(config: dict):
+            LOGGER.status(f"Running experiment {self.get_path(config)}")
             setup = config["protocol"](**config["init_kwargs"])
             stuff = await setup.experiment(
                 questions=self.questions,
