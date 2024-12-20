@@ -24,6 +24,8 @@ class JustAskProbabilitiesJudge(JustAskProbabilityJudge):
             context=context,
         )
 
+        LOGGER.debug(f"prompt: {prompt}")
+
         response = await self.get_response(
             prompt=prompt,
             response_model=ProbResponse,

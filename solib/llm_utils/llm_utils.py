@@ -3,10 +3,13 @@ from functools import partial
 import functools
 import os
 import math
-from typing import Literal, Union, TYPE_CHECKING
+from typing import Literal, Union, TYPE_CHECKING, List, Dict, Any, Optional
 import requests
 from transformers import BitsAndBytesConfig
 from pydantic import BaseModel
+import instructor
+from instructor import Mode
+from openai import OpenAI, AsyncOpenAI
 from costly import Costlog, CostlyResponse, costly
 from costly.simulators.llm_simulator_faker import LLM_Simulator_Faker
 import warnings
@@ -19,18 +22,8 @@ from tenacity import (
 )
 import logging
 
-from langchain_core.messages import (
-    HumanMessage,
-    ToolMessage,
-    SystemMessage,
-    BaseMessage,
-    AIMessage,
-)
-from langchain_core.runnables import ConfigurableField
-from langchain_core.rate_limiters import InMemoryRateLimiter
-from zmq import REQ
-
 from solib.globals import *
+from solib.llm_utils.rate_limiter import get_rate_limiter
 
 from solib.llm_utils.caching import method_cache
 import solib.tool_use.tool_rendering
@@ -53,16 +46,15 @@ class LLM_Simulator(LLM_Simulator_Faker):
 
 def format_prompt(
     prompt: str = None,
-    messages: list[dict[str, str] | BaseMessage] = None,
+    messages: List[Dict[str, Any]] = None,
     input_string: str = None,
     tokenizer: Union["AutoTokenizer", None] = None,
     system_message: str | None = None,
     words_in_mouth: str | None = None,
     tools: list[callable] = None,
     natively_supports_tools: bool = False,
-    msg_type: Literal["langchain", "dict"] = "dict",
 ) -> dict[
-    Literal["messages", "input_string"], str | list[dict[str, str] | BaseMessage]
+    Literal["messages", "input_string"], str | List[Dict[str, Any]]
 ]:
     """
     Three types of prompts:
@@ -89,8 +81,6 @@ def format_prompt(
             them in the `tools` parameter in apply_chat_template if tokenizer is supplied. If False,
             we will use the default tool prompt in tool_use.HuggingFaceToolCaller.TOOLS_PROMPT, and
             we will append it as the first system message to the messages.
-        msg_type: Literal["langchain", "dict"]: Type of messages. If "langchain", messages
-            will be langchain.BaseMessages.If "dict", messages will be in the dictionary format
     Returns:
         dict: with keys "messages" and "input_string". "input_string" will be None
             if tokenizer is None.
@@ -101,32 +91,16 @@ def format_prompt(
 
             messages = []
             if system_message is not None:
-                if msg_type == "langchain":
-                    messages.append(SystemMessage(content=system_message))
-                else:
-                    messages.append({"role": "system", "content": system_message})
+                messages.append({"role": "system", "content": system_message})
 
-            if msg_type == "langchain":
-                messages.append(HumanMessage(content=prompt))
-            else:
-                messages.append({"role": "user", "content": prompt})
+            messages.append({"role": "user", "content": prompt})
 
         if tools:
             tool_msg = solib.tool_use.tool_rendering.get_tool_prompt(
                 tools, natively_supports_tools
             )
-            if msg_type == "langchain":
-                messages.insert(0, SystemMessage(content=tool_msg))
-            elif (
-                not natively_supports_tools
-            ):  # local models (where msg_type="dict") that natively support tools will have the tool prompt added by apply_chat_template
-                messages.insert(  # otherwise, we manually create one
-                    0,
-                    {
-                        "role": "system",
-                        "content": tool_msg,
-                    },
-                )
+            if not natively_supports_tools:
+                messages.insert(0, {"role": "system", "content": tool_msg})
 
         if tokenizer is not None:
             if tools and natively_supports_tools:
@@ -139,25 +113,6 @@ def format_prompt(
             if words_in_mouth is not None:
                 input_string += words_in_mouth
     return {"messages": messages, "input_string": input_string}
-
-
-def convert_langchain_to_dict(
-    messages: list[BaseMessage | dict[str, str]],
-) -> list[dict[str, str]]:
-    # TODO: modify this to support ToolMessage
-    messages_out = []
-    for m in messages:
-        if (
-            isinstance(m, HumanMessage)
-            or isinstance(m, AIMessage)
-            or isinstance(m, SystemMessage)
-        ):
-            messages_out.append({"role": m.type, "content": m.content})
-        elif isinstance(m, ToolMessage):
-            warnings.warn("ToolMessage is not supported yet")
-        elif isinstance(m, dict):
-            messages_out.append(m)
-    return messages_out
 
 
 @functools.cache
@@ -186,87 +141,70 @@ def load_hf_model(model: str, hf_quantization_config=True):
 # cache this because it's surprisingly slow
 @functools.cache
 def load_api_model(model):
-    if model.startswith("or:"):  # OpenRouter
-        from langchain_openai import ChatOpenAI
-
+    if model.startswith("or:"): # OpenRouter
+        base_url = "https://openrouter.ai/api/v1"
         api_key = os.getenv("OPENROUTER_API_KEY")
-        client = ChatOpenAI(
-            model=model, base_url="https://openrouter.ai/api/v1", api_key=api_key
-        )
-
+        client = instructor.patch(OpenAI(base_url=base_url, api_key=api_key), mode=Mode.TOOLS)
     else:
         if model.startswith(("gpt", "openai", "babbage", "davinci")):
-            from langchain_openai import ChatOpenAI
-
-            api_key = os.getenv("OPENAI_API_KEY")
-            client = ChatOpenAI(
-                model=model,
-                api_key=api_key,
-                rate_limiter=get_rate_limiter(model),
-            )
-
+            api_key = os.getenv("OPENAI_API_KEY") 
+            client = instructor.patch(OpenAI(api_key=api_key), mode=Mode.TOOLS)
+            
         elif model.startswith(("claude", "anthropic")):
-            from langchain_anthropic import ChatAnthropic
-
+            # Anthropic has its own client but can be used similarly
+            from anthropic import Anthropic
             api_key = os.getenv("ANTHROPIC_API_KEY")
-            client = ChatAnthropic(
-                model=model,
-                api_key=api_key,
-                rate_limiter=get_rate_limiter(model),
-            )
-
+            client = instructor.patch(Anthropic(api_key=api_key), mode=Mode.TOOLS)
+            
         elif model.startswith("mistral"):
-            from langchain_mistralai import ChatMistralAI
-
+            from mistralai.client import MistralClient
             api_key = os.getenv("MISTRAL_API_KEY")
-            client = ChatMistralAI(
-                model=model,
-                api_key=api_key,
-                rate_limiter=get_rate_limiter(model),
-            )
-
+            client = instructor.patch(MistralClient(api_key=api_key), mode=Mode.TOOLS)
+            
         else:
             raise ValueError(f"Model {model} is not supported for now")
-
-    client = client.configurable_fields(
-        max_tokens=ConfigurableField(id="max_tokens"),
-        temperature=ConfigurableField(id="temperature"),
-    )
 
     return client
 
 
-@functools.cache
-def get_rate_limiter(model: str):
-    requests_per_second = {
-        "gpt": 125 / 60,
-        "claude": 1000 / 60,
-        "mistral": 125 / 60,
-    }
-
-    model_type = model.split("-")[0]
-    return InMemoryRateLimiter(
-        requests_per_second=requests_per_second[model_type],
-        check_every_n_seconds=0.5,
-        max_bucket_size=MAX_CONCURRENT_QUERIES,
-    )
-
-
 def get_hf_llm(model: str, hf_quantization_config=True):
-    msg_type = "dict"
-
     client = load_hf_model(model, hf_quantization_config)
     tokenizer, model = client
 
+    def generate_format_and_bind(
+        prompt: str = None,
+        messages: list[dict] = None,
+        input_string: str = None,
+        system_message: str | None = None,
+        words_in_mouth: str | None = None,
+        tools: list[callable] = None,
+        max_tokens: int = 2048,
+        temperature: float = 0.0,
+        response_model: Union["BaseModel", None] = None,
+        top_logprobs: int = 0,
+        use_async=False,
+    ):
+        messages = format_prompt(
+            prompt=prompt,
+            messages=messages,
+            input_string=input_string,
+            tokenizer=tokenizer,
+            system_message=system_message,
+            words_in_mouth=words_in_mouth,
+            tools=tools,
+            natively_supports_tools=False,
+        )["messages"]
+
+        return messages
+
     @costly(
         simulator=LLM_Simulator.simulate_llm_call,
-        messages=lambda kwargs: format_prompt(
+        messages=lambda kwargs: generate_format_and_bind(
             prompt=kwargs.get("prompt"),
             messages=kwargs.get("messages"),
             input_string=kwargs.get("input_string"),
             system_message=kwargs.get("system_message"),
-            msg_type=msg_type,
-        )["messages"],
+        ),
         disable_costly=DISABLE_COSTLY,
     )
     def generate(
@@ -295,7 +233,6 @@ def get_hf_llm(model: str, hf_quantization_config=True):
             words_in_mouth=words_in_mouth,
             tools=tools,
             natively_supports_tools=natively_supports_tools,
-            msg_type=msg_type,
         )
 
         input_ids = tokenizer.encode(
@@ -318,13 +255,12 @@ def get_hf_llm(model: str, hf_quantization_config=True):
 
     @costly(
         simulator=LLM_Simulator.simulate_llm_call,
-        messages=lambda kwargs: format_prompt(
+        messages=lambda kwargs: generate_format_and_bind(
             prompt=kwargs.get("prompt"),
             messages=kwargs.get("messages"),
             input_string=kwargs.get("input_string"),
             system_message=kwargs.get("system_message"),
-            msg_type=msg_type,
-        )["messages"],
+        ),
         disable_costly=DISABLE_COSTLY,
     )
     def return_probs(
@@ -343,7 +279,6 @@ def get_hf_llm(model: str, hf_quantization_config=True):
             tokenizer=tokenizer,
             system_message=system_message,
             words_in_mouth=words_in_mouth,
-            msg_type=msg_type,
         )
         input_ids = tokenizer.encode(
             input_string["input_string"], return_tensors="pt"
@@ -372,52 +307,30 @@ def get_hf_llm(model: str, hf_quantization_config=True):
 
 
 def get_api_llm(model: str):
-    msg_type = "langchain"
-    natively_supports_tools = True  # assume all chat API models natively support tools
-
+    natively_supports_tools = True
     client = load_api_model(model)
+    rate_limiter = get_rate_limiter(model)
 
-    def process_response(response):
-        if isinstance(
-            response, list
-        ):  # handle tool calling case, make the output match the hugging face case somewhat
-            raw_response = solib.tool_use.tool_rendering.render_tool_call_conversation(
-                response
-            )
-            token_types = [
-                k for k, v in response[0].usage_metadata.items() if isinstance(v, int)
-            ]
-            usage = defaultdict(int)
-            for token_type in token_types:
-                for r in response:
-                    if not hasattr(r, "usage_metadata"):
-                        continue
-                    usage[token_type] += r.usage_metadata[token_type]
-
-        elif isinstance(response, BaseMessage):  # handle singleton messages
-            raw_response = response.content
-            usage = response.usage_metadata
-        elif isinstance(response, dict):  # otherwise, we are using structured output
-            raw = response["raw"]
-            # probably should do some error handling here if 'parsing_error' is set
-            parsed = response["parsed"]
-            if response["parsing_error"] is not None:
-                LOGGER.error(raw)
-                raise ValueError(
-                    f"Error parsing structured output: {response['parsing_error']}"
-                )
-
-            raw_response = parsed
-            usage = raw.usage_metadata
+    def process_response(response, response_model=None):
+        """Process response from instructor/OpenAI client"""
+        if isinstance(response, list): # Tool calls
+            raw_response = solib.tool_use.tool_rendering.render_tool_call_conversation(response)
+            usage = response[0].usage
+        else:
+            raw_response = response.choices[0].message.content
+            usage = response.usage
+            
+            if response_model:
+                parsed = instructor.validate(response_model, raw_response)
+                raw_response = parsed
 
         return raw_response, usage
 
-    _get_messages = lambda kwargs: convert_langchain_to_dict(  # noqa
+    _get_messages = lambda kwargs: format_prompt(  # noqa
         format_prompt(
             prompt=kwargs.get("prompt"),
             messages=kwargs.get("messages"),
             system_message=kwargs.get("system_message"),
-            msg_type=msg_type,
             natively_supports_tools=natively_supports_tools,
         )["messages"]
     )
@@ -433,28 +346,43 @@ def get_api_llm(model: str):
         if tools and response_model:
             raise ValueError("Cannot use tools with response_model")
 
-        bclient = client.with_config(
-            configurable={"max_tokens": max_tokens, "temperature": temperature}
-        )
-
+        completion_kwargs = {
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+        }
         if top_logprobs:
-            bclient = bclient.bind(top_logprobs=top_logprobs, logprobs=True)
+            completion_kwargs["top_logprobs"] = top_logprobs
+            completion_kwargs["logprobs"] = True
 
         if response_model:
-            bclient = bclient.with_structured_output(response_model, include_raw=True)
+            patched_client = instructor.patch(client, mode=Mode.TOOLS)
+            get_response = partial(
+                patched_client.chat.completions.create,
+                response_model=response_model,
+                **completion_kwargs
+            )
+        else:
+            get_response = partial(client.chat.completions.create, **completion_kwargs)
 
         if tools:
             tool_map, structured_tools = (
                 solib.tool_use.tool_rendering.get_structured_tools(tools)
             )
-            bclient = bclient.bind_tools(structured_tools)
+            completion_kwargs["tools"] = structured_tools
+            completion_kwargs["tool_choice"] = "auto"
 
-        get_response = bclient.ainvoke if use_async else bclient.invoke
+        if use_async:
+            get_response = partial(client.chat.completions.create, **completion_kwargs)
+
+        def rate_limited_response(*args, **kwargs):
+            rate_limiter.acquire()
+            return get_response(*args, **kwargs)
+
         get_response = retry(
             wait=wait_random_exponential(multiplier=0.5, max=60),
             after=after_log(LOGGER, logging.DEBUG),
             before_sleep=before_sleep_log(LOGGER, logging.DEBUG, exc_info=True),
-        )(get_response)
+        )(rate_limited_response)
 
         if tools:
             if use_async:
@@ -502,7 +430,6 @@ def get_api_llm(model: str):
             messages=messages,
             system_message=system_message,
             tools=tools,
-            msg_type=msg_type,
             natively_supports_tools=natively_supports_tools,
         )["messages"]
 
@@ -510,9 +437,14 @@ def get_api_llm(model: str):
 
     @costly(
         simulator=LLM_Simulator.simulate_llm_call,
-        messages=_get_messages,
+        messages=lambda kwargs: generate_format_and_bind(
+            prompt=kwargs.get("prompt"),
+            messages=kwargs.get("messages"),
+            system_message=kwargs.get("system_message"),
+        ),
         disable_costly=DISABLE_COSTLY,
     )
+    @method_cache(ignore=["cost_log"])
     def generate(
         model: str = model,
         prompt: str = None,
@@ -526,12 +458,16 @@ def get_api_llm(model: str):
         simulate: bool = SIMULATE,
         **kwargs,
     ):
+        # Store response_model and clear it from kwargs to ensure proper caching
+        _response_model = response_model
+        kwargs.pop('response_model', None)
+
         get_response, messages = generate_format_and_bind(
             prompt,
             messages,
             system_message,
             max_tokens,
-            response_model,
+            None,  # Don't pass response_model to avoid caching issues
             tools,
             temperature,
             use_async=False,
@@ -544,8 +480,12 @@ def get_api_llm(model: str):
 
         LOGGER.debug(f"raw_response: {raw_response}")
 
-        if response_model is not None and isinstance(raw_response, dict):
-            raw_response = response_model(**raw_response)
+        if _response_model is not None:
+            if isinstance(raw_response, dict):
+                raw_response = _response_model(**raw_response)
+            else:
+                # Parse the raw string response into the model
+                raw_response = instructor.validate(_response_model, raw_response)
 
         LOGGER.debug(f"raw_response: {raw_response}")
 
@@ -556,7 +496,11 @@ def get_api_llm(model: str):
 
     @costly(
         simulator=LLM_Simulator.simulate_llm_call,
-        messages=_get_messages,
+        messages=lambda kwargs: generate_format_and_bind(
+            prompt=kwargs.get("prompt"),
+            messages=kwargs.get("messages"),
+            system_message=kwargs.get("system_message"),
+        ),
         disable_costly=DISABLE_COSTLY,
     )
     async def generate_async(
@@ -572,12 +516,16 @@ def get_api_llm(model: str):
         simulate: bool = SIMULATE,
         **kwargs,
     ):
+        # Store response_model and clear it from kwargs to ensure proper caching
+        _response_model = response_model
+        kwargs.pop('response_model', None)
+
         get_response, messages = generate_format_and_bind(
             prompt,
             messages,
             system_message,
             max_tokens,
-            response_model,
+            None,  # Don't pass response_model to avoid caching issues
             tools,
             temperature,
             use_async=True,
@@ -590,8 +538,12 @@ def get_api_llm(model: str):
 
         LOGGER.debug(f"raw_response: {raw_response}")
 
-        if response_model is not None and isinstance(raw_response, dict):
-            raw_response = response_model(**raw_response)
+        if _response_model is not None:
+            if isinstance(raw_response, dict):
+                raw_response = _response_model(**raw_response)
+            else:
+                # Parse the raw string response into the model
+                raw_response = instructor.validate(_response_model, raw_response)
 
         LOGGER.debug(f"raw_response: {raw_response}")
 
@@ -645,7 +597,6 @@ def get_api_llm(model: str):
             prompt=prompt,
             messages=messages,
             system_message=system_message,
-            msg_type=msg_type,
         )["messages"]
 
         return get_response, messages
