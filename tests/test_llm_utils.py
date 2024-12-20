@@ -1,7 +1,7 @@
 import pytest
 from solib.globals import RUNHF  # Ensure RUNHF is imported
 from solib.llm_utils import LLM_Agent
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 pytest_plugins = ("anyio",)
 
@@ -130,3 +130,23 @@ async def test_get_response_async_with_response_model(llm_agent_async):
     assert type(response).__name__ == ResponseModel.__name__
     assert response.country == "France"
     assert response.capital == "Paris"
+
+def test_get_response_with_response_model_more_complicated(llm_agent_sync):
+    class ResponseModel(BaseModel):
+        students: dict[int, str] = Field(description="Each key is an ID, each value is a name.")
+    
+    prompt = "Create a dictionary of 5 students with IDs as keys and names as values."
+    response = llm_agent_sync.get_response_sync(prompt=prompt, response_model=ResponseModel)
+    assert isinstance(response, ResponseModel)
+    assert len(response.students) == 5
+    assert all(isinstance(key, int) and isinstance(value, str) for key, value in response.students.items())
+
+async def test_get_response_async_with_response_model_more_complicated(llm_agent_async):
+    class ResponseModel(BaseModel):
+        students: dict[int, str] = Field(description="Each key is an ID, each value is a name.")
+    
+    prompt = "Create a dictionary of 5 students with IDs as keys and names as values."
+    response = await llm_agent_async.get_response_async(prompt=prompt, response_model=ResponseModel)
+    assert isinstance(response, ResponseModel)
+    assert len(response.students) == 5
+    assert all(isinstance(key, int) and isinstance(value, str) for key, value in response.students.items())
