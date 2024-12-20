@@ -1,11 +1,10 @@
 from functools import wraps
-import io
+import json
 import os
-import cloudpickle
 import inspect
 from perscache import Cache
 from perscache.cache import hash_it
-from perscache.serializers import CloudPickleSerializer, Serializer
+from perscache.serializers import Serializer, JSONSerializer
 from typing import Callable, Iterable
 from pydantic import BaseModel
 
@@ -49,28 +48,56 @@ class BetterCache(Cache):
         return hash_it(inspect.getsource(fn), type(serializer).__name__, arg_dict)
 
 
-class SafeCloudPickleSerializer(CloudPickleSerializer):
-    # https://github.com/pydantic/pydantic/issues/8232#issuecomment-2189431721
-    @classmethod
-    def dumps(cls, obj):
-        model_namespaces = {}
+# class SafeCloudPickleSerializer(CloudPickleSerializer):
+#     # https://github.com/pydantic/pydantic/issues/8232#issuecomment-2189431721
+#     @classmethod
+#     def dumps(cls, obj):
+#         model_namespaces = {}
 
-        with io.BytesIO() as f:
-            pickler = cloudpickle.CloudPickler(f)
+#         with io.BytesIO() as f:
+#             pickler = cloudpickle.CloudPickler(f)
 
-            for ModelClass in BaseModel.__subclasses__():
-                model_namespaces[ModelClass] = ModelClass.__pydantic_parent_namespace__
-                ModelClass.__pydantic_parent_namespace__ = None
+#             for ModelClass in BaseModel.__subclasses__():
+#                 model_namespaces[ModelClass] = ModelClass.__pydantic_parent_namespace__
+#                 ModelClass.__pydantic_parent_namespace__ = None
 
+#             try:
+#                 pickler.dump(obj)
+#                 return f.getvalue()
+#             finally:
+#                 for ModelClass, namespace in model_namespaces.items():
+#                     ModelClass.__pydantic_parent_namespace__ = namespace
+
+
+class PydanticJSONSerializer(JSONSerializer):
+    @staticmethod
+    def default(obj):
+        if hasattr(obj, "to_dict"):
+            return obj.to_dict()
+        elif isinstance(obj, BaseModel) and issubclass(
+            type(obj), BaseModel
+        ):  # check for subclass
+            # If it's a Pydantic model class, return its name for serialization
+            return f"{obj.__module__}.{obj.__class__.__name__}"
+        elif isinstance(obj, BaseModel):
+            return obj.model_dump()
+        else:
             try:
-                pickler.dump(obj)
-                return f.getvalue()
-            finally:
-                for ModelClass, namespace in model_namespaces.items():
-                    ModelClass.__pydantic_parent_namespace__ = namespace
+                return dict(obj)
+            except:  # noqa
+                raise TypeError(
+                    f"Object of type {obj.__class__.__name__} is not JSON serializable"
+                )
 
+    @classmethod
+    def dumps(cls, data):
+        return json.dumps(data, default=cls.default).encode("utf-8")
 
-cache = BetterCache(serializer=SafeCloudPickleSerializer())
+    @classmethod
+    def loads(cls, data):
+        return json.loads(data.decode("utf-8"))
+
+cache = BetterCache(serializer=PydanticJSONSerializer())
 
 
 # HACK. I have no idea why this works but just manually adding 'self' to
