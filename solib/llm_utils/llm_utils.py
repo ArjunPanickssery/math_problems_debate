@@ -4,7 +4,6 @@ import functools
 import os
 import math
 from typing import Literal, Union, TYPE_CHECKING
-import requests
 from transformers import BitsAndBytesConfig
 from pydantic import BaseModel
 from costly import Costlog, CostlyResponse, costly
@@ -13,7 +12,6 @@ import warnings
 from tenacity import (
     before_sleep_log,
     retry,
-    stop_after_attempt,
     wait_random_exponential,
     after_log,
 )
@@ -28,11 +26,10 @@ from langchain_core.messages import (
 )
 from langchain_core.runnables import ConfigurableField
 from langchain_core.rate_limiters import InMemoryRateLimiter
-from zmq import REQ
 
 from solib.globals import *
 
-from solib.llm_utils.caching import method_cache
+from solib.llm_utils.caching import cache
 import solib.tool_use.tool_rendering
 from solib.datatypes import Prob
 from solib.tool_use import tool_use
@@ -764,7 +761,7 @@ class LLM_Agent:
     def supports_async(self):
         return not self.model.startswith("hf:")
 
-    @method_cache(ignore=["cost_log"])
+    @cache(ignore=["cost_log"])
     def get_response_sync(
         self,
         response_model: Union["BaseModel", None] = None,
@@ -800,7 +797,7 @@ class LLM_Agent:
             **kwargs,
         )
 
-    @method_cache(ignore=["cost_log"])
+    @cache(ignore=["cost_log"])
     async def get_response_async(
         self,
         response_model: Union["BaseModel", None] = None,
@@ -846,7 +843,7 @@ class LLM_Agent:
             return await self.get_probs_async(*args, **kwargs)
         return self.get_probs_sync(*args, **kwargs)
 
-    @method_cache(ignore=["cost_log"])
+    @cache(ignore=["cost_log"])
     def get_probs_sync(
         self,
         return_probs_for: list[str],
@@ -882,7 +879,7 @@ class LLM_Agent:
             **kwargs,
         )
 
-    @method_cache(ignore=["cost_log"])
+    @cache(ignore=["cost_log"])
     async def get_probs_async(
         self,
         return_probs_for: list[str],
