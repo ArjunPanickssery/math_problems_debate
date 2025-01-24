@@ -243,10 +243,11 @@ def load_api_model(model):
         else:
             raise ValueError(f"Model {model} is not supported for now")
 
-    client = client.configurable_fields(
-        max_tokens=ConfigurableField(id="max_tokens"),
-        temperature=ConfigurableField(id="temperature"),
-    )
+    if not model.startswith("gemini"):
+        client = client.configurable_fields(
+            max_tokens=ConfigurableField(id="max_tokens"),
+            temperature=ConfigurableField(id="temperature"),
+        )
 
     return client
 
