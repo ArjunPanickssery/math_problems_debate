@@ -221,6 +221,24 @@ def load_api_model(model):
                 api_key=api_key,
                 rate_limiter=get_rate_limiter(model),
             )
+        # try to use the naming conventions in
+        # https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json
+        elif model.startswith("deepseek/deepseek"):
+            from langchain_openai.chat_models.base import BaseChatOpenAI
+
+            model = model.split("/")[1] # remove the deepseek/ prefix
+            api_key = os.getenv("DEEPSEEK_API_KEY")
+            client = BaseChatOpenAI(
+                model=model,
+                openai_api_key=api_key,
+                openai_api_base="https://api.deepseek.com",
+                max_tokens=1024,
+            )
+        
+        elif model.startswith("gemini"):
+            from langchain_google_genai import ChatGoogleGenerativeAI
+            # api_key = os.getenv("GOOGLE_API_KEY")
+            client = ChatGoogleGenerativeAI(model=model)
 
         else:
             raise ValueError(f"Model {model} is not supported for now")
@@ -239,9 +257,16 @@ def get_rate_limiter(model: str):
         "gpt": 125 / 60,
         "claude": 1000 / 60,
         "mistral": 125 / 60,
+        "deepseek": 1000 / 60,
+        "gemini": 1000 / 60,
     }
 
-    model_type = model.split("-")[0]
+    ## model_type = first key in requests_per_second that model starts with
+    model_type = next(
+        (key for key in requests_per_second if model.startswith(key)), None
+    )
+    # model_type = model.split("-")[0]
+
     return InMemoryRateLimiter(
         requests_per_second=requests_per_second[model_type],
         check_every_n_seconds=0.5,
@@ -747,7 +772,7 @@ class LLM_Agent:
         hf_quantization_config=True,
         sync_mode=False,
     ):
-        self.model = model or "gpt-4o-mini"
+        self.model = model or "claude-3-5-sonnet-20241022"
         self.tools = tools
         self.hf_quantization_config = hf_quantization_config
         self.sync_mode = sync_mode

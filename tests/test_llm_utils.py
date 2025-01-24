@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 pytest_plugins = ("anyio",)
 
 # Define the models based on RUNHF
-models = ["gpt-4o-mini"]
+models = ["gpt-4o-mini", "claude-3-5-sonnet-20241022", "gemini-2.0-flash-exp", "deepseek/deepseek-chat", "deepseek/deepseek-reasoner"]
 if RUNHF:
     models.extend([
         "hf:meta-llama/Llama-2-7b-chat-hf",
