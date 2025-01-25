@@ -26,9 +26,9 @@ def test_get_path():
                 "num_turns": 4,
             },
             "call_kwargs": {
-                "judge": Judge(),
-                "agent": QA_Agent(),
-                "adversary": QA_Agent(),
+                "judge": Judge("gpt-4o-mini"),
+                "agent": QA_Agent("gpt-4o-mini"),
+                "adversary": QA_Agent("gpt-4o-mini"),
             },
         }
     )
