@@ -205,7 +205,7 @@ class Experiment:
         return (
             self._filter_selfplay(config)
             and self._filter_nohfjap(config)
-            and self._filter_nojap(config)
+            and self._filter_nojaps(config)
         )
 
     @property
@@ -255,6 +255,12 @@ class Experiment:
             if isinstance(component, JustAskProbabilityJudge) and not isinstance(
                 component, JustAskProbabilitiesJudge
             ):
+                return False
+        return True
+
+    def _filter_nojaps(self, config: dict):
+        for component in config["call_kwargs"].values():
+            if isinstance(component, JustAskProbabilitiesJudge):
                 return False
         return True
 
