@@ -236,7 +236,7 @@ class Experiment:
             print(str_config(filtered_configs))
             confirm = input("Continue? (y/N)")
         if confirm.lower() != "y":
-            return
+            raise Exception("Experiment aborted by user.")
         LOGGER.debug(filtered_configs)
         statss = await parallelized_call(
             run_experiment, filtered_configs, use_tqdm=True, max_concurrent_queries=5

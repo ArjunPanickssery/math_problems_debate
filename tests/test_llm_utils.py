@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 pytest_plugins = ("anyio",)
 
 # Define the models based on RUNHF
-models = ["gpt-4o-mini"]
+models = ["gpt-4o-mini", "claude-3-5-sonnet-20241022", "gemini-2.0-flash-exp", "deepseek/deepseek-chat", "deepseek/deepseek-reasoner"]
 if RUNHF:
     models.extend([
         "hf:meta-llama/Llama-2-7b-chat-hf",
@@ -135,7 +135,7 @@ def test_get_response_with_response_model_more_complicated(llm_agent_sync):
     class ResponseModel(BaseModel):
         students: dict[int, str] = Field(description="Each key is an ID, each value is a name.")
     
-    prompt = "Create a dictionary of 5 students with IDs as keys and names as values."
+    prompt = "Create an object consisting of an attribute students, which is a dictionary of 5 students with IDs as keys and names as values."
     response = llm_agent_sync.get_response_sync(prompt=prompt, response_model=ResponseModel)
     assert isinstance(response, ResponseModel)
     assert len(response.students) == 5
@@ -145,7 +145,7 @@ async def test_get_response_async_with_response_model_more_complicated(llm_agent
     class ResponseModel(BaseModel):
         students: dict[int, str] = Field(description="Each key is an ID, each value is a name.")
     
-    prompt = "Create a dictionary of 5 students with IDs as keys and names as values."
+    prompt = "Create an object consisting of an attribute students, which is a dictionary of 5 students with IDs as keys and names as values."
     response = await llm_agent_async.get_response_async(prompt=prompt, response_model=ResponseModel)
     assert isinstance(response, ResponseModel)
     assert len(response.students) == 5
