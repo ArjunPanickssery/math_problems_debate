@@ -2,6 +2,7 @@ from collections import defaultdict
 from functools import partial
 import functools
 import os
+import traceback
 import math
 from typing import Literal, Union, TYPE_CHECKING
 from transformers import BitsAndBytesConfig
@@ -426,6 +427,7 @@ def get_api_llm(model: str):
             parsed = response["parsed"]
             if response["parsing_error"] is not None:
                 LOGGER.error(raw)
+                traceback.print_exc()
                 raise ValueError(
                     f"Error parsing structured output: {response['parsing_error']}"
                 )
@@ -773,7 +775,7 @@ class LLM_Agent:
         hf_quantization_config=True,
         sync_mode=False,
     ):
-        self.model = model or "claude-3-5-sonnet-20241022"
+        self.model = model or "gpt-4o-mini" #or "claude-3-5-sonnet-20241022"
         self.tools = tools
         self.hf_quantization_config = hf_quantization_config
         self.sync_mode = sync_mode
