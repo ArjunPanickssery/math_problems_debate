@@ -42,12 +42,12 @@ questions = GSM8K.data(limit=3)
 test_experiment = Experiment(
     questions=questions,
     agent_models=[
-        "gpt-4o-mini",
+        "claude-3-5-sonnet-20241022",
         # "hf:meta-llama/Meta-Llama-3-8B-Instruct",
     ],
     agent_toolss=[[], [math_eval]],
     judge_models=[
-        "gpt-4o-mini",
+        "claude-3-5-sonnet-20241022",
         # "hf:meta-llama/Llama-2-7b-chat-hf",
     ],
     protocols=["blind", "propaganda", "debate", "consultancy"],
