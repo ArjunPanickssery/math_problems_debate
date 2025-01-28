@@ -7,10 +7,10 @@ from solib.utils import (
     write_jsonl_async,
     write_json,
 )
-from solib.llm_utils import LLM_Agent
+from solib.utils import LLM_Agent
 from solib.datatypes import Answer, Question, TranscriptItem
 from solib.data.loading import Dataset
-from solib.globals import jinja_env
+from solib.utils.llm_utils import jinja_env
 
 LOGGER = logging.getLogger(__name__)
 

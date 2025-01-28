@@ -9,11 +9,15 @@ def math_eval(expr: str) -> Union[str, float]:
     + (add), / (divide), and ** (power). If your expression was unable to be evaluated,
     the output will instead be "Invalid expression".
 
-    Args:
-    expr: str, the expression to evaluate
+    Parameters
+    ----------
+    expr: str
+        the expression to evaluate
 
-    Returns:
-    float, the result of the evaluation, or str "Invalid expression" if the expression is invalid
+    Returns
+    -------
+    float
+        the result of the evaluation, or str "Invalid expression" if the expression is invalid
     """
     operators = {
         ast.Add: operator.add,

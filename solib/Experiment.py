@@ -5,7 +5,7 @@ from pathlib import Path
 from solib.data.loading import Dataset
 from solib.utils import str_config, write_json, dump_config, random
 from solib.utils import parallelized_call
-from solib.globals import SIMULATE
+from solib.utils.llm_utils import SIMULATE
 from solib.protocols.protocols import (
     Blind,
     Propaganda,

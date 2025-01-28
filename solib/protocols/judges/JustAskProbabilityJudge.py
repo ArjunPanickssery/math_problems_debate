@@ -2,7 +2,7 @@ import logging
 from solib.utils import parallelized_call
 from solib.datatypes import Question, Answer, Prob
 from solib.protocols.abstract import Judge
-from solib.globals import jinja_env
+from solib.utils.llm_utils import jinja_env
 
 LOGGER = logging.getLogger(__name__)
 

@@ -11,7 +11,7 @@ import os
 import asyncio
 from tqdm.asyncio import tqdm
 
-from solib.globals import LOGGER
+from solib.utils.llm_utils import LOGGER
 
 
 def dump_config(instance):
@@ -77,6 +77,16 @@ def update_nonnones(source, overrides):
 
 
 AbstractionError = NotImplementedError("Must be implemented in subclass.")
+
+class DefaultDict(dict):
+    def __init__(self, key_fn):
+        super().__init__()
+        self._key_fn = key_fn
+
+    def __missing__(self, key):
+        v = self._key_fn(key)
+        self[key] = v
+        return v
 
 
 def write_jsonl(
