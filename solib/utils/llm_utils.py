@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 from collections import defaultdict
 from dotenv import load_dotenv
 from pydantic import BaseModel
-from costly import Costlog, costly
+from costly import Costlog, costly, CostlyResponse
 from jinja2 import Environment, FileSystemLoader
 
 if TYPE_CHECKING:
@@ -103,13 +103,18 @@ for k in RATE_LIMITERS:
     RATE_LIMITERS[k]["semaphore"] = asyncio.Semaphore(MAX_CONCURRENT_QUERIES)
     RATE_LIMITERS[k]["last_request"] = 0
 
-
-def format_prompt(prompt: str) -> list[dict[str, str]]:
-    return [
-        {"role": "system", "content": "You are a helpful assistant."},
+def format_prompt(prompt: str, system_prompt: str = None, words_in_mouth: str = None) -> list[dict[str, str]]:
+    system_prompt = system_prompt or "You are a helpful assistant."
+    messages = [
+        {"role": "system", "content": system_prompt},
         {"role": "user", "content": prompt},
     ]
+    if words_in_mouth: # litellm assistant prefill
+        messages.append({"role": "assistant", "content": words_in_mouth})
+    return messages
 
+def should_use_words_in_mouth(model: str) -> bool:
+    return model.startswith("ollama/") or model.startswith("ollama_chat/")
 
 @costly()
 async def acompletion_ratelimited(
@@ -147,7 +152,13 @@ async def acompletion_ratelimited(
         )
         LOGGER.debug(f"Response from {model}: {response}")
         rate_limiter["last_request"] = time.time()
-        return response
+        return CostlyResponse(
+            output=response,
+            cost_info={
+                "input_tokens": response.usage.prompt_tokens,
+                "output_tokens": response.usage.completion_tokens,
+            }
+        )
 
 
 @costly()
@@ -185,7 +196,13 @@ def completion_ratelimited(
     )
     LOGGER.debug(f"Response from {model}: {response}")
     rate_limiter["last_request"] = time.time()
-    return response
+    return CostlyResponse(
+        output=response,
+        cost_info={
+            "input_tokens": response.usage.prompt_tokens,
+            "output_tokens": response.usage.completion_tokens,
+        }
+    )
 
 
 async def acompletion_toolloop(
@@ -341,6 +358,8 @@ async def acompletion_wrapper(
     return_probs_for: list[str] | None = None,
     prompt: str | None = None,
     messages: list[dict[str, str]] | None = None,
+    system_prompt = None,
+    words_in_mouth = None,
     **kwargs,
 ) -> str | BaseModel | dict[str, float]:
     """
@@ -362,7 +381,9 @@ async def acompletion_wrapper(
 
     if prompt:
         LOGGER.info(f"Converting {prompt} to messages.")
-        messages = format_prompt(prompt)
+        if not should_use_words_in_mouth(model):
+            words_in_mouth = None
+        messages = format_prompt(prompt, system_prompt=system_prompt, words_in_mouth=words_in_mouth)
 
     if tools:
         LOGGER.info(
@@ -422,6 +443,8 @@ def completion_wrapper(
     return_probs_for: list[str] | None = None,
     prompt: str | None = None,
     messages: list[dict[str, str]] | None = None,
+    system_prompt = None,
+    words_in_mouth = None,
     **kwargs,
 ) -> str | BaseModel | dict[str, float]:
     """
@@ -443,7 +466,9 @@ def completion_wrapper(
 
     if prompt:
         LOGGER.info(f"Converting {prompt} to messages.")
-        messages = format_prompt(prompt)
+        if not should_use_words_in_mouth(model):
+            words_in_mouth = None
+        messages = format_prompt(prompt, system_prompt=system_prompt, words_in_mouth=words_in_mouth)
 
     if tools:
         LOGGER.info(
@@ -511,6 +536,8 @@ class LLM_Agent:
         prompt: str = None,
         messages: list[dict[str, str]] = None,
         response_model: BaseModel | None = None,
+        system_prompt: str = None,
+        words_in_mouth: str = None,
         **kwargs,
     ):
         return completion_wrapper(
@@ -519,6 +546,8 @@ class LLM_Agent:
             response_format=response_model,
             prompt=prompt,
             messages=messages,
+            system_prompt=system_prompt,
+            words_in_mouth=words_in_mouth,
             **kwargs,
         )
 
@@ -527,6 +556,8 @@ class LLM_Agent:
         response_model: BaseModel | None = None,
         prompt: str = None,
         messages: list[dict[str, str]] = None,
+        system_prompt: str = None,
+        words_in_mouth: str = None,
         **kwargs,
     ):
         return await acompletion_wrapper(
@@ -535,6 +566,8 @@ class LLM_Agent:
             response_format=response_model,
             prompt=prompt,
             messages=messages,
+            system_prompt=system_prompt,
+            words_in_mouth=words_in_mouth,
             **kwargs,
         )
 
@@ -553,6 +586,8 @@ class LLM_Agent:
         return_probs_for: list[str],
         prompt: str = None,
         messages: list[dict[str, str]] = None,
+        words_in_mouth: str = None,
+        system_prompt: str = None,
         **kwargs,
     ):
         return completion_wrapper(
@@ -560,6 +595,8 @@ class LLM_Agent:
             return_probs_for=return_probs_for,
             prompt=prompt,
             messages=messages,
+            system_prompt=system_prompt,
+            words_in_mouth=words_in_mouth,
             **kwargs,
         )
 
@@ -568,6 +605,8 @@ class LLM_Agent:
         return_probs_for: list[str],
         prompt: str = None,
         messages: list[dict[str, str]] = None,
+        words_in_mouth: str = None,
+        system_prompt: str = None,
         **kwargs,
     ):
         return await acompletion_wrapper(
@@ -575,5 +614,7 @@ class LLM_Agent:
             return_probs_for=return_probs_for,
             prompt=prompt,
             messages=messages,
+            system_prompt=system_prompt,
+            words_in_mouth=words_in_mouth,
             **kwargs,
         )

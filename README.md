@@ -1,9 +1,8 @@
 # Usage
 
 ```bash
-python -m venv venv
-source venv/bin/activate
-poetry install
+uv venv
+uv sync
 ```
 
 Create a `.env` file, see [.env.example](.env.example)
@@ -17,7 +16,7 @@ The only exception to this is `costly` simulators.
 # Pytest
 
 ```
-poetry run pytest -s
+uv run pytest -s
 ```
 
 # LLM calls, simulation and cost estimation
