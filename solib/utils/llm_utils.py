@@ -114,7 +114,12 @@ def format_prompt(prompt: str, system_prompt: str = None, words_in_mouth: str = 
     return messages
 
 def should_use_words_in_mouth(model: str) -> bool:
+    """Models that should use the words_in_mouth. All other models will drop it."""
     return model.startswith("ollama/") or model.startswith("ollama_chat/")
+
+def supports_async(model: str) -> bool:
+    """Models that support async completion."""
+    return not model.startswith("ollama/") and not model.startswith("ollama_chat/")
 
 @costly()
 async def acompletion_ratelimited(
@@ -130,6 +135,7 @@ async def acompletion_ratelimited(
     """
     rate_limiter = RATE_LIMITERS.get(model, None)
     max_retries = kwargs.pop("max_retries", 3)
+    LOGGER.info(f"Getting response from {model} for messages {messages}. simulate={simulate} [async]")
     if rate_limiter is None:
         LOGGER.warning(
             f"Rate limiter not found for model {model}, running without rate limits."
@@ -175,6 +181,7 @@ def completion_ratelimited(
     """
     rate_limiter = RATE_LIMITERS.get(model, None)
     max_retries = kwargs.pop("max_retries", 3)
+    LOGGER.info(f"Getting response from {model} for messages {messages}. simulate={simulate} [sync]")
     if rate_limiter is None:
         LOGGER.warning(
             f"Rate limiter not found for model {model}, running without rate limits."
@@ -398,7 +405,7 @@ async def acompletion_wrapper(
     if return_probs_for:
         LOGGER.info(f"Getting logprobs for tokens {return_probs_for} from {model}.")
         response: ModelResponse = await acompletion_ratelimited(
-            model, messages, logprobs=True, top_logprobs=NUM_LOGITS, **kwargs
+            model, messages, logprobs=True, top_logprobs=NUM_LOGITS, max_tokens=20, **kwargs
         )
         # logprob_content is a list of dicts -- each dict contains the next chosen token and
         # a 'top_logprobs' key with the logprobs for all alternatives
@@ -483,7 +490,7 @@ def completion_wrapper(
     if return_probs_for:
         LOGGER.info(f"Getting logprobs for tokens {return_probs_for} from {model}.")
         response: ModelResponse = completion_ratelimited(
-            model, messages, logprobs=True, top_logprobs=NUM_LOGITS, **kwargs
+            model, messages, logprobs=True, top_logprobs=NUM_LOGITS, max_tokens=20, **kwargs
         )
         # logprob_content is a list of dicts -- each dict contains the next chosen token and
         # a 'top_logprobs' key with the logprobs for all alternatives
@@ -530,6 +537,7 @@ class LLM_Agent:
         )  # or "claude-3-5-sonnet-20241022"
         self.tools = tools
         self.sync_mode = sync_mode
+        self.supports_async = supports_async(model)
 
     def get_response_sync(
         self,

@@ -140,7 +140,7 @@ def test_get_response_with_response_model_more_complicated(llm_agent_sync):
     response = llm_agent_sync.get_response_sync(prompt=prompt, response_model=ResponseModel)
     assert isinstance(response, ResponseModel)
     assert len(response.students) == 5
-    assert all(isinstance(key, int) and isinstance(value, str) for key, value in response.students.items())
+    assert all(isinstance(student, str) for student in response.students)
 
 async def test_get_response_async_with_response_model_more_complicated(llm_agent_async):
     class ResponseModel(BaseModel):
@@ -151,4 +151,4 @@ async def test_get_response_async_with_response_model_more_complicated(llm_agent
     response = await llm_agent_async.get_response_async(prompt=prompt, response_model=ResponseModel)
     assert isinstance(response, ResponseModel)
     assert len(response.students) == 5
-    assert all(isinstance(key, int) and isinstance(value, str) for key, value in response.students.items())
+    assert all(isinstance(student, str) for student in response.students)
