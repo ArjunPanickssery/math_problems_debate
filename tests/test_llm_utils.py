@@ -1,4 +1,5 @@
 import pytest
+import asyncio
 from solib.utils.llm_utils import RUNHF  # Ensure RUNHF is imported
 from solib.utils import LLM_Agent
 from pydantic import BaseModel, Field
@@ -25,41 +26,41 @@ def llm_agent_sync(model):
 def llm_agent_async(model):
     return LLM_Agent(model=model, sync_mode=False)
 
-# def test_get_response_returns_string(llm_agent_sync):
-#     prompt = "What is the capital of France?"
-#     response = llm_agent_sync.get_response_sync(prompt=prompt)
-#     assert isinstance(response, str)
+def test_get_response_returns_string(llm_agent_sync):
+    prompt = "What is the capital of France?"
+    response = llm_agent_sync.get_response_sync(prompt=prompt)
+    assert isinstance(response, str)
 
-# def test_get_probs_returns_dict(llm_agent_sync):
-#     if "claude" in llm_agent_sync.model or "gemini" in llm_agent_sync.model:
-#         pytest.skip("Claude models do not support get_probs")
-#     prompt = (
-#         "Take a random guess as to what the 1,000,001st digit of pi is. "
-#         'Answer exactly "0", "1", ... or "9", with nothing else in your response.'
-#     )
-#     response = llm_agent_sync.get_probs_sync(
-#         prompt=prompt,
-#         return_probs_for=[str(n) for n in range(10)],
-#     )
-#     assert isinstance(response, dict)
+def test_get_probs_returns_dict(llm_agent_sync):
+    if "claude" in llm_agent_sync.model or "gemini" in llm_agent_sync.model:
+        pytest.skip("Claude models do not support get_probs")
+    prompt = (
+        "Take a random guess as to what the 1,000,001st digit of pi is. "
+        'Answer exactly "0", "1", ... or "9", with nothing else in your response.'
+    )
+    response = llm_agent_sync.get_probs_sync(
+        prompt=prompt,
+        return_probs_for=[str(n) for n in range(10)],
+    )
+    assert isinstance(response, dict)
 
-# def test_get_response_with_max_tokens(llm_agent_sync):
-#     prompt = "What is the capital of France?"
-#     max_tokens = 50
-#     response = llm_agent_sync.get_response_sync(prompt=prompt, max_tokens=max_tokens)
-#     assert isinstance(response, str)
-#     assert len(response.split()) <= max_tokens
+def test_get_response_with_max_tokens(llm_agent_sync):
+    prompt = "What is the capital of France?"
+    max_tokens = 50
+    response = llm_agent_sync.get_response_sync(prompt=prompt, max_tokens=max_tokens)
+    assert isinstance(response, str)
+    assert len(response.split()) <= max_tokens
 
-# def test_get_response_with_words_in_mouth(llm_agent_sync):
-#     prompt = (
-#         "Take a random guess as to what the 1,000,001st digit of pi is. "
-#         'Answer exactly "0", "1", ... or "9", with nothing else in your response.'
-#     )
-#     words_in_mouth = " My guess for the correct answer is:\n\n"
-#     response = llm_agent_sync.get_response_sync(
-#         prompt=prompt, words_in_mouth=words_in_mouth
-#     )
-#     assert isinstance(response, str)
+def test_get_response_with_words_in_mouth(llm_agent_sync):
+    prompt = (
+        "Take a random guess as to what the 1,000,001st digit of pi is. "
+        'Answer exactly "0", "1", ... or "9", with nothing else in your response.'
+    )
+    words_in_mouth = " My guess for the correct answer is:\n\n"
+    response = llm_agent_sync.get_response_sync(
+        prompt=prompt, words_in_mouth=words_in_mouth
+    )
+    assert isinstance(response, str)
 
 @pytest.mark.asyncio
 async def test_get_response_async_returns_string(llm_agent_async):
@@ -67,19 +68,19 @@ async def test_get_response_async_returns_string(llm_agent_async):
     response = await llm_agent_async.get_response_async(prompt=prompt)
     assert isinstance(response, str)
 
-# @pytest.mark.asyncio
-# async def test_get_probs_async_returns_dict(llm_agent_async):
-#     if "claude" in llm_agent_async.model or "gemini" in llm_agent_async.model:
-#         pytest.skip("Claude models do not support get_probs")
-#     prompt = (
-#         "Take a random guess as to what the 1,000,001st digit of pi is. "
-#         'Answer exactly "0", "1", ... or "9", with nothing else in your response.'
-#     )
-#     response = await llm_agent_async.get_probs_async(
-#         prompt=prompt,
-#         return_probs_for=[str(n) for n in range(10)],
-#     )
-#     assert isinstance(response, dict)
+@pytest.mark.asyncio
+async def test_get_probs_async_returns_dict(llm_agent_async):
+    if "claude" in llm_agent_async.model or "gemini" in llm_agent_async.model:
+        pytest.skip("Claude models do not support get_probs")
+    prompt = (
+        "Take a random guess as to what the 1,000,001st digit of pi is. "
+        'Answer exactly "0", "1", ... or "9", with nothing else in your response.'
+    )
+    response = await llm_agent_async.get_probs_async(
+        prompt=prompt,
+        return_probs_for=[str(n) for n in range(10)],
+    )
+    assert isinstance(response, dict)
 
 @pytest.mark.asyncio
 async def test_get_response_async_with_max_tokens(llm_agent_async):

@@ -24,7 +24,7 @@ GLOBAL_COST_LOG = Costlog(mode="jsonl", discard_extras=True)
 SIMULATE = os.getenv("SIMULATE", "False").lower() == "true"
 DISABLE_COSTLY = os.getenv("DISABLE_COSTLY", "False").lower() == "true"
 CACHING = os.getenv("CACHING", "False").lower() == "true"
-MAX_CONCURRENT_QUERIES = int(os.getenv("MAX_CONCURRENT_QUERIES", 100))
+MAX_CONCURRENT_QUERIES = int(os.getenv("MAX_CONCURRENT_QUERIES", 2))
 NUM_LOGITS = 5
 MAX_WORDS = 100
 RUNHF = os.getenv("RUNHF", "False").lower() == "true"
@@ -148,6 +148,9 @@ async def acompletion_ratelimited(
             f"Rate limiter not found for model {model}, running without rate limits."
         )
         return await acompletion(model, messages, max_retries=max_retries, **kwargs)
+    # if rate_limiter["semaphore"] is None:
+    #     # Lazy initialize semaphore in the current event loop
+    #     rate_limiter["semaphore"] = asyncio.Semaphore(MAX_CONCURRENT_QUERIES)
     async with rate_limiter["semaphore"]:
         now = time.time()
         elapsed = now - rate_limiter["last_request"]
