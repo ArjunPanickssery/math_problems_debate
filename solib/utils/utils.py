@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import Coroutine
 from pydantic import BaseModel
+import logging
 import json
 import jsonlines
 import aiofiles
@@ -11,7 +12,7 @@ import os
 import asyncio
 from tqdm.asyncio import tqdm
 
-from solib.utils.llm_utils import LOGGER
+LOGGER = logging.getLogger(__name__)
 
 
 def dump_config(instance):
@@ -75,6 +76,11 @@ def update_nonnones(source, overrides):
             source[key] = value
     return source
 
+
+def coerce(val, coercer: callable):
+    if val is None:
+        return None
+    return coercer(val)
 
 AbstractionError = NotImplementedError("Must be implemented in subclass.")
 

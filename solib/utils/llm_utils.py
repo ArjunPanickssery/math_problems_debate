@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 from pydantic import BaseModel
 from costly import Costlog, costly, CostlyResponse
 from jinja2 import Environment, FileSystemLoader
+from solib.utils import coerce
 
 if TYPE_CHECKING:
     from litellm.types.utils import ModelResponse
@@ -85,6 +86,7 @@ RATE_LIMITERS = (
         "gemini/gemini-1.5-pro": {"rpm": 1000, "tpm": 4e6},
         "gemini/gemini-1.5-flash": {"rpm": 2000, "tpm": 4e6},
         "gemini/gemini-1.5-flash-8b": {"rpm": 4000, "tpm": 4e6},
+        "gemini/gemini-2.0-flash-exp": {"rpm": 10, "rpd": 1500} # requests per day is not enforced
     }
 )
 # | {
@@ -94,11 +96,11 @@ RATE_LIMITERS = (
 
 for k in RATE_LIMITERS:
     # allow setting rate limits in .env, e.g. if you're on a different tier
-    RATE_LIMITERS[k]["rpm"] = int(
-        os.getenv(f"{k.upper()}_RPM", RATE_LIMITERS[k]["rpm"])
+    RATE_LIMITERS[k]["rpm"] = coerce(
+        os.getenv(f"{k.upper()}_RPM", RATE_LIMITERS[k].get("rpm", None)), int
     )
-    RATE_LIMITERS[k]["tpm"] = int(
-        os.getenv(f"{k.upper()}_TPM", RATE_LIMITERS[k]["tpm"])
+    RATE_LIMITERS[k]["tpm"] = coerce(
+        os.getenv(f"{k.upper()}_TPM", RATE_LIMITERS[k].get("tpm", None)), int
     )
     RATE_LIMITERS[k]["semaphore"] = asyncio.Semaphore(MAX_CONCURRENT_QUERIES)
     RATE_LIMITERS[k]["last_request"] = 0
@@ -135,7 +137,12 @@ async def acompletion_ratelimited(
     """
     rate_limiter = RATE_LIMITERS.get(model, None)
     max_retries = kwargs.pop("max_retries", 3)
-    LOGGER.info(f"Getting response from {model} for messages {messages}. simulate={simulate} [async]")
+    LOGGER.info(
+        f"Getting response [async]; params:\n"
+        f"model: {model}\n"
+        f"messages: {messages}\n"
+        f"kwargs: {kwargs}\n"
+    )
     if rate_limiter is None:
         LOGGER.warning(
             f"Rate limiter not found for model {model}, running without rate limits."
@@ -145,7 +152,7 @@ async def acompletion_ratelimited(
         now = time.time()
         elapsed = now - rate_limiter["last_request"]
         rpm = rate_limiter["rpm"]
-        if elapsed < 60 / rpm:
+        if rpm is not None and elapsed < 60 / rpm:
             LOGGER.info(
                 f"Sleeping for {60 / rpm - elapsed} seconds to avoid overloading {model}."
             )
@@ -181,7 +188,12 @@ def completion_ratelimited(
     """
     rate_limiter = RATE_LIMITERS.get(model, None)
     max_retries = kwargs.pop("max_retries", 3)
-    LOGGER.info(f"Getting response from {model} for messages {messages}. simulate={simulate} [sync]")
+    LOGGER.info(
+        f"Getting response [sync]; params:\n"
+        f"model: {model}\n"
+        f"messages: {messages}\n"
+        f"kwargs: {kwargs}\n"
+    )
     if rate_limiter is None:
         LOGGER.warning(
             f"Rate limiter not found for model {model}, running without rate limits."
@@ -190,7 +202,7 @@ def completion_ratelimited(
     now = time.time()
     elapsed = now - rate_limiter["last_request"]
     rpm = rate_limiter["rpm"]
-    if elapsed < 60 / rpm:
+    if rpm is not None and elapsed < 60 / rpm:
         LOGGER.info(
             f"Sleeping for {60 / rpm - elapsed} seconds to avoid overloading {model}."
         )
