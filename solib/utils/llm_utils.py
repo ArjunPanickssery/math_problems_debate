@@ -11,7 +11,7 @@ from typing import Any, TYPE_CHECKING
 from collections import defaultdict
 from dotenv import load_dotenv
 from pydantic import BaseModel
-# from perscache import Cache
+from perscache import Cache
 from costly import Costlog, costly, CostlyResponse
 from jinja2 import Environment, FileSystemLoader
 from solib.utils import coerce
@@ -23,7 +23,7 @@ LOGGER = logging.getLogger(__name__)
 
 load_dotenv()
 
-# CACHE = Cache()
+CACHE = Cache()
 GLOBAL_COST_LOG = Costlog(mode="jsonl", discard_extras=True)
 SIMULATE = os.getenv("SIMULATE", "False").lower() == "true"
 DISABLE_COSTLY = os.getenv("DISABLE_COSTLY", "False").lower() == "true"
