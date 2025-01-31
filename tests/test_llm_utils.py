@@ -72,7 +72,7 @@ def test_get_response_returns_string(llm_agent_sync):
 
 def test_get_probs_returns_dict(llm_agent_sync):
     if "claude" in llm_agent_sync.model or "gemini" in llm_agent_sync.model:
-        pytest.skip("Claude models do not support get_probs")
+        pytest.skip("Claude or gemini models do not support get_probs")
     prompt = (
         "Take a random guess as to what the 1,000,001st digit of pi is. "
         'Answer exactly "0", "1", ... or "9", with nothing else in your response.'
@@ -114,7 +114,7 @@ async def test_get_response_async_returns_string(llm_agent_async):
 @pytest.mark.asyncio
 async def test_get_probs_async_returns_dict(llm_agent_async):
     if "claude" in llm_agent_async.model or "gemini" in llm_agent_async.model:
-        pytest.skip("Claude models do not support get_probs")
+        pytest.skip("Claude or gemini models do not support get_probs")
     prompt = (
         "Take a random guess as to what the 1,000,001st digit of pi is. "
         'Answer exactly "0", "1", ... or "9", with nothing else in your response.'
@@ -201,7 +201,7 @@ def test_get_response_with_response_model_more_complicated(llm_agent_sync):
     assert len(response.students) == 5
     assert all(isinstance(student, str) for student in response.students)
 
-
+@pytest.mark.asyncio
 async def test_get_response_async_with_response_model_more_complicated(llm_agent_async):
     class ResponseModel(BaseModel):
         students: list[str] = Field(
@@ -257,5 +257,12 @@ def test_response_length_with_max_tokens(llm_agent_sync, max_tokens):
 def test_tool_calling(llm_agent_sync_with_tool):    
     prompt = "What is 25 * 48?"
     response = llm_agent_sync_with_tool.get_response_sync(prompt=prompt)
+    assert isinstance(response, str)
+    assert "1200" in response  # The result should appear in the response
+
+@pytest.mark.asyncio
+async def test_tool_calling_async(llm_agent_async_with_tool):    
+    prompt = "What is 25 * 48?"
+    response = await llm_agent_async_with_tool.get_response_async(prompt=prompt)
     assert isinstance(response, str)
     assert "1200" in response  # The result should appear in the response

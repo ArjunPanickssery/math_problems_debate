@@ -247,7 +247,7 @@ async def acompletion_toolloop(
     """
     toolloop_id = uuid.uuid4().hex
     for tool in tools:
-        if not isinstance(tool, callable):
+        if not callable(tool):
             raise ValueError("1) what")
         if not hasattr(tool, "json") or not isinstance(tool.json, dict):
             json_spec: dict = litellm.utils.function_to_dict(tool)
@@ -325,6 +325,8 @@ def completion_toolloop(
     """
     toolloop_id = uuid.uuid4().hex
     for tool in tools:
+        if not callable(tool):
+            raise ValueError("1) what")
         if not hasattr(tool, "json") or not isinstance(tool.json, dict):
             json_spec = litellm.utils.function_to_dict(tool)
             LOGGER.warning(
