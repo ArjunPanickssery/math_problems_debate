@@ -7,7 +7,7 @@ import time
 import math
 import litellm
 from litellm import completion, acompletion
-from typing import TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 from collections import defaultdict
 from dotenv import load_dotenv
 from pydantic import BaseModel
@@ -16,7 +16,7 @@ from jinja2 import Environment, FileSystemLoader
 from solib.utils import coerce
 
 if TYPE_CHECKING:
-    from litellm.types.utils import ModelResponse
+    from litellm.types.utils import ModelResponse, ChatCompletionMessageToolCall, Function
 
 LOGGER = logging.getLogger(__name__)
 
@@ -245,20 +245,27 @@ async def acompletion_toolloop(
 
     Uses acompletion_ratelimited.
     """
+    toolloop_id = uuid.uuid4().hex
     for tool in tools:
+        if not isinstance(tool, callable):
+            raise ValueError("1) what")
         if not hasattr(tool, "json") or not isinstance(tool.json, dict):
-            json_spec = litellm.utils.function_to_dict(tool)
+            json_spec: dict = litellm.utils.function_to_dict(tool)
             LOGGER.warning(
-                "A tool is a function with an attribute json of type dict."
+                "A tool is a function with an attribute json of type dict. "
                 f"Assuming the following json spec:\n\n {json_spec}"
             )
+            tool.json = {"type": "function", "function": json_spec}
     start_len = len(messages)
     tools_ = [tool.json for tool in tools]
     tool_map = {tool.json["function"]["name"]: tool for tool in tools}
     LOGGER.debug(
         f"Starting tool loop with tools {[t.json['function']['name'] for t in tools]}."
     )
+    
+    i = 0
     while True:
+        LOGGER.info(f"Tool loop {toolloop_id} iteration {i} starting ...")
         response = await acompletion_ratelimited(
             model=model,
             messages=messages,
@@ -266,8 +273,8 @@ async def acompletion_toolloop(
             **kwargs,
         )
 
-        response_text = response.choices[0].message.content
-        response_tool_calls = response.choices[0].message.tool_calls
+        response_text: str = response.choices[0].message.content
+        response_tool_calls: list[ChatCompletionMessageToolCall] = response.choices[0].message.tool_calls
         response_msg = {
             "role": "assistant",
             "content": response_text,
@@ -275,20 +282,34 @@ async def acompletion_toolloop(
         }
         messages.append(response_msg)
 
+        LOGGER.info(
+            f"Tool loop {toolloop_id} iteration {i} response:\n"
+            f"{response_text}\n"
+            f"tool calls:\n"
+            f"{response_tool_calls}"
+        )
+
         if response_tool_calls:
             for t in response_tool_calls:
-                tool: callable = tool_map[t.function["name"]]
-                tool_kwargs: dict = json.loads(t.function["arguments"])
-                tool_result = tool(**tool_kwargs)
+                t: ChatCompletionMessageToolCall
+                f: Function = t.function
+                f_name: str = f.name
+                f_args: str = f.arguments
+                tool: callable = tool_map[f_name]
+                tool_kwargs: dict = json.loads(f_args)
+                tool_result: Any = tool(**tool_kwargs)
                 tool_result_msg = {
                     "tool_call_id": response_tool_calls[0].id,
                     "role": "tool",
-                    "content": tool_result,
+                    "content": str(tool_result),
                 }
                 messages.append(tool_result_msg)
-                LOGGER.debug(f"{len(messages)} messages in tool loop so far...")
+                LOGGER.debug(f"{len(messages)} messages in tool loop {toolloop_id} so far...")
 
         else:
+            if i == 0:
+                LOGGER.warning(f"Tool loop {toolloop_id} did not result in any tool calls.")
+            LOGGER.info(f"Tool loop {toolloop_id} terminated with {i} tool call iterations.")
             return messages[start_len:]
 
 
@@ -302,17 +323,22 @@ def completion_toolloop(
 
     Uses completion_ratelimited.
     """
+    toolloop_id = uuid.uuid4().hex
     for tool in tools:
         if not hasattr(tool, "json") or not isinstance(tool.json, dict):
             json_spec = litellm.utils.function_to_dict(tool)
             LOGGER.warning(
-                "A tool is a function with an attribute json of type dict."
+                "A tool is a function with an attribute json of type dict. "
                 f"Assuming the following json spec:\n\n {json_spec}"
             )
+            tool.json = {"type": "function", "function": json_spec}
     start_len = len(messages)
     tools_ = [tool.json for tool in tools]
     tool_map = {tool.json["function"]["name"]: tool for tool in tools}
+    
+    i = 0
     while True:
+        LOGGER.info(f"Tool loop {toolloop_id} iteration {i} starting ...")
         response = completion_ratelimited(
             model=model,
             messages=messages,
@@ -329,20 +355,36 @@ def completion_toolloop(
         }
         messages.append(response_msg)
 
+        LOGGER.info(
+            f"Tool loop {toolloop_id} iteration {i} response:\n"
+            f"{response_text}\n"
+            f"tool calls:\n"
+            f"{response_tool_calls}"
+        )
+
         if response_tool_calls:
             for t in response_tool_calls:
-                tool: callable = tool_map[t.function["name"]]
-                tool_kwargs: dict = json.loads(t.function["arguments"])
-                tool_result = tool(**tool_kwargs)
+                t: ChatCompletionMessageToolCall
+                f: Function = t.function
+                f_name: str = f.name
+                f_args: str = f.arguments
+                tool: callable = tool_map[f_name]
+                tool_kwargs: dict = json.loads(f_args)
+                tool_result: Any = tool(**tool_kwargs)
                 tool_result_msg = {
-                    "tool_call_id": t.id,
+                    "tool_call_id": response_tool_calls[0].id,
                     "role": "tool",
-                    "content": tool_result,
+                    "content": str(tool_result),
                 }
                 messages.append(tool_result_msg)
-
+                LOGGER.debug(f"{len(messages)} messages in tool loop {toolloop_id} so far...")
         else:
+            if i == 0:
+                LOGGER.warning(f"Tool loop {toolloop_id} did not result in any tool calls.")
+            LOGGER.info(f"Tool loop {toolloop_id} terminated with {i} tool call iterations.")
             return messages[start_len:]
+        
+        i += 1
 
 
 def render_tool_call(name: str, args: dict[str, str]) -> str:
@@ -363,20 +405,26 @@ def render_tool_call_conversation(messages: list[dict[str, str]]) -> str:
     """Given a list of BaseMessages, turn the conversation into one unified string representation that includes
     model responses, tool calls, and tool call results."""
     raw_response = ""
-    tool_calls = {}  # map tool call ids to their associated messages
+    tool_calls: dict[str, ChatCompletionMessageToolCall] = {}  # map tool call ids to their associated messages
     for msg in messages:
         if msg["role"] == "assistant":
-            raw_response += msg["content"]
-            if "tool_calls" in msg:
+            if msg["content"]: # sometimes msg["content"] is None
+                raw_response += msg["content"]
+            if "tool_calls" in msg and msg["tool_calls"]: # sometimes msg["tool_calls"] is None
                 for t in msg["tool_calls"]:
+                    t: ChatCompletionMessageToolCall
                     tool_calls[t.id] = t
-                    raw_response += render_tool_call(
-                        t.function["name"], t.function["args"]
-                    )
+                    f: Function = t.function
+                    f_name: str = f.name
+                    f_args: str = f.arguments # it's a str but it's fine
+                    raw_response += render_tool_call(f_name, f_args)
         elif msg["role"] == "tool":
-            t = tool_calls[msg.tool_call_id]
+            t: ChatCompletionMessageToolCall = tool_calls[msg["tool_call_id"]]
+            f: Function = t.function
+            f_name: str = f.name
+            f_args: str = f.arguments # it's a str but it's fine
             raw_response += render_tool_call_result(
-                t.function["name"], msg["content"], t.function["args"]
+                f_name, msg["content"], f_args
             )
     return raw_response
 

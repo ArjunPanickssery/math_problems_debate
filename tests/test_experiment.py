@@ -5,7 +5,7 @@ from datetime import datetime
 from solib.protocols.protocols import Debate, Blind, Propaganda, Consultancy  # noqa
 from solib.Experiment import Experiment
 from solib.data.loading import GSM8K
-from solib.tool_use.default_tools import math_eval
+from solib.utils.default_tools import math_eval
 from solib.protocols.abstract import QA_Agent, Judge
 
 experiment = Experiment(

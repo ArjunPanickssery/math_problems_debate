@@ -4,7 +4,7 @@ from datetime import datetime
 from solib.protocols.protocols import *  # noqa
 from solib.Experiment import Experiment
 from solib.data.loading import GSM8K
-from solib.tool_use.default_tools import math_eval
+from solib.utils.default_tools import math_eval
 
 questions = GSM8K.data(limit=10)
 

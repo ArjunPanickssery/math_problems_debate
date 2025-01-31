@@ -9,9 +9,11 @@ from solib.utils.llm_utils import (
     supports_async,
     render_tool_call,
     render_tool_call_result,
+    LLM_Agent
 )
-from solib.utils import LLM_Agent
+from solib.utils.default_tools import math_eval
 from pydantic import BaseModel, Field
+
 
 
 # Define the models based on RUNHF
@@ -43,6 +45,13 @@ def llm_agent_sync(model):
 def llm_agent_async(model):
     return LLM_Agent(model=model, sync_mode=False)
 
+@pytest.fixture
+def llm_agent_sync_with_tool(model):
+    return LLM_Agent(model=model, sync_mode=True, tools=[math_eval])
+
+@pytest.fixture
+def llm_agent_async_with_tool(model):
+    return LLM_Agent(model=model, sync_mode=False, tools=[math_eval])
 
 @pytest.fixture(scope="module")
 def event_loop():
@@ -245,33 +254,8 @@ def test_response_length_with_max_tokens(llm_agent_sync, max_tokens):
     words = len(response.split())
     assert words <= max_tokens * 1.3
 
-def test_tool_calling(llm_agent_sync):
-    def calculator(expression: str) -> str:
-        """Calculate the result of a mathematical expression"""
-        try:
-            return str(eval(expression))
-        except:
-            return "Error in calculation"
-    
-    calculator.json = {
-        "function": {
-            "name": "calculator",
-            "description": "Calculate the result of a mathematical expression",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "expression": {
-                        "type": "string",
-                        "description": "The mathematical expression to evaluate"
-                    }
-                },
-                "required": ["expression"]
-            }
-        }
-    }
-    
-    agent = LLM_Agent(model=llm_agent_sync.model, tools=[calculator], sync_mode=True)
+def test_tool_calling(llm_agent_sync_with_tool):    
     prompt = "What is 25 * 48?"
-    response = agent.get_response_sync(prompt=prompt)
+    response = llm_agent_sync_with_tool.get_response_sync(prompt=prompt)
     assert isinstance(response, str)
     assert "1200" in response  # The result should appear in the response
