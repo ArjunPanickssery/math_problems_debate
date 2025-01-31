@@ -1,4 +1,5 @@
 import os
+import uuid
 import logging
 import asyncio
 import json
@@ -24,7 +25,7 @@ GLOBAL_COST_LOG = Costlog(mode="jsonl", discard_extras=True)
 SIMULATE = os.getenv("SIMULATE", "False").lower() == "true"
 DISABLE_COSTLY = os.getenv("DISABLE_COSTLY", "False").lower() == "true"
 CACHING = os.getenv("CACHING", "False").lower() == "true"
-MAX_CONCURRENT_QUERIES = int(os.getenv("MAX_CONCURRENT_QUERIES", 2))
+MAX_CONCURRENT_QUERIES = int(os.getenv("MAX_CONCURRENT_QUERIES", 100))
 NUM_LOGITS = 5
 MAX_WORDS = 100
 RUNHF = os.getenv("RUNHF", "False").lower() == "true"
@@ -137,36 +138,38 @@ async def acompletion_ratelimited(
     """
     rate_limiter = RATE_LIMITERS.get(model, None)
     max_retries = kwargs.pop("max_retries", 3)
+    call_id = uuid.uuid4().hex
     LOGGER.info(
         f"Getting response [async]; params:\n"
         f"model: {model}\n"
         f"messages: {messages}\n"
         f"kwargs: {kwargs}\n"
+        f"call_id: {call_id}\n"
     )
     if rate_limiter is None:
         LOGGER.warning(
-            f"Rate limiter not found for model {model}, running without rate limits."
+            f"{call_id}: Rate limiter not found for model {model}, running without rate limits."
         )
-        return await acompletion(model, messages, max_retries=max_retries, **kwargs)
-    # if rate_limiter["semaphore"] is None:
-    #     # Lazy initialize semaphore in the current event loop
-    #     rate_limiter["semaphore"] = asyncio.Semaphore(MAX_CONCURRENT_QUERIES)
+        response = await acompletion(model, messages, max_retries=max_retries, **kwargs)
+        LOGGER.debug(f"{call_id}: Response from {model}: {response}")
+        return response
     async with rate_limiter["semaphore"]:
         now = time.time()
         elapsed = now - rate_limiter["last_request"]
         rpm = rate_limiter["rpm"]
         if rpm is not None and elapsed < 60 / rpm:
             LOGGER.info(
-                f"Sleeping for {60 / rpm - elapsed} seconds to avoid overloading {model}."
+                f"{call_id}: Sleeping for {60 / rpm - elapsed} seconds to avoid overloading {model}."
             )
             await asyncio.sleep(60 / rpm - elapsed)
+        LOGGER.info(f"{call_id}: Now actually making the request to {model}.")
         response = await acompletion(
             model=model,
             messages=messages,
             max_retries=max_retries,
             **kwargs,
         )
-        LOGGER.debug(f"Response from {model}: {response}")
+        LOGGER.debug(f"{call_id}: Response from {model}: {response}")
         rate_limiter["last_request"] = time.time()
         return CostlyResponse(
             output=response,
@@ -191,32 +194,37 @@ def completion_ratelimited(
     """
     rate_limiter = RATE_LIMITERS.get(model, None)
     max_retries = kwargs.pop("max_retries", 3)
+    call_id = uuid.uuid4().hex
     LOGGER.info(
         f"Getting response [sync]; params:\n"
         f"model: {model}\n"
         f"messages: {messages}\n"
         f"kwargs: {kwargs}\n"
+        f"call_id: {call_id}\n"
     )
     if rate_limiter is None:
         LOGGER.warning(
-            f"Rate limiter not found for model {model}, running without rate limits."
+            f"{call_id}: Rate limiter not found for model {model}, running without rate limits."
         )
-        return completion(model, messages, max_retries=max_retries, **kwargs)
+        response = completion(model, messages, max_retries=max_retries, **kwargs)
+        LOGGER.debug(f"{call_id}: Response from {model}: {response}")
+        return response
     now = time.time()
     elapsed = now - rate_limiter["last_request"]
     rpm = rate_limiter["rpm"]
     if rpm is not None and elapsed < 60 / rpm:
         LOGGER.info(
-            f"Sleeping for {60 / rpm - elapsed} seconds to avoid overloading {model}."
+            f"{call_id}: Sleeping for {60 / rpm - elapsed} seconds to avoid overloading {model}."
         )
         time.sleep(60 / rpm - elapsed)
+    LOGGER.info(f"{call_id}: Now actually making the request to {model}.")
     response = completion(
         model=model,
         messages=messages,
         max_retries=max_retries,
         **kwargs,
     )
-    LOGGER.debug(f"Response from {model}: {response}")
+    LOGGER.debug(f"{call_id}: Response from {model}: {response}")
     rate_limiter["last_request"] = time.time()
     return CostlyResponse(
         output=response,

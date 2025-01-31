@@ -4,7 +4,7 @@ from solib.utils.llm_utils import RUNHF  # Ensure RUNHF is imported
 from solib.utils import LLM_Agent
 from pydantic import BaseModel, Field
 
-pytest_plugins = ("anyio",)
+# pytest_plugins = ("anyio",)
 
 # Define the models based on RUNHF
 models = ["claude-3-5-sonnet-20241022"]# ["gpt-4o-mini", "claude-3-5-sonnet-20241022", "gemini/gemini-2.0-flash-exp"] #"deepseek/deepseek-chat", "deepseek/deepseek-reasoner"
@@ -25,6 +25,16 @@ def llm_agent_sync(model):
 @pytest.fixture
 def llm_agent_async(model):
     return LLM_Agent(model=model, sync_mode=False)
+
+@pytest.fixture(scope="module")
+def event_loop():
+    """
+    Create an instance of the default event loop for the test session.
+    https://github.com/BerriAI/litellm/issues/8142
+    """
+    loop = asyncio.new_event_loop()
+    yield loop
+    loop.close()
 
 def test_get_response_returns_string(llm_agent_sync):
     prompt = "What is the capital of France?"
