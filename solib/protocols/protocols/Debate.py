@@ -27,7 +27,7 @@ class Debate(Protocol):
         answer_case: Answer,
         adversary: QA_Agent,
         judge: Judge,
-         caching: bool =True,,
+        caching: bool =True,
         temperature: float = 0.4,
     ):
         opp_case = question.neg(answer_case)
@@ -73,7 +73,7 @@ class Debate(Protocol):
         question: Question,
         judge: Judge,
         adversary: QA_Agent,
-         caching: bool =True,,
+        caching: bool =True,
         temperature: float = 0.4,
     ) -> Question:
         """Debate specifically is symmetric, so we can subclass this to only run the

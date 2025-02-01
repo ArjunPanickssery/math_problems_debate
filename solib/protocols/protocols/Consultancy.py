@@ -47,7 +47,7 @@ class Consultancy(Protocol):
         question: Question,
         answer_case: Answer,
         judge: Judge,
-         caching: bool =True,,
+        caching: bool =True,
         temperature: float = 0.4,
     ) -> Question:
         consultant = functools.partial(

@@ -69,7 +69,7 @@ TOOL_RESULT_TEMPLATE = jinja_env.get_template("tool_use/tool_result.jinja")
 # -- idk if this works though
 litellm.add_function_to_prompt = True
 litellm.drop_params = True  # make LLM calls ignore extra params
-litellm.cache = Cache(type="disk", disk_cache_dir=".cache")
+litellm.cache = Cache(type="disk")
 # see full list at https://github.com/BerriAI/litellm/blob/main/litellm/__init__.py
 
 RATE_LIMITERS = (
