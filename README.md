@@ -29,7 +29,7 @@ NOTE: if you are not seeing anything being logged, or if the totals are not bein
 
 # Caching
 
-LLM calls will be cached into the `.cache` folder by default. To break the cache, just pass some random extra argument to the function, e.g. `no_cache=True`.
+LLM calls will be cached into the `.litellm_cache` folder by default. To break the cache, just pass some random extra argument to the function, e.g. `no_cache=True`.
 
 # Logging
 
@@ -37,6 +37,6 @@ Logs are written to `.logs/` by default. In general use the logger rather than p
 
 # Cleanup
 
-`./clean.sh --all 5` will remove all but the 5 most recent items in each folder `.logs/`, `.cache/`, `.costly/`, and `tests/test_results/`. Options: `--logs`, `--cache`, `--costly`, `--tests`, `--all`. If you don't specify a number, it will remove everything.
+`./clean.sh --all 5` will remove all but the 5 most recent items in each folder `.logs/`, `.litellm_cache/`, `.costly/`, and `tests/test_results/`. Options: `--logs`, `--cache`, `--costly`, `--tests`, `--all`. If you don't specify a number, it will remove everything.
 
 

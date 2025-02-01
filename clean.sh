@@ -71,8 +71,8 @@ done
 
 # Run actions based on the parsed arguments
 if [[ "$action_cache" == true ]]; then
-    echo "Cleaning up .cache/ folder, keeping $keep most recent items..."
-    cleanup_folder ".cache" $keep
+    echo "Cleaning up .litellm_cache/ folder, keeping $keep most recent items..."
+    cleanup_folder ".litellm_cache" $keep
 fi
 
 if [[ "$action_costly" == true ]]; then

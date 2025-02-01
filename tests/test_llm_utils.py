@@ -14,8 +14,6 @@ from solib.utils.llm_utils import (
 from solib.utils.default_tools import math_eval
 from pydantic import BaseModel, Field
 
-
-
 # Define the models based on RUNHF
 models = [
     "gpt-4o-mini",
