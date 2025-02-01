@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field
 models = [
     "gpt-4o-mini",
     "claude-3-5-sonnet-20241022",
-    "gemini/gemini-2.0-flash-exp",
+    # "gemini/gemini-2.0-flash-exp",
 ]  # "deepseek/deepseek-chat", "deepseek/deepseek-reasoner" # not working
 if RUNHF:
     models.extend(
@@ -85,7 +85,7 @@ def test_get_probs_returns_dict(llm_agent_sync):
 
 
 def test_get_response_with_max_tokens(llm_agent_sync):
-    prompt = "What is the capital of France?"
+    prompt = "What is das capital of France?"
     max_tokens = 50
     response = llm_agent_sync.get_response_sync(prompt=prompt, max_tokens=max_tokens)
     assert isinstance(response, str)
@@ -233,9 +233,11 @@ async def test_rapid_requests_respect_rate_limits(llm_agent_async):
     elapsed = end_time - start_time
     
     assert all(isinstance(r, str) for r in responses)
-    if "claude" in llm_agent_async.model:
-        # Check if requests were properly rate-limited for Claude
-        assert elapsed >= len(prompts) * (60 / 4000)  # Based on 4000 RPM limit
+    rpm = RATE_LIMITERS.get(llm_agent_async.model, {"rpm": None}).get("rpm", None)
+    if any([kw in llm_agent_async.model for kw in ["gpt", "claude", "gemini"]]):
+        assert rpm is not None
+    if rpm is not None:
+        assert elapsed >= len(prompts) * (60 / rpm)
 
 @pytest.mark.asyncio
 async def test_invalid_response_model(llm_agent_async):

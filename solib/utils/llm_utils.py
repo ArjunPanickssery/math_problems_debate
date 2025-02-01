@@ -11,23 +11,30 @@ from typing import Any, TYPE_CHECKING
 from collections import defaultdict
 from dotenv import load_dotenv
 from pydantic import BaseModel
-from perscache import Cache
+from perscache import Cache, NoCache
 from costly import Costlog, costly, CostlyResponse
 from jinja2 import Environment, FileSystemLoader
 from solib.utils import coerce
 
 if TYPE_CHECKING:
-    from litellm.types.utils import ModelResponse, ChatCompletionMessageToolCall, Function
+    from litellm.types.utils import (
+        ModelResponse,
+        ChatCompletionMessageToolCall,
+        Function,
+    )
 
 LOGGER = logging.getLogger(__name__)
 
 load_dotenv()
 
-CACHE = Cache()
 GLOBAL_COST_LOG = Costlog(mode="jsonl", discard_extras=True)
 SIMULATE = os.getenv("SIMULATE", "False").lower() == "true"
 DISABLE_COSTLY = os.getenv("DISABLE_COSTLY", "False").lower() == "true"
 CACHING = os.getenv("CACHING", "False").lower() == "true"
+if CACHING:
+    cache = Cache()
+else:
+    cache = NoCache()
 MAX_CONCURRENT_QUERIES = int(os.getenv("MAX_CONCURRENT_QUERIES", 100))
 NUM_LOGITS = 5
 MAX_WORDS = 100
@@ -62,6 +69,8 @@ jinja_env.get_source = lambda template: (
 TOOL_CALL_TEMPLATE = jinja_env.get_template("tool_use/tool_call.jinja")
 TOOL_RESULT_TEMPLATE = jinja_env.get_template("tool_use/tool_result.jinja")
 
+# add tools to prompt for models that don't natively support it 
+# -- idk if this works though
 litellm.add_function_to_prompt = True
 litellm.drop_params = True  # make LLM calls ignore extra params
 
@@ -90,7 +99,10 @@ RATE_LIMITERS = (
         "gemini/gemini-1.5-pro": {"rpm": 1000, "tpm": 4e6},
         "gemini/gemini-1.5-flash": {"rpm": 2000, "tpm": 4e6},
         "gemini/gemini-1.5-flash-8b": {"rpm": 4000, "tpm": 4e6},
-        "gemini/gemini-2.0-flash-exp": {"rpm": 10, "rpd": 1500} # requests per day is not enforced
+        "gemini/gemini-2.0-flash-exp": {
+            "rpm": 10,
+            "rpd": 1500,
+        },  # requests per day is not enforced
     }
 )
 # | {
@@ -109,28 +121,36 @@ for k in RATE_LIMITERS:
     RATE_LIMITERS[k]["semaphore"] = asyncio.Semaphore(MAX_CONCURRENT_QUERIES)
     RATE_LIMITERS[k]["last_request"] = 0
 
-def format_prompt(prompt: str, system_prompt: str = None, words_in_mouth: str = None) -> list[dict[str, str]]:
+
+def format_prompt(
+    prompt: str, system_prompt: str = None, words_in_mouth: str = None
+) -> list[dict[str, str]]:
     system_prompt = system_prompt or "You are a helpful assistant."
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": prompt},
     ]
-    if words_in_mouth: # litellm assistant prefill
+    if words_in_mouth:  # litellm assistant prefill
         messages.append({"role": "assistant", "content": words_in_mouth})
     return messages
+
 
 def should_use_words_in_mouth(model: str) -> bool:
     """Models that should use the words_in_mouth. All other models will drop it."""
     return model.startswith("ollama/") or model.startswith("ollama_chat/")
 
+
 def supports_async(model: str) -> bool:
     """Models that support async completion."""
     return not model.startswith("ollama/") and not model.startswith("ollama_chat/")
 
+@cache
 @costly()
 async def acompletion_ratelimited(
     model: str,
     messages: list[dict[str, str]],
+    response_format: BaseModel | None = None,
+    tools: list[dict[str, str]] | None = None,
     cost_log: Costlog = GLOBAL_COST_LOG,
     simulate: bool = SIMULATE,
     **kwargs,
@@ -145,6 +165,8 @@ async def acompletion_ratelimited(
     LOGGER.info(
         f"Getting response [async]; params:\n"
         f"model: {model}\n"
+        f"response_format: {response_format}\n"
+        f"tools: {tools}\n"
         f"messages: {messages}\n"
         f"kwargs: {kwargs}\n"
         f"call_id: {call_id}\n"
@@ -153,7 +175,7 @@ async def acompletion_ratelimited(
         LOGGER.warning(
             f"{call_id}: Rate limiter not found for model {model}, running without rate limits."
         )
-        response = await acompletion(model, messages, max_retries=max_retries, **kwargs)
+        response = await acompletion(model=model, messages=messages, response_format=response_format, tools=tools, max_retries=max_retries, **kwargs)
         LOGGER.debug(f"{call_id}: Response from {model}: {response}")
         return response
     async with rate_limiter["semaphore"]:
@@ -169,6 +191,8 @@ async def acompletion_ratelimited(
         response = await acompletion(
             model=model,
             messages=messages,
+            response_format=response_format,
+            tools=tools,
             max_retries=max_retries,
             **kwargs,
         )
@@ -179,14 +203,16 @@ async def acompletion_ratelimited(
             cost_info={
                 "input_tokens": response.usage.prompt_tokens,
                 "output_tokens": response.usage.completion_tokens,
-            }
+            },
         )
 
-
+@cache
 @costly()
 def completion_ratelimited(
     model: str,
     messages: list[dict[str, str]],
+    response_format: BaseModel | None = None,
+    tools: list[dict[str, str]] | None = None,
     cost_log: Costlog = GLOBAL_COST_LOG,
     simulate: bool = SIMULATE,
     **kwargs,
@@ -202,6 +228,8 @@ def completion_ratelimited(
         f"Getting response [sync]; params:\n"
         f"model: {model}\n"
         f"messages: {messages}\n"
+        f"response_format: {response_format}\n"
+        f"tools: {tools}\n"
         f"kwargs: {kwargs}\n"
         f"call_id: {call_id}\n"
     )
@@ -209,7 +237,7 @@ def completion_ratelimited(
         LOGGER.warning(
             f"{call_id}: Rate limiter not found for model {model}, running without rate limits."
         )
-        response = completion(model, messages, max_retries=max_retries, **kwargs)
+        response = completion(model=model, messages=messages, response_format=response_format, tools=tools, max_retries=max_retries, **kwargs)
         LOGGER.debug(f"{call_id}: Response from {model}: {response}")
         return response
     now = time.time()
@@ -224,6 +252,8 @@ def completion_ratelimited(
     response = completion(
         model=model,
         messages=messages,
+        response_format=response_format,
+        tools=tools,
         max_retries=max_retries,
         **kwargs,
     )
@@ -234,7 +264,7 @@ def completion_ratelimited(
         cost_info={
             "input_tokens": response.usage.prompt_tokens,
             "output_tokens": response.usage.completion_tokens,
-        }
+        },
     )
 
 
@@ -265,7 +295,7 @@ async def acompletion_toolloop(
     LOGGER.debug(
         f"Starting tool loop with tools {[t.json['function']['name'] for t in tools]}."
     )
-    
+
     i = 0
     while True:
         LOGGER.info(f"Tool loop {toolloop_id} iteration {i} starting ...")
@@ -277,7 +307,9 @@ async def acompletion_toolloop(
         )
 
         response_text: str = response.choices[0].message.content
-        response_tool_calls: list[ChatCompletionMessageToolCall] = response.choices[0].message.tool_calls
+        response_tool_calls: list[ChatCompletionMessageToolCall] = response.choices[
+            0
+        ].message.tool_calls
         response_msg = {
             "role": "assistant",
             "content": response_text,
@@ -307,12 +339,18 @@ async def acompletion_toolloop(
                     "content": str(tool_result),
                 }
                 messages.append(tool_result_msg)
-                LOGGER.debug(f"{len(messages)} messages in tool loop {toolloop_id} so far...")
+                LOGGER.debug(
+                    f"{len(messages)} messages in tool loop {toolloop_id} so far..."
+                )
 
         else:
             if i == 0:
-                LOGGER.warning(f"Tool loop {toolloop_id} did not result in any tool calls.")
-            LOGGER.info(f"Tool loop {toolloop_id} terminated with {i} tool call iterations.")
+                LOGGER.warning(
+                    f"Tool loop {toolloop_id} did not result in any tool calls."
+                )
+            LOGGER.info(
+                f"Tool loop {toolloop_id} terminated with {i} tool call iterations."
+            )
             return messages[start_len:]
 
 
@@ -340,7 +378,7 @@ def completion_toolloop(
     start_len = len(messages)
     tools_ = [tool.json for tool in tools]
     tool_map = {tool.json["function"]["name"]: tool for tool in tools}
-    
+
     i = 0
     while True:
         LOGGER.info(f"Tool loop {toolloop_id} iteration {i} starting ...")
@@ -382,13 +420,19 @@ def completion_toolloop(
                     "content": str(tool_result),
                 }
                 messages.append(tool_result_msg)
-                LOGGER.debug(f"{len(messages)} messages in tool loop {toolloop_id} so far...")
+                LOGGER.debug(
+                    f"{len(messages)} messages in tool loop {toolloop_id} so far..."
+                )
         else:
             if i == 0:
-                LOGGER.warning(f"Tool loop {toolloop_id} did not result in any tool calls.")
-            LOGGER.info(f"Tool loop {toolloop_id} terminated with {i} tool call iterations.")
+                LOGGER.warning(
+                    f"Tool loop {toolloop_id} did not result in any tool calls."
+                )
+            LOGGER.info(
+                f"Tool loop {toolloop_id} terminated with {i} tool call iterations."
+            )
             return messages[start_len:]
-        
+
         i += 1
 
 
@@ -410,27 +454,29 @@ def render_tool_call_conversation(messages: list[dict[str, str]]) -> str:
     """Given a list of BaseMessages, turn the conversation into one unified string representation that includes
     model responses, tool calls, and tool call results."""
     raw_response = ""
-    tool_calls: dict[str, ChatCompletionMessageToolCall] = {}  # map tool call ids to their associated messages
+    tool_calls: dict[
+        str, ChatCompletionMessageToolCall
+    ] = {}  # map tool call ids to their associated messages
     for msg in messages:
         if msg["role"] == "assistant":
-            if msg["content"]: # sometimes msg["content"] is None
+            if msg["content"]:  # sometimes msg["content"] is None
                 raw_response += msg["content"]
-            if "tool_calls" in msg and msg["tool_calls"]: # sometimes msg["tool_calls"] is None
+            if (
+                "tool_calls" in msg and msg["tool_calls"]
+            ):  # sometimes msg["tool_calls"] is None
                 for t in msg["tool_calls"]:
                     t: ChatCompletionMessageToolCall
                     tool_calls[t.id] = t
                     f: Function = t.function
                     f_name: str = f.name
-                    f_args: str = f.arguments # it's a str but it's fine
+                    f_args: str = f.arguments  # it's a str but it's fine
                     raw_response += render_tool_call(f_name, f_args)
         elif msg["role"] == "tool":
             t: ChatCompletionMessageToolCall = tool_calls[msg["tool_call_id"]]
             f: Function = t.function
             f_name: str = f.name
-            f_args: str = f.arguments # it's a str but it's fine
-            raw_response += render_tool_call_result(
-                f_name, msg["content"], f_args
-            )
+            f_args: str = f.arguments  # it's a str but it's fine
+            raw_response += render_tool_call_result(f_name, msg["content"], f_args)
     return raw_response
 
 
@@ -441,8 +487,8 @@ async def acompletion_wrapper(
     return_probs_for: list[str] | None = None,
     prompt: str | None = None,
     messages: list[dict[str, str]] | None = None,
-    system_prompt = None,
-    words_in_mouth = None,
+    system_prompt=None,
+    words_in_mouth=None,
     **kwargs,
 ) -> str | BaseModel | dict[str, float]:
     """
@@ -466,7 +512,9 @@ async def acompletion_wrapper(
         LOGGER.info(f"Converting {prompt} to messages.")
         if not should_use_words_in_mouth(model):
             words_in_mouth = None
-        messages = format_prompt(prompt, system_prompt=system_prompt, words_in_mouth=words_in_mouth)
+        messages = format_prompt(
+            prompt, system_prompt=system_prompt, words_in_mouth=words_in_mouth
+        )
 
     if tools:
         LOGGER.info(
@@ -481,7 +529,12 @@ async def acompletion_wrapper(
     if return_probs_for:
         LOGGER.info(f"Getting logprobs for tokens {return_probs_for} from {model}.")
         response: ModelResponse = await acompletion_ratelimited(
-            model, messages, logprobs=True, top_logprobs=NUM_LOGITS, max_tokens=20, **kwargs
+            model,
+            messages,
+            logprobs=True,
+            top_logprobs=NUM_LOGITS,
+            max_tokens=20,
+            **kwargs,
         )
         # logprob_content is a list of dicts -- each dict contains the next chosen token and
         # a 'top_logprobs' key with the logprobs for all alternatives
@@ -526,8 +579,8 @@ def completion_wrapper(
     return_probs_for: list[str] | None = None,
     prompt: str | None = None,
     messages: list[dict[str, str]] | None = None,
-    system_prompt = None,
-    words_in_mouth = None,
+    system_prompt=None,
+    words_in_mouth=None,
     **kwargs,
 ) -> str | BaseModel | dict[str, float]:
     """
@@ -551,7 +604,9 @@ def completion_wrapper(
         LOGGER.info(f"Converting {prompt} to messages.")
         if not should_use_words_in_mouth(model):
             words_in_mouth = None
-        messages = format_prompt(prompt, system_prompt=system_prompt, words_in_mouth=words_in_mouth)
+        messages = format_prompt(
+            prompt, system_prompt=system_prompt, words_in_mouth=words_in_mouth
+        )
 
     if tools:
         LOGGER.info(
@@ -566,7 +621,12 @@ def completion_wrapper(
     if return_probs_for:
         LOGGER.info(f"Getting logprobs for tokens {return_probs_for} from {model}.")
         response: ModelResponse = completion_ratelimited(
-            model, messages, logprobs=True, top_logprobs=NUM_LOGITS, max_tokens=20, **kwargs
+            model,
+            messages,
+            logprobs=True,
+            top_logprobs=NUM_LOGITS,
+            max_tokens=20,
+            **kwargs,
         )
         # logprob_content is a list of dicts -- each dict contains the next chosen token and
         # a 'top_logprobs' key with the logprobs for all alternatives
@@ -605,6 +665,8 @@ def completion_wrapper(
 
 
 class LLM_Agent:
+    """Kind of a legacy abstraction layer that doesn't add anything, but everything in the code is built around it."""
+
     def __init__(
         self, model: str = None, tools: list[callable] = None, sync_mode: bool = False
     ):
