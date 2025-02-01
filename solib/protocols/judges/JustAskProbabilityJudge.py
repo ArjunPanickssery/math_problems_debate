@@ -16,7 +16,7 @@ class JustAskProbabilityJudge(Judge):
         self,
         question: Question,
         context: str,
-        cache_breaker: int = 0,
+        caching: bool = True,
     ) -> Question:
         # we don't pass in temperature here since ToT Judge always uses 0.0, and
         # we don't distinguish between judge type in the code
@@ -32,7 +32,7 @@ class JustAskProbabilityJudge(Judge):
                 prompt=prompt,
                 response_model=Prob,
                 max_tokens=20,
-                cache_breaker=cache_breaker,
+                caching=caching,
                 temperature=0.4,
             )
 

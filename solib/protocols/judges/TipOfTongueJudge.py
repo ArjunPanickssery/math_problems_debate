@@ -15,7 +15,7 @@ class TipOfTongueJudge(Judge):
         self,
         question: Question,
         context: str,
-        cache_breaker: int = 0,
+        caching: bool =True,
     ) -> Question:
         prompt = self.prompt_template.render(
             question=question.to_prompt(),
@@ -27,7 +27,7 @@ class TipOfTongueJudge(Judge):
             prompt=prompt,
             return_probs_for=question.answer_cases_short,
             words_in_mouth=self.words_in_mouth,
-            cache_breaker=cache_breaker,
+            caching=caching,
             temperature=0.0,
         )
 

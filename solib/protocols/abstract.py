@@ -17,7 +17,10 @@ LOGGER = logging.getLogger(__name__)
 
 class Judge(LLM_Agent):
     async def __call__(
-        self, question: Question, context: str | None = None, cache_breaker: int = 0
+        self,
+        question: Question,
+        context: str | None = None,
+        caching: bool = True,
     ) -> Question:
         """Add probabilities to each answer_case."""
         raise AbstractionError
@@ -38,7 +41,7 @@ class QA_Agent(LLM_Agent):
         context: str | None = None,
         words_in_mouth: str | None = None,
         max_tokens: int = 2048,
-        cache_breaker: int = 0,
+        caching: bool = True,
         temperature: float = 0.4,
     ) -> str:
         """Simulate an AI arguing to convince the judge in favour of answer_case.
@@ -50,7 +53,7 @@ class QA_Agent(LLM_Agent):
             question (Question): question.
             answer_case (Answer): answer case to argue for.
             max_tokens (int): max tokens for the LLM.
-            cache_breaker (int): dummy integer that is used to invalidate cache entries.
+            caching (bool): to disable caching.
             temperature (float): temperature for sampling.
         """
         prompt_template = self.prompt_template
@@ -68,7 +71,7 @@ class QA_Agent(LLM_Agent):
             prompt=prompt,
             words_in_mouth=words_in_mouth,
             max_tokens=max_tokens,
-            cache_breaker=cache_breaker,
+            caching=caching,
             temperature=temperature,
         )
 

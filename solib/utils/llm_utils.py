@@ -7,11 +7,11 @@ import time
 import math
 import litellm
 from litellm import completion, acompletion
+from litellm.caching.caching import Cache
 from typing import Any, TYPE_CHECKING
 from collections import defaultdict
 from dotenv import load_dotenv
 from pydantic import BaseModel
-from perscache import Cache, NoCache
 from costly import Costlog, costly, CostlyResponse
 from jinja2 import Environment, FileSystemLoader
 from solib.utils import coerce
@@ -31,10 +31,6 @@ GLOBAL_COST_LOG = Costlog(mode="jsonl", discard_extras=True)
 SIMULATE = os.getenv("SIMULATE", "False").lower() == "true"
 DISABLE_COSTLY = os.getenv("DISABLE_COSTLY", "False").lower() == "true"
 CACHING = os.getenv("CACHING", "False").lower() == "true"
-if CACHING:
-    cache = Cache()
-else:
-    cache = NoCache()
 MAX_CONCURRENT_QUERIES = int(os.getenv("MAX_CONCURRENT_QUERIES", 100))
 NUM_LOGITS = 5
 MAX_WORDS = 100
@@ -73,6 +69,8 @@ TOOL_RESULT_TEMPLATE = jinja_env.get_template("tool_use/tool_result.jinja")
 # -- idk if this works though
 litellm.add_function_to_prompt = True
 litellm.drop_params = True  # make LLM calls ignore extra params
+litellm.cache = Cache(type="disk", disk_cache_dir=".cache")
+# see full list at https://github.com/BerriAI/litellm/blob/main/litellm/__init__.py
 
 RATE_LIMITERS = (
     {
@@ -144,13 +142,11 @@ def supports_async(model: str) -> bool:
     """Models that support async completion."""
     return not model.startswith("ollama/") and not model.startswith("ollama_chat/")
 
-@cache
 @costly()
 async def acompletion_ratelimited(
     model: str,
     messages: list[dict[str, str]],
-    response_format: BaseModel | None = None,
-    tools: list[dict[str, str]] | None = None,
+    caching: bool =CACHING,
     cost_log: Costlog = GLOBAL_COST_LOG,
     simulate: bool = SIMULATE,
     **kwargs,
@@ -165,17 +161,16 @@ async def acompletion_ratelimited(
     LOGGER.info(
         f"Getting response [async]; params:\n"
         f"model: {model}\n"
-        f"response_format: {response_format}\n"
-        f"tools: {tools}\n"
         f"messages: {messages}\n"
         f"kwargs: {kwargs}\n"
+        f"caching: {caching}\n"
         f"call_id: {call_id}\n"
     )
     if rate_limiter is None:
         LOGGER.warning(
             f"{call_id}: Rate limiter not found for model {model}, running without rate limits."
         )
-        response = await acompletion(model=model, messages=messages, response_format=response_format, tools=tools, max_retries=max_retries, **kwargs)
+        response = await acompletion(model, messages, max_retries=max_retries, caching=caching, **kwargs)
         LOGGER.debug(f"{call_id}: Response from {model}: {response}")
         return response
     async with rate_limiter["semaphore"]:
@@ -191,9 +186,8 @@ async def acompletion_ratelimited(
         response = await acompletion(
             model=model,
             messages=messages,
-            response_format=response_format,
-            tools=tools,
             max_retries=max_retries,
+            caching=caching,
             **kwargs,
         )
         LOGGER.debug(f"{call_id}: Response from {model}: {response}")
@@ -206,13 +200,11 @@ async def acompletion_ratelimited(
             },
         )
 
-@cache
 @costly()
 def completion_ratelimited(
     model: str,
     messages: list[dict[str, str]],
-    response_format: BaseModel | None = None,
-    tools: list[dict[str, str]] | None = None,
+    caching: bool = CACHING,
     cost_log: Costlog = GLOBAL_COST_LOG,
     simulate: bool = SIMULATE,
     **kwargs,
@@ -228,16 +220,15 @@ def completion_ratelimited(
         f"Getting response [sync]; params:\n"
         f"model: {model}\n"
         f"messages: {messages}\n"
-        f"response_format: {response_format}\n"
-        f"tools: {tools}\n"
         f"kwargs: {kwargs}\n"
+        f"caching: {caching}\n"
         f"call_id: {call_id}\n"
     )
     if rate_limiter is None:
         LOGGER.warning(
             f"{call_id}: Rate limiter not found for model {model}, running without rate limits."
         )
-        response = completion(model=model, messages=messages, response_format=response_format, tools=tools, max_retries=max_retries, **kwargs)
+        response = completion(model, messages, max_retries=max_retries, caching=caching, **kwargs)
         LOGGER.debug(f"{call_id}: Response from {model}: {response}")
         return response
     now = time.time()
@@ -252,9 +243,8 @@ def completion_ratelimited(
     response = completion(
         model=model,
         messages=messages,
-        response_format=response_format,
-        tools=tools,
         max_retries=max_retries,
+        caching=caching,
         **kwargs,
     )
     LOGGER.debug(f"{call_id}: Response from {model}: {response}")

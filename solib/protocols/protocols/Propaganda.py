@@ -12,7 +12,7 @@ class Propaganda(Protocol):
         question: Question,
         answer_case: Answer,
         judge: Judge,
-        cache_breaker: int = 0,
+        caching: bool =True,
         temperature: float = 0.4,
     ) -> Question:
         assert isinstance(question, Question)
@@ -20,7 +20,7 @@ class Propaganda(Protocol):
             question=question,
             answer_case=answer_case,
             context=self.ts_to_prompt(question),
-            cache_breaker=cache_breaker,
+            caching=caching,
             temperature=temperature,
         )
         question.append(TranscriptItem(role=answer_case.short, content=agent_response))
@@ -28,7 +28,7 @@ class Propaganda(Protocol):
         result = await judge(
             question=question,
             context=self.ts_to_prompt(question),
-            cache_breaker=cache_breaker,
+            caching=caching,
         )
         assert result.transcript is not None
         return result

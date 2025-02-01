@@ -47,7 +47,7 @@ class Consultancy(Protocol):
         question: Question,
         answer_case: Answer,
         judge: Judge,
-        cache_breaker: int = 0,
+         caching: bool =True,,
         temperature: float = 0.4,
     ) -> Question:
         consultant = functools.partial(
@@ -55,7 +55,7 @@ class Consultancy(Protocol):
             prompt_file=self.consultant_prompt_file,
             question=question,
             answer_case=answer_case,
-            cache_breaker=cache_breaker,
+            caching=caching,
             temperature=temperature,
         )
         client_agent = QA_Agent(
@@ -67,7 +67,7 @@ class Consultancy(Protocol):
             client_agent,
             prompt_file=self.client_prompt_file,
             question=question,
-            cache_breaker=cache_breaker,
+            caching=caching,
             temperature=temperature,
         )
         if (question.transcript in [None, []] and self.consultant_goes_first) or (
