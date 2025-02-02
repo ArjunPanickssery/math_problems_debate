@@ -45,7 +45,7 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
-
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
 TOOL_CALL_START_TAG = "<tool_call>"
 TOOL_CALL_END_TAG = "</tool_call>"
@@ -106,6 +106,9 @@ RATE_LIMITERS = (
             "rpm": 10,
             "rpd": 1500,
         },  # requests per day is not enforced
+    }
+    | {
+        "openrouter/deepseek/deepseek-chat": {"rpm": 500}, # in general 60*($$ in your OpenRouter account)
     }
 )
 # | {

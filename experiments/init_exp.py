@@ -13,7 +13,7 @@ init_exp = Experiment(
     agent_models=[
         "claude-3-5-sonnet-20241022",
         "claude-3-5-haiku-20241022",
-        "deepseek/deepseek-chat"
+        "openrouter/deepseek/deepseek-chat"
     ],
     agent_toolss=[[], [math_eval]],
     judge_models=[

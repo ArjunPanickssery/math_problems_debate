@@ -16,10 +16,11 @@ from solib.utils.default_tools import math_eval
 from pydantic import BaseModel, Field
 
 models = [
-    "gpt-4o-mini",
+    "openrouter/gpt-4o-mini",
     "claude-3-5-sonnet-20241022",
-    "gemini/gemini-2.0-flash-exp",
-]  # "deepseek/deepseek-chat", "deepseek/deepseek-reasoner" # not working
+    "gemini/gemini-1.5-flash",
+    "openrouter/deepseek/deepseek-chat",
+]
 if RUNLOCAL:
     models.extend(
         [
@@ -69,7 +70,7 @@ def test_get_response_returns_string(llm_agent_sync):
 
 
 def test_get_probs_returns_dict(llm_agent_sync):
-    if "claude" in llm_agent_sync.model or "gemini" in llm_agent_sync.model:
+    if any(model in llm_agent_sync.model for model in ["claude", "gemini", "deepseek"]):
         pytest.skip("Claude or gemini models do not support get_probs")
     prompt = (
         "Take a random guess as to what the 1,000,001st digit of pi is. "
