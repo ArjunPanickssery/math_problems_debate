@@ -122,16 +122,13 @@ for k in RATE_LIMITERS:
     RATE_LIMITERS[k]["semaphore"] = asyncio.Semaphore(MAX_CONCURRENT_QUERIES)
     RATE_LIMITERS[k]["last_request"] = 0
 
-# dumb HACK to make super().simulate_llm_call take the new _fake_custom method
-class _LLM_Simulator(LLM_Simulator_Faker):
+class LLM_Simulator(LLM_Simulator_Faker):
     @classmethod
     def _fake_custom(cls, t: type):
         assert issubclass(t, Prob)
         import random
 
         return t(prob=random.random())
-
-class LLM_Simulator(_LLM_Simulator):
 
     @classmethod
     def simulate_llm_call(
