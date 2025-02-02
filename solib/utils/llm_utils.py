@@ -7,18 +7,21 @@ import time
 import math
 import litellm
 from litellm import completion, acompletion
+from litellm.types.utils import ModelResponse, Choices, Message
 from litellm.caching.caching import Cache
 from typing import Any, TYPE_CHECKING
 from collections import defaultdict
 from dotenv import load_dotenv
 from pydantic import BaseModel
 from costly import Costlog, costly, CostlyResponse
+from costly.simulators.llm_simulator_faker import LLM_Simulator_Faker
 from jinja2 import Environment, FileSystemLoader
 from solib.utils import coerce
+from solib.datatypes import Prob
 
 if TYPE_CHECKING:
     from litellm.types.utils import (
-        ModelResponse,
+        # ModelResponse,
         ChatCompletionMessageToolCall,
         Function,
     )
@@ -65,7 +68,7 @@ jinja_env.get_source = lambda template: (
 TOOL_CALL_TEMPLATE = jinja_env.get_template("tool_use/tool_call.jinja")
 TOOL_RESULT_TEMPLATE = jinja_env.get_template("tool_use/tool_result.jinja")
 
-# add tools to prompt for models that don't natively support it 
+# add tools to prompt for models that don't natively support it
 # -- idk if this works though
 litellm.add_function_to_prompt = True
 litellm.drop_params = True  # make LLM calls ignore extra params
@@ -119,6 +122,58 @@ for k in RATE_LIMITERS:
     RATE_LIMITERS[k]["semaphore"] = asyncio.Semaphore(MAX_CONCURRENT_QUERIES)
     RATE_LIMITERS[k]["last_request"] = 0
 
+# dumb HACK to make super().simulate_llm_call take the new _fake_custom method
+class _LLM_Simulator(LLM_Simulator_Faker):
+    @classmethod
+    def _fake_custom(cls, t: type):
+        assert issubclass(t, Prob)
+        import random
+
+        return t(prob=random.random())
+
+class LLM_Simulator(_LLM_Simulator):
+
+    @classmethod
+    def simulate_llm_call(
+        cls,
+        input_string: str = None,
+        input_tokens: int = None,
+        messages: list[dict[str, str]] = None,
+        model: str = None,
+        response_model: type = str,
+        cost_log: Costlog = None,
+        description: list[str] = None,
+    ) -> ModelResponse:
+        output: str | BaseModel = super().simulate_llm_call(
+            input_string,
+            input_tokens,
+            messages,
+            model,
+            response_model,
+            cost_log,
+            description,
+        )
+        if isinstance(output, BaseModel):
+            output = output.model_dump_json()
+        return ModelResponse(
+            id="SIMULATED", 
+            created=0, 
+            model=model, 
+            object='chat.completion', 
+            system_fingerprint='PLANTED_FINGERPRINTS',
+            choices = [
+                Choices(
+                    finish_reason='tool_calls',
+                    index=0,
+                    message=Message(
+                        content=output,
+                        role='assistant',
+                        tool_calls=None, # TODO
+                    )
+                )
+            ]
+        )
+
 
 def format_prompt(
     prompt: str, system_prompt: str = None, words_in_mouth: str = None
@@ -136,19 +191,22 @@ def format_prompt(
 def is_local(model: str) -> bool:
     return model.startswith("ollama/") or model.startswith("ollama_chat/")
 
+
 def should_use_words_in_mouth(model: str) -> bool:
     """Models that should use the words_in_mouth. All other models will drop it."""
     return is_local(model)
+
 
 def supports_async(model: str) -> bool:
     """Models that support async completion."""
     return not is_local(model)
 
-@costly()
+
+@costly(simulator=LLM_Simulator.simulate_llm_call, response_model="response_format")
 async def acompletion_ratelimited(
     model: str,
     messages: list[dict[str, str]],
-    caching: bool =CACHING,
+    caching: bool = CACHING,
     cost_log: Costlog = GLOBAL_COST_LOG,
     simulate: bool = SIMULATE,
     **kwargs,
@@ -172,7 +230,9 @@ async def acompletion_ratelimited(
         LOGGER.warning(
             f"{call_id}: Rate limiter not found for model {model}, running without rate limits."
         )
-        response = await acompletion(model, messages, max_retries=max_retries, caching=caching, **kwargs)
+        response = await acompletion(
+            model, messages, max_retries=max_retries, caching=caching, **kwargs
+        )
         LOGGER.debug(f"{call_id}: Response from {model}: {response}")
         return response
     async with rate_limiter["semaphore"]:
@@ -202,7 +262,8 @@ async def acompletion_ratelimited(
             },
         )
 
-@costly()
+
+@costly(simulator=LLM_Simulator.simulate_llm_call, response_model="response_format")
 def completion_ratelimited(
     model: str,
     messages: list[dict[str, str]],
@@ -230,7 +291,9 @@ def completion_ratelimited(
         LOGGER.warning(
             f"{call_id}: Rate limiter not found for model {model}, running without rate limits."
         )
-        response = completion(model, messages, max_retries=max_retries, caching=caching, **kwargs)
+        response = completion(
+            model, messages, max_retries=max_retries, caching=caching, **kwargs
+        )
         LOGGER.debug(f"{call_id}: Response from {model}: {response}")
         return response
     now = time.time()
@@ -558,7 +621,7 @@ async def acompletion_wrapper(
                 "Using max_tokens with structured responses never ends well!"
                 "Removing it."
             )
-            
+
         response: ModelResponse = await acompletion_ratelimited(
             model, messages, response_format=response_format, **kwargs
         )
