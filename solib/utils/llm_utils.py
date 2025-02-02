@@ -37,6 +37,8 @@ CACHING = os.getenv("CACHING", "False").lower() == "true"
 MAX_CONCURRENT_QUERIES = int(os.getenv("MAX_CONCURRENT_QUERIES", 100))
 NUM_LOGITS = 5
 MAX_WORDS = 100
+DEFAULT_MODEL=os.getenv("DEFAULT_MODEL", "claude-3-haiku-20240307")
+DEFAULT_BON_MODEL=os.getenv("DEFAULT_BON_MODEL", "claude-3-haiku-20240307") # default Best-of-N ranker
 RUNLOCAL = os.getenv("RUNLOCAL", "False").lower() == "true"
 USE_TQDM = os.getenv("USE_TQDM", "True").lower() == "true"
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -738,7 +740,7 @@ class LLM_Agent:
         self, model: str = None, tools: list[callable] = None, sync_mode: bool = False
     ):
         self.model = (
-            model or "claude-3-5-sonnet-20241022"
+            model or DEFAULT_MODEL
         )  # or "claude-3-5-sonnet-20241022"
         self.tools = tools
         self.sync_mode = sync_mode

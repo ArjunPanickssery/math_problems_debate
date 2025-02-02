@@ -1,5 +1,6 @@
 import logging
 from solib.utils import parallelized_call
+from solib.utils.llm_utils import DEFAULT_BON_MODEL
 from solib.datatypes import Question, Answer, Score
 from solib.protocols.abstract import QA_Agent, Protocol, Judge
 from solib.protocols.judges import JustAskProbabilityJudge
@@ -19,7 +20,7 @@ class BestOfN_Agent(QA_Agent):
     ):
         self.n = n
         self.agent = agent
-        self.judge = judge or JustAskProbabilityJudge()
+        self.judge = judge or JustAskProbabilityJudge(DEFAULT_BON_MODEL)
         self.protocol = protocol or Propaganda()
         self.other_components = other_components
         # inherit other stuff
