@@ -21,7 +21,10 @@ class JustAskProbabilitiesJudge(JustAskProbabilityJudge):
     prompt_file = "just_ask_both_judge.jinja"
 
     async def __call__(
-        self, question: Question, context: str, cache_breaker: int = 0
+        self,
+        question: Question,
+        context: str,
+        caching: bool = True,
     ) -> Question:
         """Returns a .is_elicited Question."""
         prompt = self.prompt_template.render(
@@ -33,7 +36,7 @@ class JustAskProbabilitiesJudge(JustAskProbabilityJudge):
             prompt=prompt,
             response_model=ProbResponse,
             max_tokens=100,
-            cache_breaker=cache_breaker,
+            caching=caching,
             temperature=0.4,
         )
 

@@ -2,7 +2,7 @@ import functools
 import logging
 from solib.datatypes import Question, Answer, TranscriptItem
 from solib.protocols.abstract import Protocol, QA_Agent, Judge
-from solib.globals import jinja_env
+from solib.utils.llm_utils import jinja_env
 
 LOGGER = logging.getLogger(__name__)
 
@@ -27,7 +27,7 @@ class Debate(Protocol):
         answer_case: Answer,
         adversary: QA_Agent,
         judge: Judge,
-        cache_breaker: int = 0,
+        caching: bool =True,
         temperature: float = 0.4,
     ):
         opp_case = question.neg(answer_case)
@@ -36,7 +36,7 @@ class Debate(Protocol):
             prompt_file=self.prompt_file,
             question=question,
             answer_case=answer_case,
-            cache_breaker=cache_breaker,
+            caching=caching,
             temperature=temperature,
         )
         debater_con = functools.partial(
@@ -44,7 +44,7 @@ class Debate(Protocol):
             prompt_file=self.prompt_file,
             question=question,
             answer_case=opp_case,
-            cache_breaker=cache_breaker,
+            caching=caching,
             temperature=temperature,
         )
         if self.simultaneous:
@@ -73,7 +73,7 @@ class Debate(Protocol):
         question: Question,
         judge: Judge,
         adversary: QA_Agent,
-        cache_breaker: int = 0,
+        caching: bool =True,
         temperature: float = 0.4,
     ) -> Question:
         """Debate specifically is symmetric, so we can subclass this to only run the
@@ -85,7 +85,7 @@ class Debate(Protocol):
                 question=question,
                 judge=judge,
                 adversary=adversary,
-                cache_breaker=cache_breaker,
+                caching=caching,
                 temperature=temperature,
             )
         case_probs_0 = await self.run(
@@ -94,7 +94,7 @@ class Debate(Protocol):
             answer_case=question.answer_cases[0],
             adversary=adversary,
             judge=judge,
-            cache_breaker=cache_breaker,
+            caching=caching,
             temperature=temperature,
         )  # elicited probs after arguing for answer_cases[0]
         # but this is the same as the elicited probs after arguing for answer_cases[1]

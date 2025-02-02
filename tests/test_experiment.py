@@ -5,7 +5,7 @@ from datetime import datetime
 from solib.protocols.protocols import Debate, Blind, Propaganda, Consultancy  # noqa
 from solib.Experiment import Experiment
 from solib.data.loading import GSM8K
-from solib.tool_use.default_tools import math_eval
+from solib.utils.default_tools import math_eval
 from solib.protocols.abstract import QA_Agent, Judge
 
 experiment = Experiment(
@@ -43,11 +43,13 @@ test_experiment = Experiment(
     questions=questions,
     agent_models=[
         "gpt-4o-mini",
+        # "claude-3-5-sonnet-20241022",
         # "hf:meta-llama/Meta-Llama-3-8B-Instruct",
     ],
     agent_toolss=[[], [math_eval]],
     judge_models=[
-        "gpt-4o-mini",
+        # "gpt-4o-mini",
+        "claude-3-5-sonnet-20241022",
         # "hf:meta-llama/Llama-2-7b-chat-hf",
     ],
     protocols=["blind", "propaganda", "debate", "consultancy"],

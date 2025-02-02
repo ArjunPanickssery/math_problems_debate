@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import Coroutine
 from pydantic import BaseModel
+import logging
 import json
 import jsonlines
 import aiofiles
@@ -11,7 +12,7 @@ import os
 import asyncio
 from tqdm.asyncio import tqdm
 
-from solib.globals import LOGGER
+LOGGER = logging.getLogger(__name__)
 
 
 def dump_config(instance):
@@ -76,7 +77,22 @@ def update_nonnones(source, overrides):
     return source
 
 
+def coerce(val, coercer: callable):
+    if val is None:
+        return None
+    return coercer(val)
+
 AbstractionError = NotImplementedError("Must be implemented in subclass.")
+
+class DefaultDict(dict):
+    def __init__(self, key_fn):
+        super().__init__()
+        self._key_fn = key_fn
+
+    def __missing__(self, key):
+        v = self._key_fn(key)
+        self[key] = v
+        return v
 
 
 def write_jsonl(

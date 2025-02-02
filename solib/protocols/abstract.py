@@ -7,17 +7,20 @@ from solib.utils import (
     write_jsonl_async,
     write_json,
 )
-from solib.llm_utils import LLM_Agent
+from solib.utils import LLM_Agent
 from solib.datatypes import Answer, Question, TranscriptItem
 from solib.data.loading import Dataset
-from solib.globals import jinja_env
+from solib.utils.llm_utils import jinja_env
 
 LOGGER = logging.getLogger(__name__)
 
 
 class Judge(LLM_Agent):
     async def __call__(
-        self, question: Question, context: str | None = None, cache_breaker: int = 0
+        self,
+        question: Question,
+        context: str | None = None,
+        caching: bool = True,
     ) -> Question:
         """Add probabilities to each answer_case."""
         raise AbstractionError
@@ -38,7 +41,7 @@ class QA_Agent(LLM_Agent):
         context: str | None = None,
         words_in_mouth: str | None = None,
         max_tokens: int = 2048,
-        cache_breaker: int = 0,
+        caching: bool = True,
         temperature: float = 0.4,
     ) -> str:
         """Simulate an AI arguing to convince the judge in favour of answer_case.
@@ -50,7 +53,7 @@ class QA_Agent(LLM_Agent):
             question (Question): question.
             answer_case (Answer): answer case to argue for.
             max_tokens (int): max tokens for the LLM.
-            cache_breaker (int): dummy integer that is used to invalidate cache entries.
+            caching (bool): to disable caching.
             temperature (float): temperature for sampling.
         """
         prompt_template = self.prompt_template
@@ -68,7 +71,7 @@ class QA_Agent(LLM_Agent):
             prompt=prompt,
             words_in_mouth=words_in_mouth,
             max_tokens=max_tokens,
-            cache_breaker=cache_breaker,
+            caching=caching,
             temperature=temperature,
         )
 
@@ -76,13 +79,10 @@ class QA_Agent(LLM_Agent):
         self,
         model: str = None,
         tools: list[callable] | None = None,
-        hf_quantization_config=None,
         prompt_file: str = "qa_agent.jinja",
         words_in_mouth: str = None,
     ):
-        super().__init__(
-            model=model, tools=tools, hf_quantization_config=hf_quantization_config
-        )
+        super().__init__(model=model, tools=tools)
         self.prompt_template = jinja_env.get_template(prompt_file)
         self.words_in_mouth = words_in_mouth
         self.dict = {

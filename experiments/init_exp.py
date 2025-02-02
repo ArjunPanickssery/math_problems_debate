@@ -4,35 +4,28 @@ from datetime import datetime
 from solib.protocols.protocols import *  # noqa
 from solib.Experiment import Experiment
 from solib.data.loading import GSM8K
-from solib.tool_use.default_tools import math_eval
+from solib.utils.default_tools import math_eval
 
-questions = GSM8K.data(limit=10)
+questions = GSM8K.data(limit=1)
 
 init_exp = Experiment(
     questions=questions,
     agent_models=[
-        # "gpt-4o-2024-08-06",
-        # "gpt-4-turbo-2024-04-09",
         "claude-3-5-sonnet-20241022",
         "claude-3-5-haiku-20241022",
-        "claude-3-opus-20240229",
-        "claude-3-sonnet-20240229",
-        # "hf:meta-llama/Meta-Llama-3-8B-Instruct",
+        "deepseek/deepseek-chat"
     ],
     agent_toolss=[[], [math_eval]],
     judge_models=[
-        "hf:meta-llama/Llama-2-7b-chat-hf",
-        "hf:meta-llama/Meta-Llama-3-8B-Instruct",
-        "gpt-3.5-turbo",
+        "ollama_chat/llama3.1:8b",
         "gpt-4o-mini-2024-07-18",
-        "gpt-4o-2024-08-06",
     ],
     protocols=["blind", "propaganda", "debate", "consultancy"],
-    bon_ns=[4],  # , 8],#, 16, 32],
+    bon_ns=[1,4],  # , 8],#, 16, 32],
     write_path=Path(__file__).parent
     / "results"
     / f"init_exp_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}",
 )
 
 
-asyncio.run(init_exp.experiment(max_configs=100))
+asyncio.run(init_exp.experiment(max_configs=None))

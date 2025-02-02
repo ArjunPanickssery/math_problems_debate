@@ -2,7 +2,7 @@ import functools
 import logging
 from solib.datatypes import Question, Answer, TranscriptItem
 from solib.protocols.abstract import Protocol, QA_Agent, Judge
-from solib.globals import jinja_env
+from solib.utils.llm_utils import jinja_env
 
 LOGGER = logging.getLogger(__name__)
 
@@ -47,7 +47,7 @@ class Consultancy(Protocol):
         question: Question,
         answer_case: Answer,
         judge: Judge,
-        cache_breaker: int = 0,
+        caching: bool = True,
         temperature: float = 0.4,
     ) -> Question:
         consultant = functools.partial(
@@ -55,19 +55,18 @@ class Consultancy(Protocol):
             prompt_file=self.consultant_prompt_file,
             question=question,
             answer_case=answer_case,
-            cache_breaker=cache_breaker,
+            caching=caching,
             temperature=temperature,
         )
         client_agent = QA_Agent(
             model=judge.model,
             tools=judge.tools,
-            hf_quantization_config=judge.hf_quantization_config,
         )
         client = functools.partial(
             client_agent,
             prompt_file=self.client_prompt_file,
             question=question,
-            cache_breaker=cache_breaker,
+            caching=caching,
             temperature=temperature,
         )
         if (question.transcript in [None, []] and self.consultant_goes_first) or (

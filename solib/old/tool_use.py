@@ -9,7 +9,7 @@ from langchain_core.messages import ToolMessage, BaseMessage
 
 from solib.tool_use.tool_rendering import get_structured_tools, render_tool_call_result
 
-from solib.globals import TOOL_CALL_START_TAG, TOOL_CALL_END_TAG
+from solib.utils.llm_utils import TOOL_CALL_START_TAG, TOOL_CALL_END_TAG
 
 
 class ToolStopper(StoppingCriteria):

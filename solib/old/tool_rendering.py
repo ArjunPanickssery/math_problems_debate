@@ -2,7 +2,7 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMe
 from langchain.tools import StructuredTool, tool
 from typing import Callable, Dict, List, Tuple, Union
 from langchain_core.tools import render_text_description
-from solib.globals import (
+from solib.utils.llm_utils import (
     jinja_env,
 )
 

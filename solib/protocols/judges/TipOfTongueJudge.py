@@ -1,7 +1,7 @@
 import logging
 from solib.datatypes import Question, Answer, Prob
 from solib.protocols.abstract import Judge
-from solib.globals import jinja_env
+from solib.utils.llm_utils import jinja_env
 
 LOGGER = logging.getLogger(__name__)
 
@@ -15,7 +15,7 @@ class TipOfTongueJudge(Judge):
         self,
         question: Question,
         context: str,
-        cache_breaker: int = 0,
+        caching: bool = True,
     ) -> Question:
         prompt = self.prompt_template.render(
             question=question.to_prompt(),
@@ -27,7 +27,7 @@ class TipOfTongueJudge(Judge):
             prompt=prompt,
             return_probs_for=question.answer_cases_short,
             words_in_mouth=self.words_in_mouth,
-            cache_breaker=cache_breaker,
+            caching=caching,
             temperature=0.0,
         )
 
@@ -49,7 +49,6 @@ class TipOfTongueJudge(Judge):
         self,
         model: str = None,
         tools: list[callable] | None = None,
-        hf_quantization_config=None,
         prompt_file: str = "tot_judge.jinja",
         words_in_mouth: str = None,
     ):
@@ -75,6 +74,4 @@ class TipOfTongueJudge(Judge):
             "prompt": jinja_env.get_source(prompt_file),
             "words_in_mouth": self.words_in_mouth,
         }
-        super().__init__(
-            model=model, tools=tools, hf_quantization_config=hf_quantization_config
-        )
+        super().__init__(model=model, tools=tools)

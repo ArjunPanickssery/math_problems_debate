@@ -2,7 +2,7 @@ import logging
 from solib.utils import parallelized_call
 from solib.datatypes import Question, Answer, Prob
 from solib.protocols.abstract import Judge
-from solib.globals import jinja_env
+from solib.utils.llm_utils import jinja_env
 
 LOGGER = logging.getLogger(__name__)
 
@@ -16,7 +16,7 @@ class JustAskProbabilityJudge(Judge):
         self,
         question: Question,
         context: str,
-        cache_breaker: int = 0,
+        caching: bool = True,
     ) -> Question:
         # we don't pass in temperature here since ToT Judge always uses 0.0, and
         # we don't distinguish between judge type in the code
@@ -32,7 +32,7 @@ class JustAskProbabilityJudge(Judge):
                 prompt=prompt,
                 response_model=Prob,
                 max_tokens=20,
-                cache_breaker=cache_breaker,
+                caching=caching,
                 temperature=0.4,
             )
 
@@ -55,7 +55,6 @@ class JustAskProbabilityJudge(Judge):
         self,
         model: str = None,
         tools: list[callable] | None = None,
-        hf_quantization_config=None,
         prompt_file: str = None,
         words_in_mouth: str = None,
     ):
@@ -74,8 +73,6 @@ class JustAskProbabilityJudge(Judge):
             "prompt": jinja_env.get_source(self.prompt_file),
             "words_in_mouth": self.words_in_mouth,
         }
-        super().__init__(
-            model=model, tools=tools, hf_quantization_config=hf_quantization_config
-        )
+        super().__init__(model=model, tools=tools)
 
     prompt_file = "just_ask_judge.jinja"

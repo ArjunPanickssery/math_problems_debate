@@ -5,7 +5,7 @@ from pathlib import Path
 from solib.data.loading import Dataset
 from solib.utils import str_config, write_json, dump_config, random
 from solib.utils import parallelized_call
-from solib.globals import SIMULATE
+from solib.utils.llm_utils import SIMULATE, is_local
 from solib.protocols.protocols import (
     Blind,
     Propaganda,
@@ -68,6 +68,10 @@ class Experiment:
             judge_models: List of models for the judges.
             protocols: Dictionary of protocols to run.
             num_turnss: List of number of turns for the protocols.
+            bon_ns: List of n for BestOfN_Agent.
+                If None or [1], will only run with PLAIN agents.
+                If [1, ...], will run with PLAIN and BestOfN agents.
+                If [...] without 1, will only run with BestOfN agents.
             write_path: Folder directory to write the results to.
         """
         self.default_quant_config = True
@@ -77,12 +81,12 @@ class Experiment:
         self.judge_models = judge_models
 
         if SIMULATE:
-            LOGGER.debug("Running in simulation mode, skipping HF models...")
+            LOGGER.debug("Running in simulation mode, skipping local models...")
             self.agent_models = [
-                model for model in self.agent_models if not model.startswith("hf:")
+                model for model in self.agent_models if not is_local(model)
             ]
             self.judge_models = [
-                model for model in self.judge_models if not model.startswith("hf:")
+                model for model in self.judge_models if not is_local(model)
             ]
 
         if protocols is None:
@@ -96,7 +100,7 @@ class Experiment:
         if num_turnss is None:
             num_turnss = [2, 4]
         if bon_ns is None:
-            bon_ns = []
+            bon_ns = [1]
         self.num_turnss = num_turnss
         self.bon_ns = bon_ns
         self.write_path = write_path
@@ -114,7 +118,6 @@ class Experiment:
             QA_Agent(
                 model=model,
                 tools=tools,
-                hf_quantization_config=self.default_quant_config,
             )
             for model in self.agent_models
             for tools in self.agent_toolss
@@ -125,32 +128,24 @@ class Experiment:
         return [
             BestOfN_Agent(n=n, agent=agent)
             for n in self.bon_ns
+            if n != 1
             for agent in self.agents_plain
         ]
 
     @property
     def agents(self):
-        return self.agents_plain + self.agents_bestofn
+        if 1 in self.bon_ns:
+            return self.agents_plain + self.agents_bestofn
+        else:
+            return self.agents_bestofn
 
     @property
     def judges(self):
         tot_judges = [
-            TipOfTongueJudge(model, hf_quantization_config=self.default_quant_config)
-            for model in self.judge_models
-            if model != "human"
+            TipOfTongueJudge(model) for model in self.judge_models if model != "human"
         ]
-        jap_judges = [
-            JustAskProbabilityJudge(
-                model, hf_quantization_config=self.default_quant_config
-            )
-            for model in self.judge_models
-        ]
-        japs_judges = [
-            JustAskProbabilitiesJudge(
-                model, hf_quantization_config=self.default_quant_config
-            )
-            for model in self.judge_models
-        ]
+        jap_judges = [JustAskProbabilityJudge(model) for model in self.judge_models]
+        japs_judges = [JustAskProbabilitiesJudge(model) for model in self.judge_models]
         return tot_judges + jap_judges + japs_judges
 
     @property
@@ -201,10 +196,11 @@ class Experiment:
         ]
 
     def filter_config(self, config: dict):
-        """Subclass this. By default, uses _filter_selfplay and _filter_nohfjap."""
+        """Subclass this. By default, uses _filter_selfplay and _filter_nolocaljap and _filter_noapitot."""
         return (
             self._filter_selfplay(config)
-            and self._filter_nohfjap(config)
+            and self._filter_nolocaljap(config)
+            and self._filter_noapitot(config)
             and self._filter_nojaps(config)
         )
 
@@ -265,31 +261,44 @@ class Experiment:
         return True
 
     def _filter_selfplay(self, config: dict):
-        if config["protocol"] == "debate":
-            return config["call_kwargs"]["adversary"] != config["call_kwargs"]["agent"]
+        protocol = config["protocol"]
+        if protocol == "debate" or issubclass(
+            protocol, Debate
+        ):  # might be reconfigured so consider both
+            agent = config["call_kwargs"]["agent"]
+            adversary = config["call_kwargs"]["adversary"]
+            if (
+                agent.model != adversary.model
+                or agent.tools == adversary.tools
+                or (
+                    isinstance(agent, BestOfN_Agent)
+                    != isinstance(adversary, BestOfN_Agent)
+                )
+            ):
+                return False
         return True
 
-    def _filter_nohf(self, config: dict):
+    def _filter_nolocal(self, config: dict):
         for component in config["call_kwargs"].values():
             if isinstance(component, (QA_Agent, Judge)):
-                if component.model.startswith("hf:"):
+                if is_local(component.model):
                     return False
         return True
 
-    def _filter_nohfjap(self, config: dict):
+    def _filter_nolocaljap(self, config: dict):
         for component in config["call_kwargs"].values():
             if isinstance(
                 component, (JustAskProbabilitiesJudge, JustAskProbabilityJudge)
-            ):
-                if component.model.startswith("hf:"):
-                    return False
+            ) and is_local(component.model):
+                return False
         return True
 
-    def _filter_nonhftot(self, config: dict):  # avoid doing ToT judge for API models
+    def _filter_noapitot(self, config: dict):  # avoid doing ToT judge for API models
         for component in config["call_kwargs"].values():
-            if isinstance(component, (TipOfTongueJudge)):
-                if not component.model.startswith("hf:"):
-                    return False
+            if isinstance(component, (TipOfTongueJudge)) and not is_local(
+                component.model
+            ):
+                return False
         return True
 
     def _get_path_protocol(self, config: dict):
