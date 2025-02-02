@@ -327,10 +327,10 @@ class Experiment:
         for k, v in config["call_kwargs"].items():
             if k in ["agent", "adversary"]:
                 k_ = "A"
-                v_ = v.model
+                v_ = v.model.replace("/", "_")
             elif k == "judge":
                 k_ = "J"
-                v_ = v.model
+                v_ = v.model.replace("/", "_")
             else:
                 k_ = k
                 v_ = v
