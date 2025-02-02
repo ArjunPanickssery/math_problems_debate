@@ -29,7 +29,7 @@ NOTE: if you are not seeing anything being logged, or if the totals are not bein
 
 # Caching
 
-LLM calls will be cached into the `.litellm_cache` folder by default. To break the cache, just pass some random extra argument to the function, e.g. `no_cache=True`.
+LLM calls will be cached into the `.litellm_cache` folder by default. To break the cache, pass `caching=False`, or environment variable `CACHING=False`. 
 
 # Logging
 
