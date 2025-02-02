@@ -615,7 +615,7 @@ async def acompletion_wrapper(
             max_tokens = kwargs.pop("max_tokens")
             LOGGER.warning(
                 f"{max_tokens=}. "
-                "Using max_tokens with structured responses never ends well!"
+                "Using max_tokens with structured responses never ends well! "
                 "Removing it."
             )
 
@@ -715,7 +715,7 @@ def completion_wrapper(
             max_tokens = kwargs.pop("max_tokens")
             LOGGER.warning(
                 f"{max_tokens=}. "
-                "Using max_tokens with structured responses never ends well!"
+                "Using max_tokens with structured responses never ends well! "
                 "Removing it."
             )
         response: ModelResponse = completion_ratelimited(
