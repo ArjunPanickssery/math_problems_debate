@@ -11,6 +11,7 @@ from solib.utils.llm_utils import (
     render_tool_call_result,
     LLM_Agent
 )
+from solib.datatypes import Prob
 from solib.utils.default_tools import math_eval
 from pydantic import BaseModel, Field
 
@@ -162,7 +163,6 @@ def test_get_response_with_response_model(llm_agent_sync):
     assert response.country == "France"
     assert response.capital == "Paris"
 
-
 @pytest.mark.asyncio
 async def test_get_response_async_with_response_model(llm_agent_async):
     class ResponseModel(BaseModel):
@@ -180,6 +180,28 @@ async def test_get_response_async_with_response_model(llm_agent_async):
     assert response.country == "France"
     assert response.capital == "Paris"
 
+def test_get_response_with_response_model_Prob(llm_agent_sync):
+
+    prompt = "What is the probability of the Russia-Ukraine war ending by 2025?"
+    response = llm_agent_sync.get_response_sync(
+        prompt=prompt, response_model=Prob
+    )
+
+    # need to check instance weirdly since cloudpickle hack messes up class namespace a bit
+    assert type(response).__name__ == Prob.__name__
+
+
+@pytest.mark.asyncio
+async def test_get_response_with_response_model_Prob_async(llm_agent_async):
+
+    prompt = "What is the probability of the Russia-Ukraine war ending by 2025?"
+
+    response = await llm_agent_async.get_response_async(
+        prompt=prompt, response_model=Prob
+    )
+
+    # need to check instance weirdly since cloudpickle hack messes up class namespace a bit
+    assert type(response).__name__ == Prob.__name__
 
 def test_get_response_with_response_model_more_complicated(llm_agent_sync):
     class ResponseModel(BaseModel):
