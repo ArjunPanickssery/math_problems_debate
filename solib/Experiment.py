@@ -68,6 +68,10 @@ class Experiment:
             judge_models: List of models for the judges.
             protocols: Dictionary of protocols to run.
             num_turnss: List of number of turns for the protocols.
+            bon_ns: List of n for BestOfN_Agent.
+                If None or [1], will only run with PLAIN agents.
+                If [1, ...], will run with PLAIN and BestOfN agents.
+                If [...] without 1, will only run with BestOfN agents.
             write_path: Folder directory to write the results to.
         """
         self.default_quant_config = True
@@ -96,7 +100,7 @@ class Experiment:
         if num_turnss is None:
             num_turnss = [2, 4]
         if bon_ns is None:
-            bon_ns = []
+            bon_ns = [1]
         self.num_turnss = num_turnss
         self.bon_ns = bon_ns
         self.write_path = write_path
@@ -123,13 +127,16 @@ class Experiment:
     def agents_bestofn(self):
         return [
             BestOfN_Agent(n=n, agent=agent)
-            for n in self.bon_ns
+            for n in self.bon_ns if n != 1
             for agent in self.agents_plain
         ]
 
     @property
     def agents(self):
-        return self.agents_plain + self.agents_bestofn
+        if 1 in self.bon_ns:
+            return self.agents_plain + self.agents_bestofn
+        else:
+            return self.agents_bestofn
 
     @property
     def judges(self):
