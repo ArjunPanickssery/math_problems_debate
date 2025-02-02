@@ -2,7 +2,7 @@ import pytest
 import asyncio
 import time
 from solib.utils.llm_utils import (
-    RUNHF,
+    RUNLOCAL,
     RATE_LIMITERS,
     format_prompt,
     should_use_words_in_mouth,
@@ -14,17 +14,16 @@ from solib.utils.llm_utils import (
 from solib.utils.default_tools import math_eval
 from pydantic import BaseModel, Field
 
-# Define the models based on RUNHF
 models = [
     "gpt-4o-mini",
     "claude-3-5-sonnet-20241022",
     # "gemini/gemini-2.0-flash-exp",
 ]  # "deepseek/deepseek-chat", "deepseek/deepseek-reasoner" # not working
-if RUNHF:
+if RUNLOCAL:
     models.extend(
         [
-            "hf:meta-llama/Llama-2-7b-chat-hf",
-            "hf:meta-llama/Meta-Llama-3-8B-Instruct",
+            "ollama_chat/Llama-2:7b",
+            "ollama_chat/llama-3.1:8b",
         ]
     )
 

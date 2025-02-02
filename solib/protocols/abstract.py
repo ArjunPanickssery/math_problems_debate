@@ -79,13 +79,10 @@ class QA_Agent(LLM_Agent):
         self,
         model: str = None,
         tools: list[callable] | None = None,
-        hf_quantization_config=None,
         prompt_file: str = "qa_agent.jinja",
         words_in_mouth: str = None,
     ):
-        super().__init__(
-            model=model, tools=tools, hf_quantization_config=hf_quantization_config
-        )
+        super().__init__(model=model, tools=tools)
         self.prompt_template = jinja_env.get_template(prompt_file)
         self.words_in_mouth = words_in_mouth
         self.dict = {

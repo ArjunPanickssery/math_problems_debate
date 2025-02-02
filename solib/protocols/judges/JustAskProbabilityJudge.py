@@ -55,7 +55,6 @@ class JustAskProbabilityJudge(Judge):
         self,
         model: str = None,
         tools: list[callable] | None = None,
-        hf_quantization_config=None,
         prompt_file: str = None,
         words_in_mouth: str = None,
     ):
@@ -74,8 +73,6 @@ class JustAskProbabilityJudge(Judge):
             "prompt": jinja_env.get_source(self.prompt_file),
             "words_in_mouth": self.words_in_mouth,
         }
-        super().__init__(
-            model=model, tools=tools, hf_quantization_config=hf_quantization_config
-        )
+        super().__init__(model=model, tools=tools)
 
     prompt_file = "just_ask_judge.jinja"

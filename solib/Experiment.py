@@ -114,7 +114,6 @@ class Experiment:
             QA_Agent(
                 model=model,
                 tools=tools,
-                hf_quantization_config=self.default_quant_config,
             )
             for model in self.agent_models
             for tools in self.agent_toolss
@@ -135,22 +134,10 @@ class Experiment:
     @property
     def judges(self):
         tot_judges = [
-            TipOfTongueJudge(model, hf_quantization_config=self.default_quant_config)
-            for model in self.judge_models
-            if model != "human"
+            TipOfTongueJudge(model) for model in self.judge_models if model != "human"
         ]
-        jap_judges = [
-            JustAskProbabilityJudge(
-                model, hf_quantization_config=self.default_quant_config
-            )
-            for model in self.judge_models
-        ]
-        japs_judges = [
-            JustAskProbabilitiesJudge(
-                model, hf_quantization_config=self.default_quant_config
-            )
-            for model in self.judge_models
-        ]
+        jap_judges = [JustAskProbabilityJudge(model) for model in self.judge_models]
+        japs_judges = [JustAskProbabilitiesJudge(model) for model in self.judge_models]
         return tot_judges + jap_judges + japs_judges
 
     @property

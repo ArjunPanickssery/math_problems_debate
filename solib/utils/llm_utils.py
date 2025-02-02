@@ -34,7 +34,7 @@ CACHING = os.getenv("CACHING", "False").lower() == "true"
 MAX_CONCURRENT_QUERIES = int(os.getenv("MAX_CONCURRENT_QUERIES", 100))
 NUM_LOGITS = 5
 MAX_WORDS = 100
-RUNHF = os.getenv("RUNHF", "False").lower() == "true"
+RUNLOCAL = os.getenv("RUNLOCAL", "False").lower() == "true"
 USE_TQDM = os.getenv("USE_TQDM", "True").lower() == "true"
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
@@ -665,7 +665,7 @@ class LLM_Agent:
         )  # or "claude-3-5-sonnet-20241022"
         self.tools = tools
         self.sync_mode = sync_mode
-        self.supports_async = supports_async(model)
+        self.supports_async = supports_async(self.model)
 
     def get_response_sync(
         self,

@@ -47,7 +47,7 @@ class Consultancy(Protocol):
         question: Question,
         answer_case: Answer,
         judge: Judge,
-        caching: bool =True,
+        caching: bool = True,
         temperature: float = 0.4,
     ) -> Question:
         consultant = functools.partial(
@@ -61,7 +61,6 @@ class Consultancy(Protocol):
         client_agent = QA_Agent(
             model=judge.model,
             tools=judge.tools,
-            hf_quantization_config=judge.hf_quantization_config,
         )
         client = functools.partial(
             client_agent,
