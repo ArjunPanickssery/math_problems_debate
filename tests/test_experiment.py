@@ -47,11 +47,12 @@ test_experiment = Experiment(
     ],
     agent_toolss=[[], [math_eval]],
     judge_models=[
-        "gpt-4o-mini",
+        # "gpt-4o-mini",
+        "claude-3-5-sonnet-20241022",
         # "hf:meta-llama/Llama-2-7b-chat-hf",
     ],
     protocols=["blind", "propaganda", "debate", "consultancy"],
-    bon_ns=[4],
+    # bon_ns=[4],
     write_path=Path(__file__).parent
     / "test_results"
     / f"{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}",

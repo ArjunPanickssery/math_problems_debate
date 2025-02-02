@@ -5,7 +5,7 @@ from pathlib import Path
 from solib.data.loading import Dataset
 from solib.utils import str_config, write_json, dump_config, random
 from solib.utils import parallelized_call
-from solib.utils.llm_utils import SIMULATE
+from solib.utils.llm_utils import SIMULATE, is_local
 from solib.protocols.protocols import (
     Blind,
     Propaganda,
@@ -77,12 +77,12 @@ class Experiment:
         self.judge_models = judge_models
 
         if SIMULATE:
-            LOGGER.debug("Running in simulation mode, skipping HF models...")
+            LOGGER.debug("Running in simulation mode, skipping local models...")
             self.agent_models = [
-                model for model in self.agent_models if not model.startswith("hf:")
+                model for model in self.agent_models if not is_local(model)
             ]
             self.judge_models = [
-                model for model in self.judge_models if not model.startswith("hf:")
+                model for model in self.judge_models if not is_local(model)
             ]
 
         if protocols is None:
@@ -188,10 +188,11 @@ class Experiment:
         ]
 
     def filter_config(self, config: dict):
-        """Subclass this. By default, uses _filter_selfplay and _filter_nohfjap."""
+        """Subclass this. By default, uses _filter_selfplay and _filter_nolocaljap and _filter_noapitot."""
         return (
             self._filter_selfplay(config)
-            and self._filter_nohfjap(config)
+            and self._filter_nolocaljap(config)
+            and self._filter_noapitot(config)
             and self._filter_nojaps(config)
         )
 
@@ -256,27 +257,27 @@ class Experiment:
             return config["call_kwargs"]["adversary"] != config["call_kwargs"]["agent"]
         return True
 
-    def _filter_nohf(self, config: dict):
+    def _filter_nolocal(self, config: dict):
         for component in config["call_kwargs"].values():
             if isinstance(component, (QA_Agent, Judge)):
-                if component.model.startswith("hf:"):
+                if is_local(component.model):
                     return False
         return True
 
-    def _filter_nohfjap(self, config: dict):
+    def _filter_nolocaljap(self, config: dict):
         for component in config["call_kwargs"].values():
             if isinstance(
                 component, (JustAskProbabilitiesJudge, JustAskProbabilityJudge)
-            ):
-                if component.model.startswith("hf:"):
-                    return False
+            ) and is_local(component.model):
+                return False
         return True
 
-    def _filter_nonhftot(self, config: dict):  # avoid doing ToT judge for API models
+    def _filter_noapitot(self, config: dict):  # avoid doing ToT judge for API models
         for component in config["call_kwargs"].values():
-            if isinstance(component, (TipOfTongueJudge)):
-                if not component.model.startswith("hf:"):
-                    return False
+            if isinstance(component, (TipOfTongueJudge)) and not is_local(
+                component.model
+            ):
+                return False
         return True
 
     def _get_path_protocol(self, config: dict):

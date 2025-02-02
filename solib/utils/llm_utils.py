@@ -133,14 +133,16 @@ def format_prompt(
     return messages
 
 
-def should_use_words_in_mouth(model: str) -> bool:
-    """Models that should use the words_in_mouth. All other models will drop it."""
+def is_local(model: str) -> bool:
     return model.startswith("ollama/") or model.startswith("ollama_chat/")
 
+def should_use_words_in_mouth(model: str) -> bool:
+    """Models that should use the words_in_mouth. All other models will drop it."""
+    return is_local(model)
 
 def supports_async(model: str) -> bool:
     """Models that support async completion."""
-    return not model.startswith("ollama/") and not model.startswith("ollama_chat/")
+    return not is_local(model)
 
 @costly()
 async def acompletion_ratelimited(
@@ -549,6 +551,14 @@ async def acompletion_wrapper(
 
     if response_format:
         LOGGER.info(f"Getting structured response from {model}.")
+        if "max_tokens" in kwargs:
+            max_tokens = kwargs.pop("max_tokens")
+            LOGGER.warning(
+                f"{max_tokens=}. "
+                "Using max_tokens with structured responses never ends well!"
+                "Removing it."
+            )
+            
         response: ModelResponse = await acompletion_ratelimited(
             model, messages, response_format=response_format, **kwargs
         )
@@ -641,6 +651,13 @@ def completion_wrapper(
 
     if response_format:
         LOGGER.info(f"Getting structured response from {model}.")
+        if "max_tokens" in kwargs:
+            max_tokens = kwargs.pop("max_tokens")
+            LOGGER.warning(
+                f"{max_tokens=}. "
+                "Using max_tokens with structured responses never ends well!"
+                "Removing it."
+            )
         response: ModelResponse = completion_ratelimited(
             model, messages, response_format=response_format, **kwargs
         )
