@@ -21,7 +21,7 @@ init_exp = Experiment(
         "gpt-4o-mini-2024-07-18",
     ],
     protocols=["blind", "propaganda", "debate", "consultancy"],
-    bon_ns=[4],  # , 8],#, 16, 32],
+    bon_ns=[1,4],  # , 8],#, 16, 32],
     write_path=Path(__file__).parent
     / "results"
     / f"init_exp_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}",

@@ -127,7 +127,8 @@ class Experiment:
     def agents_bestofn(self):
         return [
             BestOfN_Agent(n=n, agent=agent)
-            for n in self.bon_ns if n != 1
+            for n in self.bon_ns
+            if n != 1
             for agent in self.agents_plain
         ]
 
@@ -260,8 +261,21 @@ class Experiment:
         return True
 
     def _filter_selfplay(self, config: dict):
-        if config["protocol"] == "debate":
-            return config["call_kwargs"]["adversary"] != config["call_kwargs"]["agent"]
+        protocol = config["protocol"]
+        if protocol == "debate" or issubclass(
+            protocol, Debate
+        ):  # might be reconfigured so consider both
+            agent = config["call_kwargs"]["agent"]
+            adversary = config["call_kwargs"]["adversary"]
+            if (
+                agent.model != adversary.model
+                or agent.tools == adversary.tools
+                or (
+                    isinstance(agent, BestOfN_Agent)
+                    != isinstance(adversary, BestOfN_Agent)
+                )
+            ):
+                return False
         return True
 
     def _filter_nolocal(self, config: dict):
