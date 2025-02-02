@@ -75,6 +75,7 @@ class Score(BaseModel):
     """
 
     log: float | None = None
+    brier: float | None = None
     logodds: float | None = None
     accuracy: float | None = None
 
@@ -90,12 +91,19 @@ class Score(BaseModel):
         if not all(a.judge_prob is not None for a in question.answer_cases):
             return None
         if not question.is_normalized:
-            warnings.warn("Calculating score based on unnormalized probabilities.")
+            LOGGER.warning("Calculating score based on unnormalized probabilities.")
 
         # find answer case in question
         answer_case_in_question = question.answer_cases_dict[answer_case.short]
 
         score_log = np.log(answer_case_in_question.judge_prob.pad(eps))
+        score_brier = -np.sum(
+            [
+                (int(a.short == answer_case.short) - a.judge_prob)
+                ** 2
+                for a in question.answer_cases
+            ]
+        )
         score_logodds = np.log(answer_case_in_question.judge_prob.pad(eps)) - np.log(
             question.neg(answer_case_in_question).judge_prob.pad(eps)
         )
@@ -103,7 +111,7 @@ class Score(BaseModel):
             answer_case_in_question.judge_prob.pad(eps)
             > question.neg(answer_case_in_question).judge_prob.pad(eps)
         )
-        return Score(log=score_log, logodds=score_logodds, accuracy=score_accuracy)
+        return Score(log=score_log, brier=score_brier, logodds=score_logodds, accuracy=score_accuracy)
 
     # Helper method for pointwise operations
     def _operate(self, other, op) -> "Score":
@@ -116,12 +124,14 @@ class Score(BaseModel):
         if isinstance(other, Score):
             return Score(
                 log=apply(self.log, other.log),
+                brier=apply(self.brier, other.brier),
                 logodds=apply(self.logodds, other.logodds),
                 accuracy=apply(self.accuracy, other.accuracy),
             )
         elif isinstance(other, (int, float)):  # Scalar operations
             return Score(
                 log=apply(self.log, other),
+                brier=apply(self.brier, other),
                 logodds=apply(self.logodds, other),
                 accuracy=apply(self.accuracy, other),
             )
@@ -165,6 +175,7 @@ class Score(BaseModel):
     def _arroperate(cls, scores: list["Score"], op) -> "Score":
         return Score(
             log=op([score.log for score in scores]),
+            brier=op([score.brier for score in scores]),
             logodds=op([score.logodds for score in scores]),
             accuracy=op([score.accuracy for score in scores]),
         )
