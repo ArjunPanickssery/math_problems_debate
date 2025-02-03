@@ -13,11 +13,11 @@ init_exp = Experiment(
     agent_models=[
         "claude-3-5-sonnet-20241022",
         "claude-3-5-haiku-20241022",
-        "openrouter/deepseek/deepseek-chat"
+        "openrouter/deepseek/deepseek-chat" # "ollama_chat/deepseek-v3"
     ],
     agent_toolss=[[], [math_eval]],
     judge_models=[
-        "ollama_chat/llama3.1:8b",
+        "localhf://meta-llama/Meta-Llama-3.1-8B",
         "openrouter/gpt-4o-mini-2024-07-18",
     ],
     protocols=["blind", "propaganda", "debate", "consultancy"],

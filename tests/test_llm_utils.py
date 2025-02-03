@@ -26,6 +26,7 @@ if RUNLOCAL:
         [
             "ollama_chat/Llama-2:7b",
             "ollama_chat/llama-3.1:8b",
+            "localhf://meta-llama/Meta-Llama-3.1-8B",
         ]
     )
 
