@@ -71,7 +71,7 @@ def test_get_response_returns_string(llm_agent_sync):
 
 def test_get_probs_returns_dict(llm_agent_sync):
     if any(model in llm_agent_sync.model for model in ["claude", "gemini", "deepseek"]):
-        pytest.skip("Claude or gemini models do not support get_probs")
+        pytest.skip(f"Model {model} does not support get_probs")
     prompt = (
         "Take a random guess as to what the 1,000,001st digit of pi is. "
         'Answer exactly "0", "1", ... or "9", with nothing else in your response.'
@@ -112,8 +112,8 @@ async def test_get_response_async_returns_string(llm_agent_async):
 
 @pytest.mark.asyncio
 async def test_get_probs_async_returns_dict(llm_agent_async):
-    if "claude" in llm_agent_async.model or "gemini" in llm_agent_async.model:
-        pytest.skip("Claude or gemini models do not support get_probs")
+    if any(model in llm_agent_sync.model for model in ["claude", "gemini", "deepseek"]):
+        pytest.skip(f"Model {model} does not support get_probs")
     prompt = (
         "Take a random guess as to what the 1,000,001st digit of pi is. "
         'Answer exactly "0", "1", ... or "9", with nothing else in your response.'
