@@ -75,7 +75,7 @@ async def acompletion_ratelimited(
     Wrapper around acompletion that respects the defined global Semaphores and rate limits,
     and also uses costly.
     """
-    rate_limiter = RATE_LIMITERS.get(model, None)
+    rate_limiter = RATE_LIMITER.get(model)
     max_retries = kwargs.pop("max_retries", 3)
     call_id = uuid.uuid4().hex
     LOGGER.info(
@@ -95,9 +95,9 @@ async def acompletion_ratelimited(
         )
         LOGGER.debug(f"{call_id}: Response from {model}: {response}")
         return response
-    async with rate_limiter["semaphore"]:
+    async with rate_limiter["rate_limiter"]["semaphore"]:
         now = time.time()
-        elapsed = now - rate_limiter["last_request"]
+        elapsed = now - rate_limiter["rate_limiter"]["last_request"]
         rpm = rate_limiter["rpm"]
         if rpm is not None and elapsed < 60 / rpm:
             LOGGER.info(
@@ -113,7 +113,7 @@ async def acompletion_ratelimited(
             **kwargs,
         )
         LOGGER.debug(f"{call_id}: Response from {model}: {response}")
-        rate_limiter["last_request"] = time.time()
+        RATE_LIMITER.set_last_request(model, time.time())
         return CostlyResponse(
             output=response,
             cost_info={
@@ -136,7 +136,7 @@ def completion_ratelimited(
     Wrapper around completion that respects the defined global Semaphores and rate limits,
     and also uses costly.
     """
-    rate_limiter = RATE_LIMITERS.get(model, None)
+    rate_limiter = RATE_LIMITER.get(model)
     max_retries = kwargs.pop("max_retries", 3)
     call_id = uuid.uuid4().hex
     LOGGER.info(
@@ -157,7 +157,7 @@ def completion_ratelimited(
         LOGGER.debug(f"{call_id}: Response from {model}: {response}")
         return response
     now = time.time()
-    elapsed = now - rate_limiter["last_request"]
+    elapsed = now - rate_limiter["rate_limiter"]["last_request"]
     rpm = rate_limiter["rpm"]
     if rpm is not None and elapsed < 60 / rpm:
         LOGGER.info(
@@ -173,7 +173,7 @@ def completion_ratelimited(
         **kwargs,
     )
     LOGGER.debug(f"{call_id}: Response from {model}: {response}")
-    rate_limiter["last_request"] = time.time()
+    RATE_LIMITER.set_last_request(model, time.time())
     return CostlyResponse(
         output=response,
         cost_info={

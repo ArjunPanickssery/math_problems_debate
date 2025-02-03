@@ -17,7 +17,7 @@ init_exp = Experiment(
     ],
     agent_toolss=[[], [math_eval]],
     judge_models=[
-        "localhf://meta-llama/Meta-Llama-3.1-8B",
+        # "localhf://meta-llama/Meta-Llama-3.1-8B",
         "openrouter/gpt-4o-mini-2024-07-18",
     ],
     protocols=["blind", "propaganda", "debate", "consultancy"],
