@@ -16,7 +16,7 @@ from solib.utils.default_tools import math_eval
 from pydantic import BaseModel, Field
 
 models = [
-    "openrouter/gpt-4o-mini",
+    "openrouter/gpt-4o-mini-2024-07-18",
     "claude-3-5-sonnet-20241022",
     "gemini/gemini-1.5-flash",
     "openrouter/deepseek/deepseek-chat",

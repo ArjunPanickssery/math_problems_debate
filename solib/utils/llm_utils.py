@@ -109,6 +109,8 @@ RATE_LIMITERS = (
     }
     | {
         "openrouter/deepseek/deepseek-chat": {"rpm": 500}, # in general 60*($$ in your OpenRouter account)
+        "openrouter/gpt-4o-mini-2024-07-18": {"rpm": 500},
+        "openrouter/gpt-4o-mini": {"rpm": 500},
     }
 )
 # | {
