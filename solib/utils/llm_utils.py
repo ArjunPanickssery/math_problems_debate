@@ -14,10 +14,8 @@ from collections import defaultdict
 from dotenv import load_dotenv
 from pydantic import BaseModel
 from costly import Costlog, costly, CostlyResponse
-from costly.simulators.llm_simulator_faker import LLM_Simulator_Faker
-from jinja2 import Environment, FileSystemLoader
-from solib.utils import coerce
-from solib.datatypes import Prob
+from solib.utils.globals import *
+from solib.utils.llm_hf_utils import get_hf_llm
 
 if TYPE_CHECKING:
     from litellm.types.utils import (
@@ -30,154 +28,10 @@ LOGGER = logging.getLogger(__name__)
 
 load_dotenv()
 
-GLOBAL_COST_LOG = Costlog(mode="jsonl", discard_extras=True)
-SIMULATE = os.getenv("SIMULATE", "False").lower() == "true"
-DISABLE_COSTLY = os.getenv("DISABLE_COSTLY", "False").lower() == "true"
-CACHING = os.getenv("CACHING", "False").lower() == "true"
-MAX_CONCURRENT_QUERIES = int(os.getenv("MAX_CONCURRENT_QUERIES", 100))
-NUM_LOGITS = 5
-MAX_WORDS = 100
-DEFAULT_MODEL=os.getenv("DEFAULT_MODEL", "claude-3-haiku-20240307")
-DEFAULT_BON_MODEL=os.getenv("DEFAULT_BON_MODEL", "claude-3-haiku-20240307") # default Best-of-N ranker
-RUNLOCAL = os.getenv("RUNLOCAL", "False").lower() == "true"
-USE_TQDM = os.getenv("USE_TQDM", "True").lower() == "true"
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-
-TOOL_CALL_START_TAG = "<tool_call>"
-TOOL_CALL_END_TAG = "</tool_call>"
-TOOL_RESULT_START_TAG = "<tool_result>"
-TOOL_RESULT_END_TAG = "</tool_result>"
-TEMPLATES_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "prompts")
-jinja_env = Environment(loader=FileSystemLoader(TEMPLATES_DIR))
-jinja_env.globals.update(
-    {
-        "TOOL_CALL_START_TAG": TOOL_CALL_START_TAG,
-        "TOOL_CALL_END_TAG": TOOL_CALL_END_TAG,
-        "TOOL_RESULT_START_TAG": TOOL_RESULT_START_TAG,
-        "TOOL_RESULT_END_TAG": TOOL_RESULT_END_TAG,
-        "MAX_WORDS": MAX_WORDS,
-    }
-)
-# helper function for logging
-# returns source code of jinja template
-jinja_env.get_source = lambda template: (
-    jinja_env.loader.get_source(jinja_env, template)[0]
-)
-TOOL_CALL_TEMPLATE = jinja_env.get_template("tool_use/tool_call.jinja")
-TOOL_RESULT_TEMPLATE = jinja_env.get_template("tool_use/tool_result.jinja")
-
-# add tools to prompt for models that don't natively support it
-# -- idk if this works though
-litellm.add_function_to_prompt = True
+# see full list of config options at https://github.com/BerriAI/litellm/blob/main/litellm/__init__.py
+litellm.add_function_to_prompt = True # add tools to prompt for nonnative models, idk if works though
 litellm.drop_params = True  # make LLM calls ignore extra params
 litellm.cache = Cache(type="disk")
-# see full list at https://github.com/BerriAI/litellm/blob/main/litellm/__init__.py
-
-RATE_LIMITERS = (
-    {
-        model: {"rpm": 4000, "tpm": 4e5}
-        for model in [
-            "claude-3-5-sonnet-20241022",
-            "claude-3-5-sonnet-20240620",
-            "claude-3-5-haiku-20241022",
-            "claude-3-opus-20240229",
-            "claude-3-sonnet-20240229",
-            "claude-3-haiku-20240307",
-        ]
-    }
-    | {
-        "gpt-4o": {"rpm": 500, "tpm": 3e4},
-        "gpt-4-turbo": {"rpm": 500, "tpm": 3e4},
-        "gpt-4": {"rpm": 500, "tpm": 1e4},
-        "gpt-4o-mini": {"rpm": 500, "tpm": 2e5},
-        "gpt-3.5-turbo": {"rpm": 500, "tpm": 2e5},
-        "o1-mini": {"rpm": 500, "tpm": 2e5},
-        "o1-preview": {"rpm": 500, "tpm": 3e4},
-    }
-    | {
-        "gemini/gemini-1.5-pro": {"rpm": 1000, "tpm": 4e6},
-        "gemini/gemini-1.5-flash": {"rpm": 2000, "tpm": 4e6},
-        "gemini/gemini-1.5-flash-8b": {"rpm": 4000, "tpm": 4e6},
-        "gemini/gemini-2.0-flash-exp": {
-            "rpm": 10,
-            "rpd": 1500,
-        },  # requests per day is not enforced
-    }
-    | {
-        "openrouter/deepseek/deepseek-chat": {"rpm": 500}, # in general 60*($$ in your OpenRouter account)
-        "openrouter/gpt-4o-mini-2024-07-18": {"rpm": 500},
-        "openrouter/gpt-4o-mini": {"rpm": 500},
-    }
-)
-# | {
-#     "deepseek/deepseek-chat": {"rpm": None, "tpm": None},
-#     "deepseek/deepseek-reasoner": {"rpm": None, "tpm": None},
-# }
-
-for k in RATE_LIMITERS:
-    # allow setting rate limits in .env, e.g. if you're on a different tier
-    RATE_LIMITERS[k]["rpm"] = coerce(
-        os.getenv(f"{k.upper()}_RPM", RATE_LIMITERS[k].get("rpm", None)), int
-    )
-    RATE_LIMITERS[k]["tpm"] = coerce(
-        os.getenv(f"{k.upper()}_TPM", RATE_LIMITERS[k].get("tpm", None)), int
-    )
-    RATE_LIMITERS[k]["semaphore"] = asyncio.Semaphore(MAX_CONCURRENT_QUERIES)
-    RATE_LIMITERS[k]["last_request"] = 0
-
-class LLM_Simulator(LLM_Simulator_Faker):
-    @classmethod
-    def _fake_custom(cls, t: type):
-        assert issubclass(t, Prob)
-        import random
-
-        return t(prob=random.random())
-
-    @classmethod
-    def simulate_llm_call(
-        cls,
-        input_string: str = None,
-        input_tokens: int = None,
-        messages: list[dict[str, str]] = None,
-        model: str = None,
-        response_model: type = str,
-        cost_log: Costlog = None,
-        description: list[str] = None,
-    ) -> ModelResponse:
-        output: str | BaseModel = super().simulate_llm_call(
-            input_string,
-            input_tokens,
-            messages,
-            model,
-            response_model,
-            cost_log,
-            description,
-        )
-        if isinstance(output, BaseModel):
-            output = output.model_dump_json()
-        return ModelResponse(
-            id="SIMULATED", 
-            created=0, 
-            model=model, 
-            object='chat.completion', 
-            system_fingerprint='PLANTED_FINGERPRINTS',
-            choices = [
-                Choices(
-                    finish_reason='tool_calls',
-                    index=0,
-                    message=Message(
-                        content=output,
-                        role='assistant',
-                        tool_calls=None, # TODO
-                    )
-                )
-            ]
-        )
-
 
 def format_prompt(
     prompt: str, system_prompt: str = None, words_in_mouth: str = None
@@ -193,8 +47,10 @@ def format_prompt(
 
 
 def is_local(model: str) -> bool:
-    return model.startswith("ollama/") or model.startswith("ollama_chat/")
+    return model.startswith("ollama/") or model.startswith("ollama_chat/") or model.startswith("localhf://")
 
+def is_localhf(model: str) -> bool:
+    return model.startswith("localhf://")
 
 def should_use_words_in_mouth(model: str) -> bool:
     """Models that should use the words_in_mouth. All other models will drop it."""
@@ -206,7 +62,7 @@ def supports_async(model: str) -> bool:
     return not is_local(model)
 
 
-@costly(simulator=LLM_Simulator.simulate_llm_call, response_model="response_format")
+@costly(**COSTLY_PARAMS)
 async def acompletion_ratelimited(
     model: str,
     messages: list[dict[str, str]],
@@ -267,7 +123,7 @@ async def acompletion_ratelimited(
         )
 
 
-@costly(simulator=LLM_Simulator.simulate_llm_call, response_model="response_format")
+@costly(**COSTLY_PARAMS)
 def completion_ratelimited(
     model: str,
     messages: list[dict[str, str]],
@@ -739,10 +595,9 @@ def completion_wrapper(
 
 
 class LLM_Agent:
-    """Kind of a legacy abstraction layer that doesn't add anything, but everything in the code is built around it."""
 
     def __init__(
-        self, model: str = None, tools: list[callable] = None, sync_mode: bool = False
+        self, model: str = None, tools: list[callable] = None, sync_mode: bool = False, hf_quantization_config=True
     ):
         self.model = (
             model or DEFAULT_MODEL
@@ -750,6 +605,10 @@ class LLM_Agent:
         self.tools = tools
         self.sync_mode = sync_mode
         self.supports_async = supports_async(self.model)
+        if is_localhf(self.model):
+            assert not self.tools, "Tools are not currently supported for localhf:// models, use ollama instead."
+            self.hf_quantization_config = hf_quantization_config
+            self.client, self.generate_func, self.return_probs_func = get_hf_llm(self.model)
 
     def get_response_sync(
         self,
@@ -760,6 +619,17 @@ class LLM_Agent:
         words_in_mouth: str = None,
         **kwargs,
     ):
+        if is_localhf(self.model):
+            assert not response_model, "structured responses not supported for localhf:// models, use ollama instead."
+            LOGGER.warning("localhf:// is for get_probs, not get_response? Use ollama instead.")
+            return self.generate_func(
+                prompt=prompt,
+                messages=messages,
+                system_message=system_prompt,
+                words_in_mouth=words_in_mouth,
+                max_tokens=kwargs.get("max_tokens", 2048),
+            )
+                
         return completion_wrapper(
             model=self.model,
             tools=self.tools,
@@ -780,6 +650,7 @@ class LLM_Agent:
         words_in_mouth: str = None,
         **kwargs,
     ):
+        assert supports_async(self.model)
         return await acompletion_wrapper(
             model=self.model,
             tools=self.tools,
@@ -810,6 +681,14 @@ class LLM_Agent:
         system_prompt: str = None,
         **kwargs,
     ):
+        if is_localhf(self.model):
+            return self.return_probs_func(
+                return_probs_for=return_probs_for,
+                prompt=prompt,
+                messages=messages,
+                system_message=system_prompt,
+                words_in_mouth=words_in_mouth,
+            )
         return completion_wrapper(
             model=self.model,
             return_probs_for=return_probs_for,
@@ -829,6 +708,7 @@ class LLM_Agent:
         system_prompt: str = None,
         **kwargs,
     ):
+        assert supports_async(self.model)
         return await acompletion_wrapper(
             model=self.model,
             return_probs_for=return_probs_for,
