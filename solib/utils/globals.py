@@ -93,6 +93,7 @@ class RateLimiter:
         return [model for model in self.stuff if model.startswith("openrouter/")]
 
     def update_openrouter_ratelimit(self) -> bool:
+        """https://openrouter.ai/docs/limits"""
         try:
             import requests
             url = "https://openrouter.ai/api/v1/auth/key"
