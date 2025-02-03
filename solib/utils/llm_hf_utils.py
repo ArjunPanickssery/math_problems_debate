@@ -1,17 +1,23 @@
 import functools
-from typing import TYPE_CHECKING
+# from typing import TYPE_CHECKING
+import torch
 from solib.utils.globals import HF_TOKEN
-if TYPE_CHECKING:
-    from transformers import AutoTokenizer
+from transformers import AutoTokenizer
 
 @functools.cache
 def load_hf_model(model: str, hf_quantization_config=True):
+
+    has_cuda = torch.cuda.is_available()
+
     print("Loading Hugging Face model", model, hf_quantization_config)
     from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
 
     quant_config = (
-        BitsAndBytesConfig(load_in_8bit=True) if hf_quantization_config else None
+        BitsAndBytesConfig(load_in_8bit=True) 
+        if has_cuda and hf_quantization_config 
+        else None
     )
+
     model = model.split("localhf://")[1]
     tokenizer = AutoTokenizer.from_pretrained(model)
     device_map = "cuda" if hf_quantization_config else "auto"
