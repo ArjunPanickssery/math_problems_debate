@@ -8,8 +8,9 @@ from transformers import AutoTokenizer
 def load_hf_model(model: str, hf_quantization_config=True):
 
     has_cuda = torch.cuda.is_available()
+    print(f"Loading Hugging Face model (has_cuda={has_cuda})", model, hf_quantization_config)
 
-    print("Loading Hugging Face model", model, hf_quantization_config)
+
     from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
 
     quant_config = (
@@ -20,7 +21,7 @@ def load_hf_model(model: str, hf_quantization_config=True):
 
     model = model.split("localhf://")[1]
     tokenizer = AutoTokenizer.from_pretrained(model)
-    device_map = "cuda" if hf_quantization_config else "auto"
+    device_map = "cuda" if has_cuda and hf_quantization_config else "auto"
     model = AutoModelForCausalLM.from_pretrained(
         model,
         device_map=device_map,
