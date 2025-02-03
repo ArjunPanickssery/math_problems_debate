@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 from costly import Costlog
 from jinja2 import Environment, FileSystemLoader
 from litellm.types.utils import ModelResponse, Choices, Message
-from solib.utils import coerce
+from solib.utils import coerce, parse_time_interval
 from solib.datatypes import Prob
 from costly.simulators.llm_simulator_faker import LLM_Simulator_Faker
 
@@ -19,6 +19,7 @@ SIMULATE = os.getenv("SIMULATE", "False").lower() == "true"
 DISABLE_COSTLY = os.getenv("DISABLE_COSTLY", "False").lower() == "true"
 CACHING = os.getenv("CACHING", "False").lower() == "true"
 MAX_CONCURRENT_QUERIES = int(os.getenv("MAX_CONCURRENT_QUERIES", 100))
+CHECK_OPENROUTER_EVERY = int(os.getenv("CHECK_OPENROUTER_EVERY", 100))
 NUM_LOGITS = 5
 MAX_WORDS = 100
 DEFAULT_MODEL=os.getenv("DEFAULT_MODEL", "claude-3-haiku-20240307")
@@ -55,57 +56,134 @@ jinja_env.get_source = lambda template: (
 TOOL_CALL_TEMPLATE = jinja_env.get_template("tool_use/tool_call.jinja")
 TOOL_RESULT_TEMPLATE = jinja_env.get_template("tool_use/tool_result.jinja")
 
-RATE_LIMITERS = (
-    {
-        model: {"rpm": 4000, "tpm": 4e5}
-        for model in [
-            "claude-3-5-sonnet-20241022",
-            "claude-3-5-sonnet-20240620",
-            "claude-3-5-haiku-20241022",
-            "claude-3-opus-20240229",
-            "claude-3-sonnet-20240229",
-            "claude-3-haiku-20240307",
-        ]
-    }
-    | {
-        "gpt-4o": {"rpm": 500, "tpm": 3e4},
-        "gpt-4-turbo": {"rpm": 500, "tpm": 3e4},
-        "gpt-4": {"rpm": 500, "tpm": 1e4},
-        "gpt-4o-mini": {"rpm": 500, "tpm": 2e5},
-        "gpt-3.5-turbo": {"rpm": 500, "tpm": 2e5},
-        "o1-mini": {"rpm": 500, "tpm": 2e5},
-        "o1-preview": {"rpm": 500, "tpm": 3e4},
-    }
-    | {
-        "gemini/gemini-1.5-pro": {"rpm": 1000, "tpm": 4e6},
-        "gemini/gemini-1.5-flash": {"rpm": 2000, "tpm": 4e6},
-        "gemini/gemini-1.5-flash-8b": {"rpm": 4000, "tpm": 4e6},
-        "gemini/gemini-2.0-flash-exp": {
-            "rpm": 10,
-            "rpd": 1500,
-        },  # requests per day is not enforced
-    }
-    | {
-        "openrouter/deepseek/deepseek-chat": {"rpm": 500}, # in general 60*($$ in your OpenRouter account)
-        "openrouter/gpt-4o-mini-2024-07-18": {"rpm": 500},
-        "openrouter/gpt-4o-mini": {"rpm": 500},
-    }
-)
-# | {
-#     "deepseek/deepseek-chat": {"rpm": None, "tpm": None},
-#     "deepseek/deepseek-reasoner": {"rpm": None, "tpm": None},
+class RateLimiter:
+
+    def __init__(self):
+        self.initialize_semaphores()
+        self.override_defaults()
+        self.openrouter_calls_without_rate_limit_check: int = 0
+
+    def initialize_semaphores(self):
+        # each model has its own semaphore, except Openrouter models
+        self.OPENROUTER_LIMITER = {
+            "semaphore": asyncio.Semaphore(MAX_CONCURRENT_QUERIES),
+            "last_request": 0,
+        }
+        for model in self.stuff:
+            if model.startswith("openrouter/"):
+                self.stuff[model]["rate_limiter"] = self.OPENROUTER_LIMITER
+            else:
+                self.stuff[model]["rate_limiter"] = {
+                    "semaphore": asyncio.Semaphore(MAX_CONCURRENT_QUERIES),
+                    "last_request": 0
+                }            
+
+    def override_defaults(self):
+        # allow setting rate limits in .env, e.g. if you're on a different tier
+        for model in self.stuff:
+            self.stuff[model]["rpm"] = coerce(
+                os.getenv(f"{model.upper()}_RPM", self.stuff[model].get("rpm", None)), int
+            )
+            self.stuff[model]["tpm"] = coerce(
+                os.getenv(f"{model.upper()}_TPM", self.stuff[model].get("tpm", None)), int
+            )
+    
+    @property
+    def openrouter_models(self) -> list[str]:
+        return [model for model in self.stuff if model.startswith("openrouter/")]
+
+    def update_openrouter_ratelimit(self) -> bool:
+        """https://openrouter.ai/docs/limits"""
+        try:
+            import requests
+            url = "https://openrouter.ai/api/v1/auth/key"
+            headers = {
+                "Authorization": f"Bearer {OPENROUTER_API_KEY}"
+            }
+            
+            response = requests.get(url, headers=headers)
+            result = response.json()['data']['rate_limit'] # {'requests': 750, 'interval': '10s'}
+            num = result['requests']
+            denom = parse_time_interval(result['interval'])
+            rpm = 0.85 * 60 * min(num / denom, 500)
+            checked_openrouter_successfully = True
+            
+        except Exception as e:
+            import traceback
+            LOGGER.error(f"Error getting OpenRouter rate limits:\n{e}\n{traceback.format_exc()}")
+            rpm = 600 # play safe until we get real rate limit
+            checked_openrouter_successfully = False
+        
+        for model in self.openrouter_models:
+            LOGGER.info(f"Setting rpm for {model} to {rpm}")
+            self.stuff[model]["rpm"] = rpm
+        
+        return checked_openrouter_successfully
+    
+    def get(self, model: str) -> dict:
+        """Returns a dict like
+        {"rpm": 4000, "tpm": 4e5, "rate_limiter": {"semaphore": Semaphore(100), "last_request": 50223}}
+        """
+        if model.startswith("openrouter/"):
+            # check and update OpenRouter rate limit every 100 or so calls
+            checked_openrouter_this_turn: bool = False
+            if self.openrouter_calls_without_rate_limit_check > CHECK_OPENROUTER_EVERY:
+                checked_openrouter_this_turn = self.update_openrouter_ratelimit()
+            if checked_openrouter_this_turn:
+                self.openrouter_calls_without_rate_limit_check = 0                
+            else: 
+                self.openrouter_calls_without_rate_limit_check += 1
+        return self.stuff.get(model, None)
+    
+    def set_last_request(self, model: str, last_request: float):
+        # I don't think we have to handle OpenRouter separately,
+        # since they're all assigned to self.OPENROUTER_LIMITER anyway
+        self.stuff[model]["rate_limiter"]["last_request"] = last_request
+
+
+    # initialize rate limits
+    stuff = (
+        {
+            model: {"rpm": 4000, "tpm": 4e5}
+            for model in [
+                "claude-3-5-sonnet-20241022",
+                "claude-3-5-sonnet-20240620",
+                "claude-3-5-haiku-20241022",
+                "claude-3-opus-20240229",
+                "claude-3-sonnet-20240229",
+                "claude-3-haiku-20240307",
+            ]
+        }
+        | {
+            "gpt-4o": {"rpm": 500, "tpm": 3e4},
+            "gpt-4-turbo": {"rpm": 500, "tpm": 3e4},
+            "gpt-4": {"rpm": 500, "tpm": 1e4},
+            "gpt-4o-mini": {"rpm": 500, "tpm": 2e5},
+            "gpt-3.5-turbo": {"rpm": 500, "tpm": 2e5},
+            "o1-mini": {"rpm": 500, "tpm": 2e5},
+            "o1-preview": {"rpm": 500, "tpm": 3e4},
+        }
+        | {
+            "gemini/gemini-1.5-pro": {"rpm": 1000, "tpm": 4e6},
+            "gemini/gemini-1.5-flash": {"rpm": 2000, "tpm": 4e6},
+            "gemini/gemini-1.5-flash-8b": {"rpm": 4000, "tpm": 4e6},
+            "gemini/gemini-2.0-flash-exp": {
+                "rpm": 10,
+                "rpd": 1500,
+            },  # requests per day is not enforced
+        }
+        | {
+            "openrouter/deepseek/deepseek-chat": {"rpm": 500}, # in general 60*($$ in your OpenRouter account)
+            "openrouter/gpt-4o-mini-2024-07-18": {"rpm": 500},
+            "openrouter/gpt-4o-mini": {"rpm": 500},
+        }
+    )
+    # | {
+    #     "deepseek/deepseek-chat": {"rpm": None, "tpm": None},
+    #     "deepseek/deepseek-reasoner": {"rpm": None, "tpm": None},
 # }
 
-for k in RATE_LIMITERS:
-    # allow setting rate limits in .env, e.g. if you're on a different tier
-    RATE_LIMITERS[k]["rpm"] = coerce(
-        os.getenv(f"{k.upper()}_RPM", RATE_LIMITERS[k].get("rpm", None)), int
-    )
-    RATE_LIMITERS[k]["tpm"] = coerce(
-        os.getenv(f"{k.upper()}_TPM", RATE_LIMITERS[k].get("tpm", None)), int
-    )
-    RATE_LIMITERS[k]["semaphore"] = asyncio.Semaphore(MAX_CONCURRENT_QUERIES)
-    RATE_LIMITERS[k]["last_request"] = 0
+RATE_LIMITER = RateLimiter()
 
 class LLM_Simulator(LLM_Simulator_Faker):
     @classmethod

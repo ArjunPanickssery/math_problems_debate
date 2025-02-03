@@ -3,7 +3,7 @@ import asyncio
 import time
 from solib.utils.llm_utils import (
     RUNLOCAL,
-    RATE_LIMITERS,
+    RATE_LIMITER,
     format_prompt,
     should_use_words_in_mouth,
     supports_async,
@@ -16,11 +16,11 @@ from solib.utils.default_tools import math_eval
 from pydantic import BaseModel, Field
 
 models = [
-    # "openrouter/gpt-4o-mini-2024-07-18",
-    # "claude-3-5-sonnet-20241022",
-    # "gemini/gemini-1.5-flash",
-    # "openrouter/deepseek/deepseek-chat",
-    "localhf://TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+    "openrouter/gpt-4o-mini-2024-07-18",
+    "claude-3-5-sonnet-20241022",
+    "gemini/gemini-1.5-flash",
+    "openrouter/deepseek/deepseek-chat",
+    # "localhf://TinyLlama/TinyLlama-1.1B-Chat-v1.0"
 ]
 if RUNLOCAL:
     models.extend(
@@ -114,7 +114,7 @@ async def test_get_response_async_returns_string(llm_agent_async):
 
 @pytest.mark.asyncio
 async def test_get_probs_async_returns_dict(llm_agent_async):
-    if any(model in llm_agent_sync.model for model in ["claude", "gemini", "deepseek"]):
+    if any(model in llm_agent_async.model for model in ["claude", "gemini", "deepseek"]):
         pytest.skip(f"Model {model} does not support get_probs")
     prompt = (
         "Take a random guess as to what the 1,000,001st digit of pi is. "
@@ -255,7 +255,8 @@ async def test_rapid_requests_respect_rate_limits(llm_agent_async):
     elapsed = end_time - start_time
     
     assert all(isinstance(r, str) for r in responses)
-    rpm = RATE_LIMITERS.get(llm_agent_async.model, {"rpm": None}).get("rpm", None)
+    rate_limiter = RATE_LIMITER.get(llm_agent_async.model)
+    rpm = None if rate_limiter is None else rate_limiter.get("rpm", None)
     if any([kw in llm_agent_async.model for kw in ["gpt", "claude", "gemini"]]):
         assert rpm is not None
     if rpm is not None:

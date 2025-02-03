@@ -5,6 +5,7 @@ import logging
 import json
 import jsonlines
 import aiofiles
+import re
 import random as rnd
 import hashlib
 import inspect
@@ -215,3 +216,24 @@ async def parallelized_call(
     else:
         tasks = [func(d) for d in data]
     return await tqdm.gather(*tasks, disable=not use_tqdm)
+
+def parse_time_interval(interval_str):
+    # Extract number and unit using regex
+    match = re.match(r'(\d+)([smh])', interval_str)
+    if not match:
+        raise ValueError(f"Unexpected interval format: {interval_str}. Expected format: number followed by s, m, or h")
+    
+    number, unit = match.groups()
+    if unit not in ['s', 'm', 'h']:
+        raise ValueError(f"Unexpected time unit: {unit}. Expected s, m, or h")
+    
+    number = int(number)
+    
+    # Convert to seconds
+    multipliers = {
+        's': 1,
+        'm': 60,
+        'h': 3600
+    }
+    
+    return number * multipliers[unit]
