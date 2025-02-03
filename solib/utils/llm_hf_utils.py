@@ -1,14 +1,17 @@
 import functools
+import logging
 # from typing import TYPE_CHECKING
 import torch
 from solib.utils.globals import HF_TOKEN
 from transformers import AutoTokenizer
 
+LOGGER = logging.getLogger(__name__)
+
 @functools.cache
 def load_hf_model(model: str, hf_quantization_config=True):
 
     has_cuda = torch.cuda.is_available()
-    print(f"Loading Hugging Face model (has_cuda={has_cuda})", model, hf_quantization_config)
+    LOGGER.info(f"Loading Hugging Face model (has_cuda={has_cuda})", model, hf_quantization_config)
 
 
     from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
