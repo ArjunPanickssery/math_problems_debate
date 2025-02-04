@@ -243,4 +243,6 @@ def estimate_tokens(messages: list[dict[str, str]]):
     for m in messages:
         if m.get("content"):
             s += len(m["content"]) // 3
+        if m.get("tool_calls"):
+            s += 1000
     return s
