@@ -138,13 +138,15 @@ class RateLimiter:
     def set_last_request(self, model: str, last_request: float):
         # I don't think we have to handle OpenRouter separately,
         # since they're all assigned to self.OPENROUTER_LIMITER anyway
-        self.stuff[model]["rate_limiter"]["last_request"] = last_request
+        self.OPENROUTER_LIMITER["last_request"] = last_request
+        for _model in self.openrouter_models:
+            assert self.stuff[_model]["rate_limiter"]["last_request"] == last_request
 
 
     # initialize rate limits
     stuff = (
         {
-            model: {"rpm": 4000, "tpm": 4e5}
+            model: {"rpm": 500, "tpm": 4e5}
             for model in [
                 "claude-3-5-sonnet-20241022",
                 "claude-3-5-sonnet-20240620",

@@ -20,7 +20,7 @@ init_exp = Experiment(
         # "localhf://meta-llama/Meta-Llama-3.1-8B",
         "openrouter/gpt-4o-mini-2024-07-18",
     ],
-    protocols=["blind", "propaganda", "debate", "consultancy"],
+    protocols=["propaganda", "debate", "consultancy"], #blind
     bon_ns=[1,4],  # , 8],#, 16, 32],
     write_path=Path(__file__).parent
     / "results"

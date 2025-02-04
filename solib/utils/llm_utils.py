@@ -32,6 +32,7 @@ load_dotenv()
 litellm.add_function_to_prompt = True # add tools to prompt for nonnative models, idk if works though
 litellm.drop_params = True  # make LLM calls ignore extra params
 litellm.cache = Cache(type="disk")
+litellm.set_verbose = True
 
 def format_prompt(
     prompt: str, system_prompt: str = None, words_in_mouth: str = None
