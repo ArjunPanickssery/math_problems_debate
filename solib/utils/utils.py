@@ -12,7 +12,6 @@ import inspect
 import os
 import asyncio
 from tqdm.asyncio import tqdm
-from costly.estimators.llm_api_estimation import LLM_API_Estimation
 
 LOGGER = logging.getLogger(__name__)
 
@@ -241,4 +240,4 @@ def parse_time_interval(interval_str):
 
 
 def estimate_tokens(messages: list[dict[str, str]]):
-    return LLM_API_Estimation.messages_to_input_tokens(messages, "gpt-4o")
+    return sum(len(m["content"]) // 3 for m in messages)
