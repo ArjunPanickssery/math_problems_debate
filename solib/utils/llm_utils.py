@@ -14,6 +14,7 @@ from collections import defaultdict
 from dotenv import load_dotenv
 from pydantic import BaseModel
 from costly import Costlog, costly, CostlyResponse
+from tenacity import retry
 from solib.utils import estimate_tokens
 from solib.utils.globals import *
 from solib.utils.llm_hf_utils import get_hf_llm

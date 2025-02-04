@@ -184,7 +184,7 @@ class RateLimiter:
             for _model in self.openrouter_models:
                 assert self.stuff[_model]["rate_limiter"]["last_request"] == last_request
         else:
-            self.stuff[model]["rate_limiter"]["last_request"] == last_request
+            self.stuff[model]["rate_limiter"]["last_request"] = last_request
 
 
     # initialize rate limits
