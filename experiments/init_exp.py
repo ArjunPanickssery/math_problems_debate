@@ -17,10 +17,10 @@ init_exp = Experiment(
     ],
     agent_toolss=[[], [math_eval]],
     judge_models=[
-        # "localhf://meta-llama/Meta-Llama-3.1-8B",
+        "localhf://meta-llama/Meta-Llama-3.1-8B",
         "openrouter/gpt-4o-mini-2024-07-18",
     ],
-    protocols=["propaganda", "debate", "consultancy"], #blind
+    protocols=["blind", "propaganda", "debate", "consultancy"], #
     bon_ns=[1,4],  # , 8],#, 16, 32],
     write_path=Path(__file__).parent
     / "results"
