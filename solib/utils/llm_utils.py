@@ -76,7 +76,7 @@ async def acompletion_ratelimited(
     and also uses costly.
     """
     rate_limiter = RATE_LIMITER.get(model)
-    max_retries = kwargs.pop("max_retries", 3)
+    max_retries = kwargs.pop("max_retries", 10)
     call_id = uuid.uuid4().hex
     LOGGER.info(
         f"Getting response [async]; params:\n"
@@ -137,7 +137,7 @@ def completion_ratelimited(
     and also uses costly.
     """
     rate_limiter = RATE_LIMITER.get(model)
-    max_retries = kwargs.pop("max_retries", 3)
+    max_retries = kwargs.pop("max_retries", 10)
     call_id = uuid.uuid4().hex
     LOGGER.info(
         f"Getting response [sync]; params:\n"
