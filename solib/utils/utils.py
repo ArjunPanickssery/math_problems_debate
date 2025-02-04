@@ -12,6 +12,7 @@ import inspect
 import os
 import asyncio
 from tqdm.asyncio import tqdm
+from costly.estimators.llm_api_estimation import LLM_API_Estimation
 
 LOGGER = logging.getLogger(__name__)
 
@@ -237,3 +238,5 @@ def parse_time_interval(interval_str):
     }
     
     return number * multipliers[unit]
+
+estimate_tokens: callable = LLM_API_Estimation.messages_to_input_tokens

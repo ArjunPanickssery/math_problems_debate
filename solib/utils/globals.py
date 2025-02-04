@@ -1,6 +1,7 @@
 import logging
 import os
 import asyncio
+import time
 from pydantic import BaseModel
 from dotenv import load_dotenv
 from costly import Costlog
@@ -62,12 +63,14 @@ class RateLimiter:
         self.initialize_semaphores()
         self.override_defaults()
         self.openrouter_calls_without_rate_limit_check: int = 0
+        self.token_usage_window = 60  # 1 minute window for TPM
+        self.token_usage = {}  # Track token usage per model
 
     def initialize_semaphores(self):
-        # each model has its own semaphore, except Openrouter models
         self.OPENROUTER_LIMITER = {
             "semaphore": asyncio.Semaphore(MAX_CONCURRENT_QUERIES),
             "last_request": 0,
+            "token_usage": []  # List of (timestamp, tokens) tuples
         }
         for model in self.stuff:
             if model.startswith("openrouter/"):
@@ -75,8 +78,48 @@ class RateLimiter:
             else:
                 self.stuff[model]["rate_limiter"] = {
                     "semaphore": asyncio.Semaphore(MAX_CONCURRENT_QUERIES),
-                    "last_request": 0
-                }            
+                    "last_request": 0,
+                    "token_usage": []
+                }
+
+    def get_current_token_usage(self, model: str) -> int:
+        now = time.time()
+        window_start = now - self.token_usage_window
+        rate_limiter = self.stuff[model]["rate_limiter"]
+        
+        # Clean old entries and sum current window
+        rate_limiter["token_usage"] = [
+            (ts, tokens) for ts, tokens in rate_limiter["token_usage"] 
+            if ts > window_start
+        ]
+        return sum(tokens for _, tokens in rate_limiter["token_usage"])
+
+    def add_token_usage(self, model: str, tokens: int):
+        now = time.time()
+        if model.startswith("openrouter/"):
+            self.OPENROUTER_LIMITER["token_usage"].append((now, tokens))
+            for _model in self.openrouter_models:
+                assert self.stuff[_model]["rate_limiter"]["token_usage"][-1] == (now, tokens)
+        else:
+            self.stuff[model]["rate_limiter"]["token_usage"].append((now, tokens))
+
+    def wait_for_tpm(self, model: str, tokens: int) -> float:
+        rate_limiter = self.stuff[model]
+        tpm = rate_limiter.get("tpm")
+        if tpm is None:
+            return 0
+
+        current_usage = self.get_current_token_usage(model)
+        if current_usage + tokens > tpm:
+            # Calculate how long to wait for enough tokens to free up
+            oldest_timestamp = min(
+                (ts for ts, _ in rate_limiter["rate_limiter"]["token_usage"]),
+                default=time.time()
+            )
+            wait_time = self.token_usage_window - (time.time() - oldest_timestamp)
+            return max(0, wait_time)
+        return 0
+            
 
     def override_defaults(self):
         # allow setting rate limits in .env, e.g. if you're on a different tier
@@ -136,17 +179,18 @@ class RateLimiter:
         return self.stuff.get(model, None)
     
     def set_last_request(self, model: str, last_request: float):
-        # I don't think we have to handle OpenRouter separately,
-        # since they're all assigned to self.OPENROUTER_LIMITER anyway
-        self.OPENROUTER_LIMITER["last_request"] = last_request
-        for _model in self.openrouter_models:
-            assert self.stuff[_model]["rate_limiter"]["last_request"] == last_request
+        if model.startswith("openrouter/"):
+            self.OPENROUTER_LIMITER["last_request"] = last_request
+            for _model in self.openrouter_models:
+                assert self.stuff[_model]["rate_limiter"]["last_request"] == last_request
+        else:
+            self.stuff[model]["rate_limiter"]["last_request"] == last_request
 
 
     # initialize rate limits
     stuff = (
         {
-            model: {"rpm": 500, "tpm": 4e5}
+            model: {"rpm": 500, "tpm": 3e5} # 4e5 but let's be gentler
             for model in [
                 "claude-3-5-sonnet-20241022",
                 "claude-3-5-sonnet-20240620",
