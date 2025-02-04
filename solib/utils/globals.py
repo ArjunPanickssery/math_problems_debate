@@ -2,12 +2,13 @@ import logging
 import os
 import asyncio
 import time
+from aiolimiter import AsyncLimiter
 from pydantic import BaseModel
 from dotenv import load_dotenv
 from costly import Costlog
 from jinja2 import Environment, FileSystemLoader
 from litellm.types.utils import ModelResponse, Choices, Message
-from solib.utils import coerce, parse_time_interval
+from solib.utils import parse_time_interval, estimate_tokens #, coerce
 from solib.datatypes import Prob
 from costly.simulators.llm_simulator_faker import LLM_Simulator_Faker
 
@@ -60,52 +61,52 @@ TOOL_RESULT_TEMPLATE = jinja_env.get_template("tool_use/tool_result.jinja")
 class RateLimiter:
 
     def __init__(self):
-        self.initialize_semaphores()
+        self.initialize_limiters()
         self.override_defaults()
         self.openrouter_calls_without_rate_limit_check: int = 0
         self.token_usage_window = 60  # 1 minute window for TPM
         self.token_usage = {}  # Track token usage per model
 
-    def initialize_semaphores(self):
-        self.OPENROUTER_LIMITER = {
-            "semaphore": asyncio.Semaphore(MAX_CONCURRENT_QUERIES),
-            "last_request": 0,
-            "token_usage": []  # List of (timestamp, tokens) tuples
-        }
+    def initialize_limiters(self):
+        self.OPENROUTER_LIMITER = AsyncLimiter(500)
+        self.openrouter_token_usage: list[tuple[int, int]] = [] # List of (timestamp, tokens) tuples
+
         for model in self.stuff:
             if model.startswith("openrouter/"):
                 self.stuff[model]["rate_limiter"] = self.OPENROUTER_LIMITER
+                self.stuff[model]["token_usage"] = self.openrouter_token_usage
             else:
-                self.stuff[model]["rate_limiter"] = {
-                    "semaphore": asyncio.Semaphore(MAX_CONCURRENT_QUERIES),
-                    "last_request": 0,
-                    "token_usage": []
-                }
+                self.stuff[model]["rate_limiter"] = AsyncLimiter(self.stuff[model]["rpm"])
 
     def get_current_token_usage(self, model: str) -> int:
+        """Get token usage in the past minute, and clean up old entries"""
+
         now = time.time()
         window_start = now - self.token_usage_window
-        rate_limiter = self.stuff[model]["rate_limiter"]
         
         # Clean old entries and sum current window
-        rate_limiter["token_usage"] = [
-            (ts, tokens) for ts, tokens in rate_limiter["token_usage"] 
+        self.stuff[model]["token_usage"] = [
+            (ts, tokens) for ts, tokens in self.stuff[model]["token_usage"] 
             if ts > window_start
         ]
-        return sum(tokens for _, tokens in rate_limiter["token_usage"])
+        return sum(tokens for _, tokens in self.stuff[model]["token_usage"])
 
     def add_token_usage(self, model: str, tokens: int):
+        """Log token usage for a call."""
+
         now = time.time()
         if model.startswith("openrouter/"):
-            self.OPENROUTER_LIMITER["token_usage"].append((now, tokens))
+            self.openrouter_token_usage.append((now, tokens))
             for _model in self.openrouter_models:
-                assert self.stuff[_model]["rate_limiter"]["token_usage"][-1] == (now, tokens)
+                assert self.stuff[_model]["token_usage"][-1] == (now, tokens)
         else:
-            self.stuff[model]["rate_limiter"]["token_usage"].append((now, tokens))
+            self.stuff[model]["token_usage"].append((now, tokens))
 
     def wait_for_tpm(self, model: str, tokens: int) -> float:
-        rate_limiter = self.stuff[model]
-        tpm = rate_limiter.get("tpm")
+        """Returns how long we need to wait for tpm to free up."""
+
+        rate_limit_info = self.stuff[model]
+        tpm = rate_limit_info.get("tpm")
         if tpm is None:
             return 0
 
@@ -113,23 +114,22 @@ class RateLimiter:
         if current_usage + tokens > tpm:
             # Calculate how long to wait for enough tokens to free up
             oldest_timestamp = min(
-                (ts for ts, _ in rate_limiter["rate_limiter"]["token_usage"]),
+                (ts for ts, _ in rate_limit_info["token_usage"]),
                 default=time.time()
             )
             wait_time = self.token_usage_window - (time.time() - oldest_timestamp)
             return max(0, wait_time)
         return 0
             
-
-    def override_defaults(self):
-        # allow setting rate limits in .env, e.g. if you're on a different tier
-        for model in self.stuff:
-            self.stuff[model]["rpm"] = coerce(
-                os.getenv(f"{model.upper()}_RPM", self.stuff[model].get("rpm", None)), int
-            )
-            self.stuff[model]["tpm"] = coerce(
-                os.getenv(f"{model.upper()}_TPM", self.stuff[model].get("tpm", None)), int
-            )
+    # def override_defaults(self):
+    #     # allow setting rate limits in .env, e.g. if you're on a different tier
+    #     for model in self.stuff:
+    #         self.stuff[model]["rpm"] = coerce(
+    #             os.getenv(f"{model.upper()}_RPM", self.stuff[model].get("rpm", None)), int
+    #         )
+    #         self.stuff[model]["tpm"] = coerce(
+    #             os.getenv(f"{model.upper()}_TPM", self.stuff[model].get("tpm", None)), int
+    #         )
     
     @property
     def openrouter_models(self) -> list[str]:
@@ -148,7 +148,7 @@ class RateLimiter:
             result = response.json()['data']['rate_limit'] # {'requests': 750, 'interval': '10s'}
             num = result['requests']
             denom = parse_time_interval(result['interval'])
-            rpm = min(0.85 * 60 * num / denom, 500)
+            rpm = min(0.85 * 60 * num / denom, 1000)
             checked_openrouter_successfully = True
             
         except Exception as e:
@@ -165,7 +165,10 @@ class RateLimiter:
     
     def get(self, model: str) -> dict:
         """Returns a dict like
-        {"rpm": 4000, "tpm": 4e5, "rate_limiter": {"semaphore": Semaphore(100), "last_request": 50223}}
+        {"rpm": 4000, "tpm": 4e5, "rate_limiter": AsyncLimiter, "token_usage": list[tuple[int, int]]}
+
+        Use this function to get, instead of RateLimiter.stuff[model], to ensure that update_openrouter_ratelimit is
+        regularly called.
         """
         if model.startswith("openrouter/"):
             # check and update OpenRouter rate limit every 100 or so calls
@@ -178,14 +181,35 @@ class RateLimiter:
                 self.openrouter_calls_without_rate_limit_check += 1
         return self.stuff.get(model, None)
     
-    def set_last_request(self, model: str, last_request: float):
-        if model.startswith("openrouter/"):
-            self.OPENROUTER_LIMITER["last_request"] = last_request
-            for _model in self.openrouter_models:
-                assert self.stuff[_model]["rate_limiter"]["last_request"] == last_request
-        else:
-            self.stuff[model]["rate_limiter"]["last_request"] = last_request
+    # def set_last_request(self, model: str, last_request: float):
+    #     if model.startswith("openrouter/"):
+    #         self.OPENROUTER_LIMITER["last_request"] = last_request
+    #         for _model in self.openrouter_models:
+    #             assert self.stuff[_model]["rate_limiter"]["last_request"] == last_request
+    #     else:
+    #         self.stuff[model]["rate_limiter"]["last_request"] = last_request
 
+
+    async def enforce_limits(self, model: str, messages: list[dict[str, str]]):
+        """
+        Enforces RPM, TPM, and max concurrency limits for a given model.
+        """
+        if model not in self.limiters:
+            return
+
+        limiter = self.limiters[model]
+
+        # Enforce RPM limit
+        async with limiter["rpm_limiter"]:
+            # Enforce TPM limit
+            estimated_tokens = estimate_tokens(messages)
+            await self.wait_for_tpm(model, estimated_tokens)
+
+            return
+            # # Enforce max concurrency
+            # async with limiter["max_concurrent"]:
+            #     # Yield control back to the caller
+            #     return
 
     # initialize rate limits
     stuff = (
