@@ -190,7 +190,7 @@ class RateLimiter:
     # initialize rate limits
     stuff = (
         {
-            model: {"rpm": 500, "tpm": 3e5} # 4e5 but let's be gentler
+            model: {"rpm": 500, "tpm": 3e5} # 4e5 but let's be even gentler
             for model in [
                 "claude-3-5-sonnet-20241022",
                 "claude-3-5-sonnet-20240620",

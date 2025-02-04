@@ -239,4 +239,6 @@ def parse_time_interval(interval_str):
     
     return number * multipliers[unit]
 
-estimate_tokens: callable = LLM_API_Estimation.messages_to_input_tokens
+
+def estimate_tokens(messages: list[dict[str, str]]):
+    return LLM_API_Estimation.messages_to_input_tokens(messages, "gpt-4o")
