@@ -148,13 +148,13 @@ class RateLimiter:
             result = response.json()['data']['rate_limit'] # {'requests': 750, 'interval': '10s'}
             num = result['requests']
             denom = parse_time_interval(result['interval'])
-            rpm = 0.85 * 60 * min(num / denom, 500)
+            rpm = min(0.85 * 60 * num / denom, 500)
             checked_openrouter_successfully = True
             
         except Exception as e:
             import traceback
             LOGGER.error(f"Error getting OpenRouter rate limits:\n{e}\n{traceback.format_exc()}")
-            rpm = 600 # play safe until we get real rate limit
+            rpm = 500 # play safe until we get real rate limit
             checked_openrouter_successfully = False
         
         for model in self.openrouter_models:

@@ -11,7 +11,6 @@ import hashlib
 import inspect
 import os
 import asyncio
-from tqdm.asyncio import tqdm
 
 LOGGER = logging.getLogger(__name__)
 
@@ -215,7 +214,7 @@ async def parallelized_call(
         tasks = [call_func(func, d) for d in data]
     else:
         tasks = [func(d) for d in data]
-    return await tqdm.gather(*tasks, disable=not use_tqdm)
+    return await asyncio.gather(*tasks)
 
 def parse_time_interval(interval_str):
     # Extract number and unit using regex
@@ -240,4 +239,8 @@ def parse_time_interval(interval_str):
 
 
 def estimate_tokens(messages: list[dict[str, str]]):
-    return sum(len(m["content"]) // 3 for m in messages)
+    s = 0
+    for m in messages:
+        if m.get("content"):
+            s += len(m["content"]) // 3
+    return s
