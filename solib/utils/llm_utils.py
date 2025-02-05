@@ -1,3 +1,4 @@
+import functools
 import os
 import uuid
 import logging
@@ -65,7 +66,6 @@ def supports_async(model: str) -> bool:
     """Models that support async completion."""
     return not is_local(model)
 
-@retry(stop=stop_after_attempt(7), wait=wait_exponential(multiplier=1, min=2,max=100))
 @costly(**COSTLY_PARAMS)
 async def acompletion_ratelimited(
     model: str,
@@ -78,7 +78,7 @@ async def acompletion_ratelimited(
 
     max_retries = kwargs.pop("max_retries", 10)
     call_id = uuid.uuid4().hex
-    
+
     LOGGER.info(
         f"Getting response [async]; params:\n"
         f"model: {model}\n"
@@ -87,20 +87,17 @@ async def acompletion_ratelimited(
         f"caching: {caching}\n"
         f"call_id: {call_id}\n"
     )
-    
-    if RATE_LIMITER.get(model) is not None:
-        await RATE_LIMITER.enforce_limits(model, messages)
-    else:
-        LOGGER.warning(f"{call_id}: Rate limiter not found for model {model}")
-        
+
+
     LOGGER.info(f"{call_id}: Making request to {model}")
+    acompletion_ = functools.partial(acompletion, max_retries=1, caching=caching, **kwargs)
     try:
-        response = await acompletion(
-            model=model,
+        response = await RATE_LIMITER.call(
+            model_id=model,
             messages=messages,
-            max_retries=max_retries,
-            caching=caching,
-            **kwargs,
+            max_attempts=max_retries,
+            call_function=acompletion_,
+            is_valid=lambda x: x is not None,
         )
     except Exception as e:
         LOGGER.error(f"{call_id}: Error in completion: {e}")
@@ -108,10 +105,6 @@ async def acompletion_ratelimited(
         LOGGER.error(f"Context: {call_id=}")
         raise e
     LOGGER.debug(f"{call_id}: Response from {model}: {response}")
-
-    if RATE_LIMITER.get(model) is not None:
-        total_tokens = response.usage.prompt_tokens + response.usage.completion_tokens
-        RATE_LIMITER.add_token_usage(model, total_tokens)
 
     return CostlyResponse(
         output=response,
@@ -121,7 +114,6 @@ async def acompletion_ratelimited(
         },
     )
 
-@retry(stop=stop_after_attempt(7), wait=wait_exponential(multiplier=1, min=2,max=100))
 @costly(**COSTLY_PARAMS)
 def completion_ratelimited(
     model: str,
@@ -131,67 +123,68 @@ def completion_ratelimited(
     simulate: bool = SIMULATE,
     **kwargs,
 ) -> "ModelResponse":
-    max_retries = kwargs.pop("max_retries", 10)
-    call_id = uuid.uuid4().hex
-    
-    LOGGER.info(
-        f"Getting response [sync]; params:\n"
-        f"model: {model}\n"
-        f"messages: {messages}\n"
-        f"kwargs: {kwargs}\n"
-        f"caching: {caching}\n"
-        f"call_id: {call_id}\n"
-    )
-    
-    rate_limiter = RATE_LIMITER.get(model)
-    if rate_limiter is None:
-        LOGGER.warning(f"{call_id}: Rate limiter not found for model {model}")
-    else:
-        # Enforce RPM limit
-        now = time.time()
-        elapsed = now - rate_limiter["rate_limiter"]._last_request
-        rpm = rate_limiter["rpm"]
-        if rpm is not None and elapsed < 60 / rpm:
-            wait_time = 60 / rpm - elapsed
-            LOGGER.info(f"{call_id}: Sleeping {wait_time}s for RPM limit")
-            time.sleep(wait_time)
+    raise NotImplementedError("Not implemented")
+    # max_retries = kwargs.pop("max_retries", 10)
+    # call_id = uuid.uuid4().hex
 
-        # Enforce TPM limit
-        estimated_tokens = estimate_tokens(messages)
-        tpm_wait = RATE_LIMITER.wait_for_tpm(model, estimated_tokens)
-        if tpm_wait > 0:
-            LOGGER.info(f"{call_id}: Sleeping {tpm_wait}s for TPM limit")
-            time.sleep(tpm_wait)
+    # LOGGER.info(
+    #     f"Getting response [sync]; params:\n"
+    #     f"model: {model}\n"
+    #     f"messages: {messages}\n"
+    #     f"kwargs: {kwargs}\n"
+    #     f"caching: {caching}\n"
+    #     f"call_id: {call_id}\n"
+    # )
 
-    LOGGER.info(f"{call_id}: Making request to {model}")
+    # rate_limiter = RATE_LIMITER.get(model)
+    # if rate_limiter is None:
+    #     LOGGER.warning(f"{call_id}: Rate limiter not found for model {model}")
+    # else:
+    #     # Enforce RPM limit
+    #     now = time.time()
+    #     elapsed = now - rate_limiter["rate_limiter"]._last_request
+    #     rpm = rate_limiter["rpm"]
+    #     if rpm is not None and elapsed < 60 / rpm:
+    #         wait_time = 60 / rpm - elapsed
+    #         LOGGER.info(f"{call_id}: Sleeping {wait_time}s for RPM limit")
+    #         time.sleep(wait_time)
 
-    try:
-        response = completion(
-            model=model,
-            messages=messages,
-            max_retries=max_retries,
-            caching=caching,
-            **kwargs,
-        )
-    except Exception as e:
-        LOGGER.error(f"{call_id}: Error in completion: {e}")
-        LOGGER.error(traceback.format_exc())
-        LOGGER.error(f"Context: {call_id=}")
-        raise e
-    LOGGER.debug(f"{call_id}: Response from {model}: {response}")
+    #     # Enforce TPM limit
+    #     estimated_tokens = estimate_tokens(messages)
+    #     tpm_wait = RATE_LIMITER.wait_for_tpm(model, estimated_tokens)
+    #     if tpm_wait > 0:
+    #         LOGGER.info(f"{call_id}: Sleeping {tpm_wait}s for TPM limit")
+    #         time.sleep(tpm_wait)
 
-    if rate_limiter is not None:
-        # Update token usage
-        total_tokens = response.usage.prompt_tokens + response.usage.completion_tokens
-        RATE_LIMITER.add_token_usage(model, total_tokens)
+    # LOGGER.info(f"{call_id}: Making request to {model}")
 
-    return CostlyResponse(
-        output=response,
-        cost_info={
-            "input_tokens": response.usage.prompt_tokens,
-            "output_tokens": response.usage.completion_tokens,
-        },
-    )
+    # try:
+    #     response = completion(
+    #         model=model,
+    #         messages=messages,
+    #         max_retries=max_retries,
+    #         caching=caching,
+    #         **kwargs,
+    #     )
+    # except Exception as e:
+    #     LOGGER.error(f"{call_id}: Error in completion: {e}")
+    #     LOGGER.error(traceback.format_exc())
+    #     LOGGER.error(f"Context: {call_id=}")
+    #     raise e
+    # LOGGER.debug(f"{call_id}: Response from {model}: {response}")
+
+    # if rate_limiter is not None:
+    #     # Update token usage
+    #     total_tokens = response.usage.prompt_tokens + response.usage.completion_tokens
+    #     RATE_LIMITER.add_token_usage(model, total_tokens)
+
+    # return CostlyResponse(
+    #     output=response,
+    #     cost_info={
+    #         "input_tokens": response.usage.prompt_tokens,
+    #         "output_tokens": response.usage.completion_tokens,
+    #     },
+    # )
 
 async def acompletion_toolloop(
     model: str, messages: list[dict[str, str]], tools: list[callable], **kwargs
@@ -639,7 +632,7 @@ class LLM_Agent:
                 words_in_mouth=words_in_mouth,
                 max_tokens=kwargs.get("max_tokens", 2048),
             )
-                
+
         return completion_wrapper(
             model=self.model,
             tools=self.tools,
