@@ -101,7 +101,7 @@ async def acompletion_ratelimited(
 
     if model in RATE_LIMITS:
         async with SEMAPHORES[model]:
-            await RATE_LIMITERS[model].acquire()
+            await RATE_LIMITERS[model].acquire(context=call_id)
             async with LOCKS[model]:
                 estimated_tokens = estimate_tokens(messages)
                 while not (REQUEST_CAPACITIES[model].geq(1) and TOKEN_CAPACITIES[model].geq(estimated_tokens)):
@@ -111,7 +111,7 @@ async def acompletion_ratelimited(
             try:
                 response = await make_call()
                 total_tokens = response.usage.prompt_tokens + response.usage.completion_tokens
-                TOKEN_CAPACITIES[model].consume(total_tokens)
+                TOKEN_CAPACITIES[model].consume(total_tokens - estimated_tokens)
             except Exception as e:
                 LOGGER.error(f"{call_id}: Error in completion: {e}")
                 LOGGER.error(traceback.format_exc())

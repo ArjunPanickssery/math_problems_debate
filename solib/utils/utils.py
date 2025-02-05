@@ -247,4 +247,4 @@ def estimate_tokens(messages: list[dict[str, str]]) -> int:
         if m.get("tool_calls"):
             s += 1000
     LOGGER.info(f"{messages=}, {s=}, {foo=}")
-    return max(s, foo)
+    return max(s, foo) + 2048

@@ -87,6 +87,7 @@ RATE_LIMITS = (
         "gemini/gemini-1.5-flash-8b": {"rpm": 4000, "tpm": 4e6},
         "gemini/gemini-2.0-flash-exp": {
             "rpm": 10,
+            "tpm": 1e3,
             "rpd": 1500,
         },  # requests per day is not enforced
     }
@@ -111,7 +112,7 @@ class RateLimiter:
         self.last_refill_time = time.time()
         self.lock = asyncio.Lock()
 
-    async def acquire(self, context: str):
+    async def acquire(self, context: str = None):
         async with self.lock:
             now = time.time()
             time_passed = now - self.last_refill_time
