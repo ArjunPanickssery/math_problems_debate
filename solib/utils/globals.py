@@ -2,6 +2,7 @@ import logging
 import os
 import asyncio
 import time
+import traceback
 from aiolimiter import AsyncLimiter
 from pydantic import BaseModel
 from dotenv import load_dotenv
@@ -109,19 +110,37 @@ class RateLimiter:
 
         rate_limit_info = self.stuff[model]
         tpm = rate_limit_info.get("tpm")
-        if tpm is None:
+        if tpm is None or len(rate_limit_info["token_usage"]) == 0:
             return 0
 
         current_usage = self.get_current_token_usage(model)
         if current_usage + tokens > tpm:
-            # Calculate how long to wait for enough tokens to free up
-            oldest_timestamp = min(
-                (ts for ts, _ in rate_limit_info["token_usage"]),
-                default=time.time()
-            )
-            wait_time = self.token_usage_window - (time.time() - oldest_timestamp)
-            return max(0, wait_time)
-        return 0
+            try:
+                # find the earliest (ts, tokens) tuple such that usage since then + tokens
+                # is less than tpm, and wait until that ts is 1 minute old
+                from itertools import accumulate
+                cum_usages = list(accumulate([tokens for _, tokens in rate_limit_info["token_usage"]]))
+                _usages_since = [current_usage + tokens - cum_usage for cum_usage in cum_usages]
+                _usages_since = list(zip([ts for ts, _ in rate_limit_info["token_usage"]], _usages_since))
+                # find the first usage that is less than tpm
+                earliest_ts = next((ts for ts, usage in _usages_since if usage < tpm), None)
+                if earliest_ts is None:
+                    LOGGER.warning(
+                        f"Single call to {model} exceeds TPM limit. "
+                        "Context: {rate_limit_info['token_usage']}; "
+                        "tokens: {tokens}; tpm: {tpm}"
+                    )
+                    return self.token_usage_window
+                wait_time = self.token_usage_window - (time.time() - earliest_ts)
+                return max(wait_time, 0)
+            except Exception as e:
+                # I don't think there will be an error but IDK just in case
+                LOGGER.error(f"Error waiting for TPM:\n{e}")
+                LOGGER.error(f"{traceback.format_exc()}")
+                LOGGER.error(f"Token usage: {rate_limit_info["token_usage"]}, current usage: {current_usage}, tokens: {tokens}, tpm: {tpm}")
+                return self.token_usage_window
+        else:
+            return 0
             
     # def override_defaults(self):
     #     # allow setting rate limits in .env, e.g. if you're on a different tier

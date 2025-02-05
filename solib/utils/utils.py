@@ -239,11 +239,12 @@ def parse_time_interval(interval_str):
 
 
 def estimate_tokens(messages: list[dict[str, str]]) -> int:
-    # return len(str(messages)) // 4
+    foo = len(str(messages)) // 4
     s = 0
     for m in messages:
         if m.get("content"):
             s += len(m["content"]) // 3
         if m.get("tool_calls"):
             s += 1000
-    return s
+    LOGGER.info(f"{messages=}, {s=}, {foo=}")
+    return max(s, foo)
