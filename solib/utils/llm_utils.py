@@ -15,7 +15,7 @@ from collections import defaultdict
 from dotenv import load_dotenv
 from pydantic import BaseModel
 from costly import Costlog, costly, CostlyResponse
-from tenacity import retry
+from tenacity import retry, stop_after_attempt, wait_exponential
 from solib.utils import estimate_tokens
 from solib.utils.globals import *
 from solib.utils.llm_hf_utils import get_hf_llm
@@ -65,7 +65,7 @@ def supports_async(model: str) -> bool:
     """Models that support async completion."""
     return not is_local(model)
 
-
+@retry(stop=stop_after_attempt(7), wait=wait_exponential(multiplier=1, min=2,max=100))
 @costly(**COSTLY_PARAMS)
 async def acompletion_ratelimited(
     model: str,
@@ -94,13 +94,19 @@ async def acompletion_ratelimited(
         LOGGER.warning(f"{call_id}: Rate limiter not found for model {model}")
         
     LOGGER.info(f"{call_id}: Making request to {model}")
-    response = await acompletion(
-        model=model,
-        messages=messages,
-        max_retries=max_retries,
-        caching=caching,
-        **kwargs,
-    )
+    try:
+        response = await acompletion(
+            model=model,
+            messages=messages,
+            max_retries=max_retries,
+            caching=caching,
+            **kwargs,
+        )
+    except Exception as e:
+        LOGGER.error(f"{call_id}: Error in completion: {e}")
+        LOGGER.error(traceback.format_exc())
+        LOGGER.error(f"Context: {call_id=}")
+        raise e
     LOGGER.debug(f"{call_id}: Response from {model}: {response}")
 
     if RATE_LIMITER.get(model) is not None:
@@ -115,7 +121,7 @@ async def acompletion_ratelimited(
         },
     )
 
-
+@retry(stop=stop_after_attempt(7), wait=wait_exponential(multiplier=1, min=2,max=100))
 @costly(**COSTLY_PARAMS)
 def completion_ratelimited(
     model: str,
@@ -159,13 +165,19 @@ def completion_ratelimited(
 
     LOGGER.info(f"{call_id}: Making request to {model}")
 
-    response = completion(
-        model=model,
-        messages=messages,
-        max_retries=max_retries,
-        caching=caching,
-        **kwargs,
-    )
+    try:
+        response = completion(
+            model=model,
+            messages=messages,
+            max_retries=max_retries,
+            caching=caching,
+            **kwargs,
+        )
+    except Exception as e:
+        LOGGER.error(f"{call_id}: Error in completion: {e}")
+        LOGGER.error(traceback.format_exc())
+        LOGGER.error(f"Context: {call_id=}")
+        raise e
     LOGGER.debug(f"{call_id}: Response from {model}: {response}")
 
     if rate_limiter is not None:
