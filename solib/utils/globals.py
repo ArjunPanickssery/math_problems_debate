@@ -100,7 +100,8 @@ class RateLimiter:
         if model.startswith("openrouter/"):
             self.openrouter_token_usage.append((now, tokens))
             for _model in self.openrouter_models:
-                assert self.stuff[_model]["token_usage"][-1] == (now, tokens)
+                token_usage = self.stuff[_model]["token_usage"]
+                assert len(token_usage) == 0 or token_usage[-1] == (now, tokens)
         else:
             self.stuff[model]["token_usage"].append((now, tokens))
 
