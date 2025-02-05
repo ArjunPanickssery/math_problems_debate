@@ -62,21 +62,23 @@ class RateLimiter:
 
     def __init__(self):
         self.initialize_limiters()
-        self.override_defaults()
         self.openrouter_calls_without_rate_limit_check: int = 0
         self.token_usage_window = 60  # 1 minute window for TPM
-        self.token_usage = {}  # Track token usage per model
 
     def initialize_limiters(self):
-        self.OPENROUTER_LIMITER = AsyncLimiter(500)
+        self.OPENROUTER_LIMITER = AsyncLimiter(500) # will be updated later
         self.openrouter_token_usage: list[tuple[int, int]] = [] # List of (timestamp, tokens) tuples
+        self.OPENROUTER_SEMAPHORE = asyncio.Semaphore(MAX_CONCURRENT_QUERIES)
 
         for model in self.stuff:
             if model.startswith("openrouter/"):
                 self.stuff[model]["rate_limiter"] = self.OPENROUTER_LIMITER
                 self.stuff[model]["token_usage"] = self.openrouter_token_usage
+                self.stuff[model]["semaphore"] = self.OPENROUTER_SEMAPHORE
             else:
                 self.stuff[model]["rate_limiter"] = AsyncLimiter(self.stuff[model]["rpm"])
+                self.stuff[model]["token_usage"] = []
+                self.stuff[model]["semaphore"] = asyncio.Semaphore(MAX_CONCURRENT_QUERIES)
 
     def get_current_token_usage(self, model: str) -> int:
         """Get token usage in the past minute, and clean up old entries"""
@@ -194,22 +196,22 @@ class RateLimiter:
         """
         Enforces RPM, TPM, and max concurrency limits for a given model.
         """
-        if model not in self.limiters:
+        if model not in self.stuff:
             return
 
-        limiter = self.limiters[model]
+        limiter = self.stuff[model]
 
         # Enforce RPM limit
-        async with limiter["rpm_limiter"]:
+        async with limiter["rate_limiter"]:
             # Enforce TPM limit
             estimated_tokens = estimate_tokens(messages)
-            await self.wait_for_tpm(model, estimated_tokens)
+            tpm_wait = self.wait_for_tpm(model, estimated_tokens)
+            await asyncio.sleep(tpm_wait)
 
-            return
-            # # Enforce max concurrency
-            # async with limiter["max_concurrent"]:
-            #     # Yield control back to the caller
-            #     return
+            # Enforce max concurrency
+            async with limiter["semaphore"]:
+                # Yield control back to the caller
+                return
 
     # initialize rate limits
     stuff = (
