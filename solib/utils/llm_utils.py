@@ -67,7 +67,7 @@ def supports_async(model: str) -> bool:
 
 # @retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=4, max=100))
 @costly(**COSTLY_PARAMS)
-async def acompletion_ratelimited(
+async def acompletion_costlogged(
     model: str,
     messages: list[dict[str, str]],
     caching: bool = CACHING,
@@ -87,38 +87,16 @@ async def acompletion_ratelimited(
         f"caching: {caching}\n"
         f"call_id: {call_id}\n"
     )
-    async def make_call():
-        LOGGER.info(f"{call_id}: Making request to {model}")
-        response = await acompletion(
-            model=model,
-            messages=messages,
-            max_retries=max_retries,
-            caching=caching,
-            **kwargs,
-        )
-        LOGGER.debug(f"{call_id}: Response from {model}: {response}")
-        return response
 
-    if model in RATE_LIMITS:
-        async with SEMAPHORES[model]:
-            await RATE_LIMITERS[model].acquire(context=call_id)
-            async with LOCKS[model]:
-                estimated_tokens = estimate_tokens(messages)
-                while not (REQUEST_CAPACITIES[model].geq(1) and TOKEN_CAPACITIES[model].geq(estimated_tokens)):
-                    await asyncio.sleep(0.01)
-                REQUEST_CAPACITIES[model].consume(1)
-                TOKEN_CAPACITIES[model].consume(estimated_tokens)
-            try:
-                response = await make_call()
-                total_tokens = response.usage.prompt_tokens + response.usage.completion_tokens
-                TOKEN_CAPACITIES[model].consume(total_tokens - estimated_tokens)
-            except Exception as e:
-                LOGGER.error(f"{call_id}: Error in completion: {e}")
-                LOGGER.error(traceback.format_exc())
-                LOGGER.error(f"Context: {call_id=}")
-                raise e
-    else:
-        response = await make_call()
+    LOGGER.info(f"{call_id}: Making request to {model}")
+    response = await acompletion(
+        model=model,
+        messages=messages,
+        max_retries=max_retries,
+        caching=caching,
+        **kwargs,
+    )
+    LOGGER.debug(f"{call_id}: Response from {model}: {response}")
 
     return CostlyResponse(
         output=response,
@@ -127,6 +105,51 @@ async def acompletion_ratelimited(
             "output_tokens": response.usage.completion_tokens,
         },
     )
+
+
+async def acompletion_ratelimited(
+    model: str,
+    messages: list[dict[str, str]],
+    should_estimate_tokens: bool = True,
+    **kwargs,
+) -> "ModelResponse":
+    """
+    Rate-limited version of acompletion_costlogged that respects both RPM and TPM limits.
+    
+    Args:
+        model: The model to use for completion
+        messages: List of messages for the completion
+        estimate_tokens: Whether to estimate tokens before making the request
+        **kwargs: Additional arguments to pass to acompletion_costlogged
+    """
+    # If enabled, estimate tokens before making the request
+    input_tokens = None
+    output_tokens = None
+    
+    if should_estimate_tokens:
+        input_tokens = estimate_tokens(messages)
+        output_tokens = kwargs.get("max_tokens", 2048)  # use max_tokens as estimate
+        
+        await RATE_LIMITER.acquire_rate_limit(model, input_tokens, output_tokens)
+    else:
+        await RATE_LIMITER.acquire_rate_limit(model)
+
+    try:
+        response = await acompletion_costlogged(
+            model=model,
+            messages=messages,
+            **kwargs,
+        )
+        
+        # If we didn't estimate tokens, acquire token limit based on actual usage
+        if not should_estimate_tokens:
+            actual_input = response.cost_info["input_tokens"]
+            actual_output = response.cost_info["output_tokens"]
+            await RATE_LIMITER.acquire_rate_limit(model, actual_input, actual_output)
+            
+        return response
+    finally:
+        RATE_LIMITER.release_request_limit(model)
 
 @retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=4,max=100))
 @costly(**COSTLY_PARAMS)

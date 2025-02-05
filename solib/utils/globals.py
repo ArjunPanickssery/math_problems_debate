@@ -3,6 +3,7 @@ import os
 import asyncio
 import time
 import traceback
+from dataclasses import dataclass
 from aiolimiter import AsyncLimiter
 from pydantic import BaseModel
 from dotenv import load_dotenv
@@ -97,87 +98,73 @@ RATE_LIMITS = (
         "openrouter/gpt-4o-mini": {"rpm": 500, "tpm": 2e5},
     }
 )
-# | {
-#     "deepseek/deepseek-chat": {"rpm": None, "tpm": None},
-#     "deepseek/deepseek-reasoner": {"rpm": None, "tpm": None},
-# }
+@dataclass
+class TokenBucket:
+    capacity: int  # tokens per minute
+    tokens: float
+    last_update: float
 
-### RateLimiter and Resource from
-### https://github.com/safety-research/safety-tooling
+    def update(self):
+        now = time.time()
+        delta = now - self.last_update
+        self.tokens = min(self.capacity, self.tokens + (delta * self.capacity / 60))
+        self.last_update = now
 
-class RateLimiter:
-    def __init__(self, rpm):
-        self.rpm = rpm
-        self.allowable_requests = rpm
-        self.last_refill_time = time.time()
-        self.lock = asyncio.Lock()
+    async def acquire(self, tokens: int) -> bool:
+        self.update()
+        if self.tokens >= tokens:
+            self.tokens -= tokens
+            return True
+        else:
+            wait_time = (tokens - self.tokens) * 60 / self.capacity
+            await asyncio.sleep(wait_time)
+            self.update()
+            self.tokens -= tokens
+            return True
 
-    async def acquire(self, context: str = None):
-        async with self.lock:
-            now = time.time()
-            time_passed = now - self.last_refill_time
-            self.allowable_requests = min(self.rpm, self.allowable_requests + time_passed * (self.rpm / 60))
-            self.last_refill_time = now
+class ModelRateLimiter:
+    def __init__(self, rate_limits: dict[str, dict[str, int]]):
+        self.rate_limits = rate_limits
+        self.request_semaphores: dict[str, asyncio.Semaphore] = {}
+        self.token_buckets: dict[str, TokenBucket] = {}
+        
+        for model, limits in rate_limits.items():
+            rpm = limits.get("rpm", float("inf"))
+            tpm = limits.get("tpm", float("inf"))
+            
+            # Initialize request rate limiter
+            self.request_semaphores[model] = asyncio.Semaphore(rpm)
+            
+            # Initialize token bucket for TPM limiting
+            self.token_buckets[model] = TokenBucket(
+                capacity=tpm,
+                tokens=tpm,
+                last_update=time.time()
+            )
 
-            if self.allowable_requests < 1:
-                wait_time = (1 - self.allowable_requests) / (self.rpm / 60)
-                LOGGER.info(f"Waiting {wait_time} seconds. Context: {context}")
-                await asyncio.sleep(wait_time)
-                self.allowable_requests = 1
+    async def acquire_rate_limit(
+        self, 
+        model: str, 
+        input_tokens: int | None = None,
+        output_tokens: int | None = None
+    ):
+        if model not in self.rate_limits:
+            return  # No rate limits for this model
+            
+        # Acquire request rate limit
+        await self.request_semaphores[model].acquire()
+        
+        # If token counts are provided, acquire token rate limit
+        if input_tokens is not None and output_tokens is not None:
+            total_tokens = input_tokens + output_tokens
+            await self.token_buckets[model].acquire(total_tokens)
 
-            self.allowable_requests -= 1
+    def release_request_limit(self, model: str):
+        if model in self.request_semaphores:
+            self.request_semaphores[model].release()
 
-
-class Resource:
-    """
-    A resource that is consumed over time and replenished at a constant rate.
-    """
-
-    def __init__(self, refresh_rate, total=0, throughput=0):
-        self.refresh_rate = refresh_rate
-        self.total = total
-        self.throughput = throughput
-        self.last_update_time = time.time()
-        self.start_time = time.time()
-        self.value = self.refresh_rate
-
-    def _replenish(self):
-        """
-        Updates the value of the resource based on the time since the last update.
-        """
-        curr_time = time.time()
-        self.value = min(
-            self.refresh_rate,
-            self.value + (curr_time - self.last_update_time) * self.refresh_rate / 60,
-        )
-        self.last_update_time = curr_time
-        self.throughput = self.total / (curr_time - self.start_time) * 60
-
-    def geq(self, amount: float) -> bool:
-        self._replenish()
-        return self.value >= amount
-
-    def consume(self, amount: float):
-        """
-        Consumes the given amount of the resource.
-        """
-        assert self.geq(amount), f"Resource does not have enough capacity to consume {amount} units"
-        self.value -= amount
-        self.total += amount
-
-RATE_LIMITERS = {}
-SEMAPHORES = {}
-LOCKS = {}
-REQUEST_CAPACITIES = {}
-TOKEN_CAPACITIES = {}
-
-for model, rate_limit in RATE_LIMITS.items():
-    RATE_LIMITERS[model] = RateLimiter(rate_limit["rpm"])
-    SEMAPHORES[model] = asyncio.Semaphore(MAX_CONCURRENT_QUERIES)
-    LOCKS[model] = asyncio.Lock()
-    REQUEST_CAPACITIES[model] = Resource(rate_limit["rpm"])
-    TOKEN_CAPACITIES[model] = Resource(rate_limit["tpm"])
-
+# Global rate limiter instance
+RATE_LIMITER = ModelRateLimiter(RATE_LIMITS)
 
 
 class LLM_Simulator(LLM_Simulator_Faker):
