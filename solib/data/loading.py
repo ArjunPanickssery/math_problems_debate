@@ -120,15 +120,15 @@ class GSM8K(Dataset):
         return question, answer_correct, answer_incorrect
 
     @classmethod
-    def data(cls, user_seed=0, limit=None):
-        train_path = osp.join(file_path(), "math", "train.json")
+    def data(cls, user_seed=0, limit=None, path=None):
+        train_path = path if path else osp.join(file_path(), "math", "train.json")
         inst = cls()
         inst.from_json(train_path, user_seed=user_seed, limit=limit)
         return inst
 
     @classmethod
-    def test_data(cls, user_seed=0, limit=None):
-        test_path = osp.join(file_path(), "math", "test.json")
+    def test_data(cls, user_seed=0, limit=None, path=None):
+        test_path = path if path else osp.join(file_path(), "math", "test.json")
         inst = cls()
         inst.from_json(test_path, user_seed=user_seed, limit=limit)
         return inst

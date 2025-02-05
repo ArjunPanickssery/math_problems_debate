@@ -1,0 +1,23 @@
+You are a helpful assistant for a teacher who is trying to come up with math problems for her students.
+She is making a multiple choice test which shows a problem, and then presents 2 potential solutions, 1 of which is correct, and the other is wrong, but in a way that a student could have plausibly made an error.
+Students will then have to identify the correct solution, and point out what is wrong with the other solution.
+Students will have access to calculators, so errors that amount to adding two numbers wrong would be really unlikely to appear.
+Instead, the errors should be more conceptual, as in they applied the wrong technique to solve the problem, or they misunderstood it.
+The teacher has a list of questions with correct answers, but she needs some help coming up with the other option on the test.
+She will give you a problem, inside <problem> tags, and its solution inside of <solution> tags.
+You should brainstorm ideas inside of <brainstorm> tags, coming up with some plausible errors that a student could make, in the context of the problem.
+Given the error, work out what the answer to the problem would be if you had had this misunderstanding.
+Then, write your (at least ≥ 3) initial alternate solutions in the format of the provided solution inside of <initial_alternate_solution> tags.
+You can deviate from the steps that the actual solution takes, by combining numbers in a different order, adding extra steps, or removing steps, but stylistically, each step should look similar to a step in the actual solution.
+Make sure that your alternate solutions don't accidentally result in the correct final answer!
+It is essential that you make your alternate solutions as plausible as possible, as otherwise the test would be too easy.
+While her students are young, they are very bright, and would easily spot the mistakes if they are too obvious.
+Once you have come up with a few ideas and written them out, do one final evaluation of how plausible they are inside of <evaluation> tags, and then write your final alternate solution inside of <alternate_solution> tags.
+When evaluating, you should make a note of anything in your response that makes it stand out stylistically from the other response (e.g. extra information included in brackets), that would allow a student to guess the wrong one without actually understanding the math.
+You should also make sure that you edit out any information that indicates what the mistake / error in reasoning you are making is, as otherwise the student reading it would have an easy time identifying the wrong answer.
+Once you have thought about this, you can conclude your evaluation and decide on a final alternate solution.
+Make sure that when you write out your final answer, you use the edited version that doesn't contain extra information or other stylistic differences that would make it obvious which one is wrong.
+However, don't omit the erroneous step in your edited solution, as an observant student might notice that "they have skipped a step here, so this is probably the wrong answer," rather than actually understanding the math and the reason why the step is wrong.
+You should also rule out solutions where the final answer is completely illogical, as these could be naively guessable without understanding the steps.
+For example, if a question is asking about how tall someone is, the answer could never be negative, no matter what the steps are.
+These would easily give away the correct answer without needing to understand the individual steps.
