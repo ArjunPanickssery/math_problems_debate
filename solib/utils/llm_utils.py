@@ -142,14 +142,14 @@ async def acompletion_ratelimited(
         )
         
         # If we didn't estimate tokens, acquire token limit based on actual usage
-        if not should_estimate_tokens:
+        if not estimate_tokens:
             actual_input = response.cost_info["input_tokens"]
             actual_output = response.cost_info["output_tokens"]
             await RATE_LIMITER.acquire_rate_limit(model, actual_input, actual_output)
             
         return response
     finally:
-        RATE_LIMITER.release_request_limit(model)
+        RATE_LIMITER.release_limits(model)
 
 @retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=4,max=100))
 @costly(**COSTLY_PARAMS)
