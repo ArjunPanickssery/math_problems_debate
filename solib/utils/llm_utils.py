@@ -65,7 +65,7 @@ def supports_async(model: str) -> bool:
     """Models that support async completion."""
     return not is_local(model)
 
-@retry(stop=stop_after_attempt(7), wait=wait_exponential(multiplier=1, min=2,max=100))
+@retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=4, max=100))
 @costly(**COSTLY_PARAMS)
 async def acompletion_ratelimited(
     model: str,
@@ -76,7 +76,7 @@ async def acompletion_ratelimited(
     **kwargs,
 ) -> "ModelResponse":
 
-    max_retries = kwargs.pop("max_retries", 10)
+    max_retries = kwargs.pop("max_retries", 5)
     call_id = uuid.uuid4().hex
     
     LOGGER.info(
@@ -121,7 +121,7 @@ async def acompletion_ratelimited(
         },
     )
 
-@retry(stop=stop_after_attempt(7), wait=wait_exponential(multiplier=1, min=2,max=100))
+@retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=4,max=100))
 @costly(**COSTLY_PARAMS)
 def completion_ratelimited(
     model: str,
@@ -131,7 +131,7 @@ def completion_ratelimited(
     simulate: bool = SIMULATE,
     **kwargs,
 ) -> "ModelResponse":
-    max_retries = kwargs.pop("max_retries", 10)
+    max_retries = kwargs.pop("max_retries", 5)
     call_id = uuid.uuid4().hex
     
     LOGGER.info(

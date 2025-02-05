@@ -62,23 +62,23 @@ class RateLimiter:
 
     def __init__(self):
         self.initialize_limiters()
-        self.openrouter_calls_without_rate_limit_check: int = 0
+        # self.openrouter_calls_without_rate_limit_check: int = 0
         self.token_usage_window = 60  # 1 minute window for TPM
 
     def initialize_limiters(self):
-        self.OPENROUTER_LIMITER = AsyncLimiter(500) # will be updated later
-        self.openrouter_token_usage: list[tuple[int, int]] = [] # List of (timestamp, tokens) tuples
-        self.OPENROUTER_SEMAPHORE = asyncio.Semaphore(MAX_CONCURRENT_QUERIES)
+        # self.OPENROUTER_LIMITER = AsyncLimiter(500) # will be updated later
+        # self.openrouter_token_usage: list[tuple[int, int]] = [] # List of (timestamp, tokens) tuples
+        # self.OPENROUTER_SEMAPHORE = asyncio.Semaphore(MAX_CONCURRENT_QUERIES)
 
         for model in self.stuff:
-            if model.startswith("openrouter/"):
-                self.stuff[model]["rate_limiter"] = self.OPENROUTER_LIMITER
-                self.stuff[model]["token_usage"] = self.openrouter_token_usage
-                self.stuff[model]["semaphore"] = self.OPENROUTER_SEMAPHORE
-            else:
-                self.stuff[model]["rate_limiter"] = AsyncLimiter(self.stuff[model]["rpm"])
-                self.stuff[model]["token_usage"] = []
-                self.stuff[model]["semaphore"] = asyncio.Semaphore(MAX_CONCURRENT_QUERIES)
+            # if model.startswith("openrouter/"):
+            #     self.stuff[model]["rate_limiter"] = self.OPENROUTER_LIMITER
+            #     self.stuff[model]["token_usage"] = self.openrouter_token_usage
+            #     self.stuff[model]["semaphore"] = self.OPENROUTER_SEMAPHORE
+            # else:
+            self.stuff[model]["rate_limiter"] = AsyncLimiter(self.stuff[model]["rpm"])
+            self.stuff[model]["token_usage"] = []
+            self.stuff[model]["semaphore"] = asyncio.Semaphore(MAX_CONCURRENT_QUERIES)
 
     def get_current_token_usage(self, model: str) -> int:
         """Get token usage in the past minute, and clean up old entries"""
@@ -97,12 +97,12 @@ class RateLimiter:
         """Log token usage for a call."""
 
         now = time.time()
-        if model.startswith("openrouter/"):
-            self.openrouter_token_usage.append((now, tokens))
-            for _model in self.openrouter_models:
-                self.stuff[_model]["token_usage"] = self.openrouter_token_usage
-        else:
-            self.stuff[model]["token_usage"].append((now, tokens))
+        # if model.startswith("openrouter/"):
+        #     self.openrouter_token_usage.append((now, tokens))
+        #     for _model in self.openrouter_models:
+        #         self.stuff[_model]["token_usage"] = self.openrouter_token_usage
+        # else:
+        self.stuff[model]["token_usage"].append((now, tokens))
 
     def wait_for_tpm(self, model: str, tokens: int) -> float:
         """Returns how long we need to wait for tpm to free up."""
@@ -133,37 +133,37 @@ class RateLimiter:
     #             os.getenv(f"{model.upper()}_TPM", self.stuff[model].get("tpm", None)), int
     #         )
     
-    @property
-    def openrouter_models(self) -> list[str]:
-        return [model for model in self.stuff if model.startswith("openrouter/")]
+    # @property
+    # def openrouter_models(self) -> list[str]:
+    #     return [model for model in self.stuff if model.startswith("openrouter/")]
 
-    def update_openrouter_ratelimit(self) -> bool:
-        """https://openrouter.ai/docs/limits"""
-        try:
-            import requests
-            url = "https://openrouter.ai/api/v1/auth/key"
-            headers = {
-                "Authorization": f"Bearer {OPENROUTER_API_KEY}"
-            }
+    # def update_openrouter_ratelimit(self) -> bool:
+    #     """https://openrouter.ai/docs/limits"""
+    #     try:
+    #         import requests
+    #         url = "https://openrouter.ai/api/v1/auth/key"
+    #         headers = {
+    #             "Authorization": f"Bearer {OPENROUTER_API_KEY}"
+    #         }
             
-            response = requests.get(url, headers=headers)
-            result = response.json()['data']['rate_limit'] # {'requests': 750, 'interval': '10s'}
-            num = result['requests']
-            denom = parse_time_interval(result['interval'])
-            rpm = min(0.85 * 60 * num / denom, 1000)
-            checked_openrouter_successfully = True
+    #         response = requests.get(url, headers=headers)
+    #         result = response.json()['data']['rate_limit'] # {'requests': 750, 'interval': '10s'}
+    #         num = result['requests']
+    #         denom = parse_time_interval(result['interval'])
+    #         rpm = min(0.85 * 60 * num / denom, 1000)
+    #         checked_openrouter_successfully = True
             
-        except Exception as e:
-            import traceback
-            LOGGER.error(f"Error getting OpenRouter rate limits:\n{e}\n{traceback.format_exc()}")
-            rpm = 500 # play safe until we get real rate limit
-            checked_openrouter_successfully = False
+    #     except Exception as e:
+    #         import traceback
+    #         LOGGER.error(f"Error getting OpenRouter rate limits:\n{e}\n{traceback.format_exc()}")
+    #         rpm = 500 # play safe until we get real rate limit
+    #         checked_openrouter_successfully = False
         
-        for model in self.openrouter_models:
-            LOGGER.info(f"Setting rpm for {model} to {rpm}")
-            self.stuff[model]["rpm"] = rpm
+    #     for model in self.openrouter_models:
+    #         LOGGER.info(f"Setting rpm for {model} to {rpm}")
+    #         self.stuff[model]["rpm"] = rpm
         
-        return checked_openrouter_successfully
+    #     return checked_openrouter_successfully
     
     def get(self, model: str) -> dict:
         """Returns a dict like
@@ -172,15 +172,15 @@ class RateLimiter:
         Use this function to get, instead of RateLimiter.stuff[model], to ensure that update_openrouter_ratelimit is
         regularly called.
         """
-        if model.startswith("openrouter/"):
-            # check and update OpenRouter rate limit every 100 or so calls
-            checked_openrouter_this_turn: bool = False
-            if self.openrouter_calls_without_rate_limit_check > CHECK_OPENROUTER_EVERY:
-                checked_openrouter_this_turn = self.update_openrouter_ratelimit()
-            if checked_openrouter_this_turn:
-                self.openrouter_calls_without_rate_limit_check = 0                
-            else: 
-                self.openrouter_calls_without_rate_limit_check += 1
+        # if model.startswith("openrouter/"):
+        #     # check and update OpenRouter rate limit every 100 or so calls
+        #     checked_openrouter_this_turn: bool = False
+        #     if self.openrouter_calls_without_rate_limit_check > CHECK_OPENROUTER_EVERY:
+        #         checked_openrouter_this_turn = self.update_openrouter_ratelimit()
+        #     if checked_openrouter_this_turn:
+        #         self.openrouter_calls_without_rate_limit_check = 0                
+        #     else: 
+        #         self.openrouter_calls_without_rate_limit_check += 1
         return self.stuff.get(model, None)
     
     # def set_last_request(self, model: str, last_request: float):
@@ -216,7 +216,7 @@ class RateLimiter:
     # initialize rate limits
     stuff = (
         {
-            model: {"rpm": 500, "tpm": 3e5} # 4e5 but let's be even gentler
+            model: {"rpm": 500, "tpm": 8e4} # 4e5 but let's be even gentler
             for model in [
                 "claude-3-5-sonnet-20241022",
                 "claude-3-5-sonnet-20240620",
