@@ -245,8 +245,8 @@ class RateLimiter:
             },  # requests per day is not enforced
         }
         | {
-            "openrouter/deepseek/deepseek-chat": {"rpm": 500}, # in general 60*($$ in your OpenRouter account)
-            "openrouter/gpt-4o-mini-2024-07-18": {"rpm": 500},
+            "openrouter/deepseek/deepseek-chat": {"rpm": 500, "tpm": 2e5},
+            "openrouter/gpt-4o-mini-2024-07-18": {"rpm": 500, "tpm": 2e5},
             "openrouter/gpt-4o-mini": {"rpm": 500},
         }
     )
