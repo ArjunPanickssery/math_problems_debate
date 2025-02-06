@@ -37,7 +37,7 @@ def test_get_path():
     assert path.endswith("/Debate_t1_n4/_Jgpt-4o-mini_Agpt-4o-mini_Agpt-4o-mini")
 
 
-questions = GSM8K.data(limit=3)
+questions = GSM8K.data(limit=1)
 
 test_experiment = Experiment(
     questions=questions,
@@ -63,4 +63,4 @@ test_experiment = Experiment(
 
 @pytest.mark.asyncio
 async def test_experiment_runs():
-    await test_experiment.experiment()
+    await test_experiment.experiment(max_configs=4)

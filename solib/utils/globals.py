@@ -61,8 +61,9 @@ TOOL_RESULT_TEMPLATE = jinja_env.get_template("tool_use/tool_result.jinja")
 #     "deepseek/deepseek-reasoner": {"rpm": None, "tpm": None},
 # }
 
-# RATE_LIMITER = RateLimiter() 
+# RATE_LIMITER = RateLimiter()
 # ^initialized in solib.utils.rate_limits.rate_limits instead to avoid circular import
+
 
 class LLM_Simulator(LLM_Simulator_Faker):
     @classmethod

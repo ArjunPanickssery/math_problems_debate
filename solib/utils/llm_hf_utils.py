@@ -1,5 +1,6 @@
 import functools
 import logging
+
 # from typing import TYPE_CHECKING
 import torch
 from solib.utils.globals import HF_TOKEN
@@ -7,18 +8,21 @@ from transformers import AutoTokenizer
 
 LOGGER = logging.getLogger(__name__)
 
+
 @functools.cache
 def load_hf_model(model: str, hf_quantization_config=True):
 
     has_cuda = torch.cuda.is_available()
-    LOGGER.info(f"Loading Hugging Face model (has_cuda={has_cuda})", model, hf_quantization_config)
-
+    LOGGER.info(
+        f"Loading Hugging Face model (has_cuda={has_cuda}, model={model}, "
+        f"hf_quantization_config={hf_quantization_config})"
+    )
 
     from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
 
     quant_config = (
-        BitsAndBytesConfig(load_in_8bit=True) 
-        if has_cuda and hf_quantization_config 
+        BitsAndBytesConfig(load_in_8bit=True)
+        if has_cuda and hf_quantization_config
         else None
     )
 
@@ -33,6 +37,7 @@ def load_hf_model(model: str, hf_quantization_config=True):
     )
 
     return (tokenizer, model)
+
 
 def get_input_string(
     prompt: str = None,
@@ -70,7 +75,7 @@ def get_input_string(
             messages = []
             if system_message is not None:
                 messages.append({"role": "system", "content": system_message})
-                
+
             messages.append({"role": "user", "content": prompt})
 
         # if tools:
@@ -104,22 +109,12 @@ def get_input_string(
 
     return input_string
 
+
 def get_hf_llm(model: str, hf_quantization_config=True):
 
     client = load_hf_model(model, hf_quantization_config)
     tokenizer, model = client
 
-    # @costly(
-    #     simulator=LLM_Simulator.simulate_llm_call,
-    #     messages=lambda kwargs: format_prompt(
-    #         prompt=kwargs.get("prompt"),
-    #         messages=kwargs.get("messages"),
-    #         input_string=kwargs.get("input_string"),
-    #         system_message=kwargs.get("system_message"),
-    #         msg_type=msg_type,
-    #     )["messages"],
-    #     disable_costly=DISABLE_COSTLY,
-    # )
     def generate(
         prompt: str = None,
         messages: list[dict[str, str]] = None,
@@ -167,17 +162,6 @@ def get_hf_llm(model: str, hf_quantization_config=True):
         decoded = tokenizer.decode(output[input_length:], skip_special_tokens=True)
         return decoded
 
-    # @costly(
-    #     simulator=LLM_Simulator.simulate_llm_call,
-    #     messages=lambda kwargs: format_prompt(
-    #         prompt=kwargs.get("prompt"),
-    #         messages=kwargs.get("messages"),
-    #         input_string=kwargs.get("input_string"),
-    #         system_message=kwargs.get("system_message"),
-    #         msg_type=msg_type,
-    #     )["messages"],
-    #     disable_costly=DISABLE_COSTLY,
-    # )
     def return_probs(
         return_probs_for: list[str],
         prompt: str = None,
@@ -196,9 +180,7 @@ def get_hf_llm(model: str, hf_quantization_config=True):
             words_in_mouth=words_in_mouth,
             # msg_type=msg_type,
         )
-        input_ids = tokenizer.encode(
-            input_string, return_tensors="pt"
-        ).to(model.device)
+        input_ids = tokenizer.encode(input_string, return_tensors="pt").to(model.device)
         output = model(input_ids).logits[0, -1, :]
         output_probs = output.softmax(dim=0)
         probs = {token: 0 for token in return_probs_for}
