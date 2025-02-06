@@ -253,13 +253,14 @@ DEFAULT_RATES = (
         "gemini/gemini-1.5-flash": {"rpm": 2000, "tpm": 4e6},
         "gemini/gemini-1.5-flash-8b": {"rpm": 4000, "tpm": 4e6},
         "gemini/gemini-2.0-flash-exp": {
-            "rpm": 10,
-            "rpd": 1500,
-        },  # requests per day is not enforced
+            "rpm": 15,
+            # "rpd": 1500,   # requests per day is not enforced
+            "tpm": 1_000_000,
+        },
     }
     | {
         "openrouter/deepseek/deepseek-chat": {"rpm": 500, "tpm": 2e5},
-        "openrouter/gpt-4o-mini-2024-07-18": {"rpm": 500, "tpm": 2e5},
-        "openrouter/gpt-4o-mini": {"rpm": 500},
+        "openrouter/gpt-4o-mini-2024-07-18": {"rpm": 500, "tpm": 200_000},
+        "openrouter/gpt-4o-mini": {"rpm": 500, "tpm": 200_000},
     }
 )

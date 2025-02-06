@@ -74,6 +74,10 @@ def supports_async(model: str) -> bool:
 
 def supports_tool_use(model: str) -> bool:
     """Returns whether a model supports tool use based on its name."""
+    # Local models don't support tools
+    if is_local(model) or is_localhf(model):
+        return False
+
     # Claude models support tools
     if "claude" in model.lower():
         return True
@@ -81,10 +85,6 @@ def supports_tool_use(model: str) -> bool:
     # OpenAI models generally support tools
     if any(x in model.lower() for x in ["gpt-4", "gpt-3.5"]):
         return True
-
-    # Local models don't support tools
-    if is_local(model):
-        return False
 
     # Specific model checks
     model_lower = model.lower()
@@ -103,8 +103,8 @@ def supports_tool_use(model: str) -> bool:
 
 def supports_response_models(model: str) -> bool:
     """Returns whether a model supports response models based on its name."""
-    # Deepseek and local HF models don't support response models
-    if "deepseek" in model.lower() or is_localhf(model):
+    # Local HF models and Deepseek don't support response models
+    if is_localhf(model) or "deepseek" in model.lower():
         return False
 
     return True
@@ -416,16 +416,25 @@ class LLM_Agent:
         words_in_mouth: str = None,
         **kwargs,
     ):
-        return await acompletion_wrapper(
-            model=self.model,
-            tools=self.tools,
-            response_format=response_model,
-            prompt=prompt,
-            messages=messages,
-            system_prompt=system_prompt,
-            words_in_mouth=words_in_mouth,
-            **kwargs,
-        )
+        if is_localhf(self.model):
+            return await self.generate_func(
+                prompt=prompt,
+                messages=messages,
+                system_message=system_prompt,
+                words_in_mouth=words_in_mouth,
+                **kwargs,
+            )
+        else:
+            return await acompletion_wrapper(
+                model=self.model,
+                tools=self.tools,
+                response_format=response_model,
+                prompt=prompt,
+                messages=messages,
+                system_prompt=system_prompt,
+                words_in_mouth=words_in_mouth,
+                **kwargs,
+            )
 
     async def get_probs(
         self,
@@ -436,12 +445,22 @@ class LLM_Agent:
         system_prompt: str = None,
         **kwargs,
     ):
-        return await acompletion_wrapper(
-            model=self.model,
-            return_probs_for=return_probs_for,
-            prompt=prompt,
-            messages=messages,
-            system_prompt=system_prompt,
-            words_in_mouth=words_in_mouth,
-            **kwargs,
-        )
+        if is_localhf(self.model):
+            return await self.return_probs_func(
+                return_probs_for=return_probs_for,
+                prompt=prompt,
+                messages=messages,
+                system_message=system_prompt,
+                words_in_mouth=words_in_mouth,
+                **kwargs,
+            )
+        else:
+            return await acompletion_wrapper(
+                model=self.model,
+                return_probs_for=return_probs_for,
+                prompt=prompt,
+                messages=messages,
+                system_prompt=system_prompt,
+                words_in_mouth=words_in_mouth,
+                **kwargs,
+            )
