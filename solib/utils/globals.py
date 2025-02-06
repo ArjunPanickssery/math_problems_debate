@@ -124,12 +124,10 @@ class TokenBucket:
             return True
 
 class ModelRateLimiter:
-    def __init__(self, rate_limits: dict[str, dict[str, int]], max_concurrent_requests: int):
+    def __init__(self, rate_limits: dict[str, dict[str, int]]):
         self.rate_limits = rate_limits
         self.request_semaphores: dict[str, asyncio.Semaphore] = {}
         self.token_buckets: dict[str, TokenBucket] = {}
-        # Global semaphore to limit concurrent connections
-        self.global_semaphore = asyncio.Semaphore(max_concurrent_requests)
         
         for model, limits in rate_limits.items():
             rpm = limits.get("rpm", float("inf"))
@@ -144,6 +142,8 @@ class ModelRateLimiter:
                 tokens=tpm,
                 last_update=time.time()
             )
+            
+            LOGGER.info(f"Initialized rate limits for {model}: RPM={rpm}, TPM={tpm}")
 
     async def acquire_rate_limit(
         self, 
@@ -151,37 +151,28 @@ class ModelRateLimiter:
         input_tokens: int | None = None,
         output_tokens: int | None = None
     ):
-        """Acquire all necessary rate limits"""
-        # First acquire global connection limit
-        await self.global_semaphore.acquire()
+        if model not in self.rate_limits:
+            return  # No rate limits for this model
+            
+        # Acquire request rate limit
+        await self.request_semaphores[model].acquire()
         
         try:
-            if model not in self.rate_limits:
-                return  # No rate limits for this model
-                
-            # Acquire request rate limit
-            await self.request_semaphores[model].acquire()
-            
             # If token counts are provided, acquire token rate limit
             if input_tokens is not None and output_tokens is not None:
                 total_tokens = input_tokens + output_tokens
                 await self.token_buckets[model].acquire(total_tokens)
         except:
-            # If anything fails, release the global semaphore
-            self.global_semaphore.release()
+            # If token acquisition fails, release the request semaphore
+            self.request_semaphores[model].release()
             raise
 
     def release_limits(self, model: str):
-        """Release all acquired limits"""
-        try:
-            if model in self.request_semaphores:
-                self.request_semaphores[model].release()
-        finally:
-            # Always release the global semaphore
-            self.global_semaphore.release()
+        if model in self.request_semaphores:
+            self.request_semaphores[model].release()
 
 # Global rate limiter instance
-RATE_LIMITER = ModelRateLimiter(RATE_LIMITS, MAX_CONCURRENT_QUERIES)
+RATE_LIMITER = ModelRateLimiter(RATE_LIMITS)
 
 class LLM_Simulator(LLM_Simulator_Faker):
     @classmethod
