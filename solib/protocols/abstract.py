@@ -249,7 +249,7 @@ class Protocol:
             assert result.is_grounded
             return result
 
-        results = await parallelized_call(process_question, questions, use_tqdm=True)
+        results = await parallelized_call(process_question, questions)
         stats = Question.compute_stats(results)
 
         write_json(stats, path=write_stats)

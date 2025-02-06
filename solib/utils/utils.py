@@ -12,6 +12,8 @@ import inspect
 import os
 import asyncio
 
+from tqdm.asyncio import tqdm as atqdm
+
 LOGGER = logging.getLogger(__name__)
 
 
@@ -82,7 +84,9 @@ def coerce(val, coercer: callable):
         return None
     return coercer(val)
 
+
 AbstractionError = NotImplementedError("Must be implemented in subclass.")
+
 
 class DefaultDict(dict):
     def __init__(self, key_fn):
@@ -179,7 +183,7 @@ def str_config(config: dict | list[dict]):
 async def parallelized_call(
     func: Coroutine,
     data: list[any],
-    max_concurrent_queries: int = None,
+    max_concurrent_queries: int | None = None,
     use_tqdm: bool = False,
 ) -> list[any]:
     """
@@ -214,27 +218,26 @@ async def parallelized_call(
         tasks = [call_func(func, d) for d in data]
     else:
         tasks = [func(d) for d in data]
-    return await asyncio.gather(*tasks)
+    return await atqdm.gather(*tasks, disable=not use_tqdm)
+
 
 def parse_time_interval(interval_str):
     # Extract number and unit using regex
-    match = re.match(r'(\d+)([smh])', interval_str)
+    match = re.match(r"(\d+)([smh])", interval_str)
     if not match:
-        raise ValueError(f"Unexpected interval format: {interval_str}. Expected format: number followed by s, m, or h")
-    
+        raise ValueError(
+            f"Unexpected interval format: {interval_str}. Expected format: number followed by s, m, or h"
+        )
+
     number, unit = match.groups()
-    if unit not in ['s', 'm', 'h']:
+    if unit not in ["s", "m", "h"]:
         raise ValueError(f"Unexpected time unit: {unit}. Expected s, m, or h")
-    
+
     number = int(number)
-    
+
     # Convert to seconds
-    multipliers = {
-        's': 1,
-        'm': 60,
-        'h': 3600
-    }
-    
+    multipliers = {"s": 1, "m": 60, "h": 3600}
+
     return number * multipliers[unit]
 
 
