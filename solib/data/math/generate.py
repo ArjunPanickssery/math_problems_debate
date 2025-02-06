@@ -37,7 +37,7 @@ async def generate_incorrect_solution(
     question: str,
     solution: str,
     model: str = "claude-3-5-sonnet-20241022",
-    max_retries: int = 3,
+    max_retries: int = 30,
 ) -> Optional[Dict[str, str]]:
     """Generate an incorrect solution for a given math problem."""
 
@@ -64,17 +64,19 @@ async def generate_incorrect_solution(
             # Extract response content
             content = response.choices[0].message.content
 
-            # Try to parse alternate solution
+            # Try to parse alternate solution using rfind to get the last instance
             start_tag = "<alternate_solution>"
             end_tag = "</alternate_solution>"
 
-            start_idx = content.find(start_tag)
-            end_idx = content.find(end_tag)
+            start_idx = content.rfind(start_tag)  # Changed from find to rfind
+            end_idx = content.rfind(end_tag)  # Changed from find to rfind
 
             if start_idx == -1 or end_idx == -1:
                 print(
                     f"Warning: Could not parse solution on attempt {attempt + 1}. Retrying..."
                 )
+                if attempt == max_retries - 1:
+                    print(f"Failed question: {question}")
                 continue
 
             incorrect_solution = content[start_idx + len(start_tag) : end_idx].strip()
@@ -85,6 +87,8 @@ async def generate_incorrect_solution(
                 print(
                     f"Warning: Could not parse numeric answer on attempt {attempt + 1}. Retrying..."
                 )
+                if attempt == max_retries - 1:
+                    print(f"Failed question: {question}")
                 continue
 
             return {
@@ -97,6 +101,7 @@ async def generate_incorrect_solution(
             print(f"Error on attempt {attempt + 1}: {str(e)}")
             if attempt == max_retries - 1:
                 print(f"Failed to generate solution after {max_retries} attempts")
+                print(f"Failed question: {question}")
                 return None
 
 
@@ -162,16 +167,18 @@ async def main():
 
     # Define output paths
     train_output = osp.join("solib/data/math", "train_expanded.json")
+    train_output_full = osp.join("solib/data/math", "train_expanded_full.json")
     test_output = osp.join("solib/data/math", "test_expanded.json")
+    test_output_full = osp.join("solib/data/math", "test_expanded_full.json")
 
     # Load existing expanded datasets if they exist
     existing_train = []
     existing_test = []
-    if osp.exists(train_output):
-        with open(train_output, "r") as f:
+    if osp.exists(train_output_full):
+        with open(train_output_full, "r") as f:
             existing_train = json.load(f)
-    if osp.exists(test_output):
-        with open(test_output, "r") as f:
+    if osp.exists(test_output_full):
+        with open(test_output_full, "r") as f:
             existing_test = json.load(f)
 
     # Create sets of existing questions
@@ -202,20 +209,34 @@ async def main():
         print("\nProcessing remaining test questions...")
         test_results = await process_dataset(remaining_test, test_output)
 
-    # Combine with existing results and save
+    # Function to create compact version without transcripts
+    def create_compact_version(data):
+        return [{k: v for k, v in item.items() if k != "transcript"} for item in data]
+
+    # Combine with existing results and save both versions
     if remaining_train:
+        # Full version with transcripts
         all_train_results = existing_train + train_results
-        print(
-            f"\nSaving {len(all_train_results)} total train results to {train_output}"
-        )
-        with open(train_output, "w") as f:
+        print(f"\nSaving {len(all_train_results)} total train results")
+        with open(train_output_full, "w") as f:
             json.dump(all_train_results, f, indent=2)
 
+        # Compact version without transcripts
+        compact_train_results = create_compact_version(all_train_results)
+        with open(train_output, "w") as f:
+            json.dump(compact_train_results, f, indent=2)
+
     if remaining_test:
+        # Full version with transcripts
         all_test_results = existing_test + test_results
-        print(f"\nSaving {len(all_test_results)} total test results to {test_output}")
-        with open(test_output, "w") as f:
+        print(f"\nSaving {len(all_test_results)} total test results")
+        with open(test_output_full, "w") as f:
             json.dump(all_test_results, f, indent=2)
+
+        # Compact version without transcripts
+        compact_test_results = create_compact_version(all_test_results)
+        with open(test_output, "w") as f:
+            json.dump(compact_test_results, f, indent=2)
 
 
 if __name__ == "__main__":
