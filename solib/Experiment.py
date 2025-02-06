@@ -5,7 +5,12 @@ from pathlib import Path
 from solib.data.loading import Dataset
 from solib.utils import str_config, write_json, dump_config, random
 from solib.utils import parallelized_call
-from solib.utils.llm_utils import SIMULATE, is_local
+from solib.utils.llm_utils import (
+    SIMULATE,
+    is_local,
+    supports_tool_use,
+    supports_response_models,
+)
 from solib.protocols.protocols import (
     Blind,
     Propaganda,
@@ -202,6 +207,8 @@ class Experiment:
             and self._filter_nolocaljap(config)
             and self._filter_noapitot(config)
             and self._filter_nojaps(config)
+            and self._filter_no_unsupported_tools(config)
+            and self._filter_no_unsupported_response_models(config)
         )
 
     @property
@@ -235,7 +242,7 @@ class Experiment:
             raise Exception("Experiment aborted by user.")
         LOGGER.debug(filtered_configs)
         statss = await parallelized_call(
-            run_experiment, filtered_configs, use_tqdm=True, max_concurrent_queries=5
+            run_experiment, filtered_configs, use_tqdm=True
         )
         all_stats = [
             {"config": config, "stats": stats}
@@ -299,6 +306,24 @@ class Experiment:
                 component.model
             ):
                 return False
+        return True
+
+    def _filter_no_unsupported_tools(self, config: dict):
+        """Filter out configs where tools are used with models that don't support them."""
+        for component in config["call_kwargs"].values():
+            if isinstance(component, QA_Agent):
+                if component.tools and not supports_tool_use(component.model):
+                    return False
+        return True
+
+    def _filter_no_unsupported_response_models(self, config: dict):
+        """Filter out configs where response models are used with models that don't support them."""
+        for component in config["call_kwargs"].values():
+            if isinstance(
+                component, (JustAskProbabilitiesJudge, JustAskProbabilityJudge)
+            ):
+                if not supports_response_models(component.model):
+                    return False
         return True
 
     def _get_path_protocol(self, config: dict):

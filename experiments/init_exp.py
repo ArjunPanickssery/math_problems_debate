@@ -6,7 +6,7 @@ from solib.Experiment import Experiment
 from solib.data.loading import GSM8K
 from solib.utils.default_tools import math_eval
 
-questions = GSM8K.data(limit=100)
+questions = GSM8K.data(limit=20)
 
 init_exp = Experiment(
     questions=questions,
@@ -19,8 +19,8 @@ init_exp = Experiment(
     agent_toolss=[[], [math_eval]],
     judge_models=[
         "localhf://meta-llama/Meta-Llama-3.1-8B",
-        # "openrouter/gpt-4o-mini-2024-07-18",
-        "gpt-4o-mini-2024-07-18",
+        "openrouter/gpt-4o-mini-2024-07-18",
+        # "gpt-4o-mini-2024-07-18",
     ],
     protocols=["propaganda", "debate", "consultancy"], # "blind"
     bon_ns=[1,4],  # , 8],#, 16, 32],
@@ -30,4 +30,4 @@ init_exp = Experiment(
 )
 
 
-asyncio.run(init_exp.experiment(max_configs=1))
+asyncio.run(init_exp.experiment(max_configs=None))
