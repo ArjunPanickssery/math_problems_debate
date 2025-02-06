@@ -11,6 +11,7 @@ from solib.utils.llm_utils import (
     render_tool_call_result,
     LLM_Agent
 )
+from solib.utils.rate_limits.rate_limits import RATE_LIMITER
 from solib.datatypes import Prob
 from solib.utils.default_tools import math_eval
 from pydantic import BaseModel, Field

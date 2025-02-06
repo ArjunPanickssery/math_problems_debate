@@ -20,6 +20,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 from solib.utils import estimate_tokens
 from solib.utils.globals import *
 from solib.utils.llm_hf_utils import get_hf_llm
+from solib.utils.rate_limits.rate_limits import RATE_LIMITER
 
 if TYPE_CHECKING:
     from litellm.types.utils import (

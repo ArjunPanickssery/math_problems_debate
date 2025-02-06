@@ -1,12 +1,15 @@
 import asyncio
 import logging
 import time
+import requests
 from traceback import format_exc
 from typing import Callable
 
 import tiktoken
 
+from solib.utils.globals import OPENROUTER_API_KEY
 from solib.utils.rate_limits.rate_limit_utils import DEFAULT_RATES
+from solib.utils.utils import parse_time_interval
 
 LOGGER = logging.getLogger(__name__)
 
@@ -68,6 +71,13 @@ class RateLimiter:
     def count_tokens(self, text: str) -> int:
         return len(self.tokenizer.encode(text))
 
+    def update_openrouter_ratelimit(self, model_id: str):
+        resp = requests.get("https://openrouter.ai/api/v1/auth/key", headers={"Authorization": f"Bearer {OPENROUTER_API_KEY}"})
+        resp_ = resp.json()['data']['rate_limit']
+        rl = resp_['requests'] / parse_time_interval(resp_['interval'])
+        tl = 1e5 # meh
+        return tl, rl
+
     async def add_model_id(self, model_id: str):
         if model_id in self.model_ids:
             return
@@ -107,7 +117,10 @@ class RateLimiter:
         num_tokens = 0
         for message in messages:
             num_tokens += 1
-            num_tokens += len(message["content"]) / 4
+            if message.get("content"):
+                num_tokens += len(message["content"]) / 4
+            else: # tool call
+                num_tokens += 2000
 
         return max(
             MIN_NUM_TOKENS,
@@ -171,3 +184,5 @@ class RateLimiter:
             )
 
         return response
+
+RATE_LIMITER = RateLimiter() # initialize here instead of in solib.utils.globals to avoid circular import

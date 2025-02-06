@@ -8,7 +8,7 @@ from litellm.types.utils import ModelResponse, Choices, Message
 from solib.datatypes import Prob
 from costly.simulators.llm_simulator_faker import LLM_Simulator_Faker
 
-from solib.utils.rate_limits.rate_limits import RateLimiter
+# from solib.utils.rate_limits.rate_limits import RateLimiter
 
 LOGGER = logging.getLogger(__name__)
 
@@ -61,8 +61,8 @@ TOOL_RESULT_TEMPLATE = jinja_env.get_template("tool_use/tool_result.jinja")
 #     "deepseek/deepseek-reasoner": {"rpm": None, "tpm": None},
 # }
 
-RATE_LIMITER = RateLimiter()
-
+# RATE_LIMITER = RateLimiter() 
+# ^initialized in solib.utils.rate_limits.rate_limits instead to avoid circular import
 
 class LLM_Simulator(LLM_Simulator_Faker):
     @classmethod
