@@ -121,14 +121,14 @@ class GSM8K(Dataset):
 
     @classmethod
     def data(cls, user_seed=0, limit=None, path=None):
-        train_path = path if path else osp.join(file_path(), "math", "train.json")
+        train_path = path if path else osp.join(file_path(), "math", "train_expanded.json")
         inst = cls()
         inst.from_json(train_path, user_seed=user_seed, limit=limit)
         return inst
 
     @classmethod
     def test_data(cls, user_seed=0, limit=None, path=None):
-        test_path = path if path else osp.join(file_path(), "math", "test.json")
+        test_path = path if path else osp.join(file_path(), "math", "test_expanded.json")
         inst = cls()
         inst.from_json(test_path, user_seed=user_seed, limit=limit)
         return inst

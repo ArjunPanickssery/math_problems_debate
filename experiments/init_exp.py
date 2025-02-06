@@ -13,12 +13,14 @@ init_exp = Experiment(
     agent_models=[
         "claude-3-5-sonnet-20241022",
         "claude-3-5-haiku-20241022",
+        "claude-3-opus-20240229",
         "openrouter/deepseek/deepseek-chat" # "ollama_chat/deepseek-v3"
     ],
     agent_toolss=[[], [math_eval]],
     judge_models=[
-        # "localhf://meta-llama/Meta-Llama-3.1-8B",
-        "openrouter/gpt-4o-mini-2024-07-18",
+        "localhf://meta-llama/Meta-Llama-3.1-8B",
+        # "openrouter/gpt-4o-mini-2024-07-18",
+        "gpt-4o-mini-2024-07-18",
     ],
     protocols=["propaganda", "debate", "consultancy"], # "blind"
     bon_ns=[1,4],  # , 8],#, 16, 32],
@@ -28,4 +30,4 @@ init_exp = Experiment(
 )
 
 
-asyncio.run(init_exp.experiment(max_configs=None))
+asyncio.run(init_exp.experiment(max_configs=1))
