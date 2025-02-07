@@ -5,7 +5,7 @@ import asyncio
 from typing import Dict, List, Optional
 import jinja2
 from solib.data.loading import GSM8K
-from solib.data.loading import Question
+from solib.datatypes import Question
 from solib.utils.llm_utils import acompletion_ratelimited
 from tqdm import tqdm
 

@@ -10,7 +10,7 @@ import glob
 import re
 
 
-from solib.datatypes import Question, Answer
+from solib.datatypes import Answer, Question
 from solib.utils import random
 
 LOGGER = logging.getLogger(__name__)
@@ -112,23 +112,27 @@ class GSM8K(Dataset):
             data_item["answer_incorrect"],
         )
         if not isinstance(answer_correct, str):
-            answer_correct = f"{answer_correct['numeric']}\n{answer_correct['proof']}"
+            answer_correct = f"{answer_correct['proof']}"
         if not isinstance(answer_incorrect, str):
             answer_incorrect = (
-                f"{answer_incorrect['numeric']}\n{answer_incorrect['proof']}"
+                f"{answer_incorrect['proof']}"
             )
         return question, answer_correct, answer_incorrect
 
     @classmethod
     def data(cls, user_seed=0, limit=None, path=None):
-        train_path = path if path else osp.join(file_path(), "math", "train_expanded.json")
+        train_path = (
+            path if path else osp.join(file_path(), "math", "train_expanded.json")
+        )
         inst = cls()
         inst.from_json(train_path, user_seed=user_seed, limit=limit)
         return inst
 
     @classmethod
     def test_data(cls, user_seed=0, limit=None, path=None):
-        test_path = path if path else osp.join(file_path(), "math", "test_expanded.json")
+        test_path = (
+            path if path else osp.join(file_path(), "math", "test_expanded.json")
+        )
         inst = cls()
         inst.from_json(test_path, user_seed=user_seed, limit=limit)
         return inst
