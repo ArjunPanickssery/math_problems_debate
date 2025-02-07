@@ -4,15 +4,17 @@ import logging
 import traceback
 import json
 import math
+from costly.simulators.llm_simulator_faker import LLM_Simulator_Faker
 import litellm
 from litellm import acompletion
-from litellm.types.utils import ModelResponse
+from litellm.types.utils import Choices, Message, ModelResponse
 from litellm.caching.caching import Cache
 from typing import Any, TYPE_CHECKING
 from collections import defaultdict
 from dotenv import load_dotenv
 from pydantic import BaseModel
 from costly import Costlog, costly, CostlyResponse
+from solib.datatypes import Prob
 from solib.utils.globals import *
 from solib.utils.llm_hf_utils import get_hf_llm
 from solib.utils.rate_limits.rate_limits import RATE_LIMITER
@@ -35,19 +37,6 @@ litellm.add_function_to_prompt = (
 litellm.drop_params = True  # make LLM calls ignore extra params
 litellm.cache = Cache(type="disk")
 # litellm.set_verbose = True
-
-
-def format_prompt(
-    prompt: str, system_prompt: str = None, words_in_mouth: str = None
-) -> list[dict[str, str]]:
-    system_prompt = system_prompt or "You are a helpful assistant."
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": prompt},
-    ]
-    if words_in_mouth:  # litellm assistant prefill
-        messages.append({"role": "assistant", "content": words_in_mouth})
-    return messages
 
 
 def is_local(model: str) -> bool:
@@ -239,7 +228,7 @@ async def acompletion_toolloop(
             LOGGER.info(
                 f"Tool loop {toolloop_id} terminated with {i} tool call iterations."
             )
-            print(f"messages: {messages}")
+            # print(f"messages: {messages}")
             return messages[start_len:]
 
 
@@ -291,10 +280,8 @@ async def acompletion_wrapper(
     tools: list[callable] | None = None,
     response_format: BaseModel | None = None,
     return_probs_for: list[str] | None = None,
-    prompt: str | None = None,
     messages: list[dict[str, str]] | None = None,
-    system_prompt=None,
-    words_in_mouth=None,
+    words_in_mouth: str | None = None,
     **kwargs,
 ) -> str | BaseModel | dict[str, float]:
     """
@@ -308,17 +295,10 @@ async def acompletion_wrapper(
     assert (tools is None) + (response_format is None) + (
         return_probs_for is None
     ) >= 2, "At most one of tools, response_format, and return_probs_for should be provided."
-    assert (prompt is None) + (
-        messages is None
-    ) == 1, "Exactly one of prompt and messages should be provided."
 
-    if prompt:
-        LOGGER.info(f"Converting {prompt} to messages.")
-        if not should_use_words_in_mouth(model):
-            words_in_mouth = None
-        messages = format_prompt(
-            prompt, system_prompt=system_prompt, words_in_mouth=words_in_mouth
-        )
+    # TODO: implement checking if words_in_mouth supported
+    # if words_in_mouth:  # litellm assistant prefill
+    #     messages.append({"role": "assistant", "content": words_in_mouth})
 
     if tools:
         LOGGER.info(
@@ -356,9 +336,7 @@ async def acompletion_wrapper(
                 token: probs[token] / total_probs for token in return_probs_for
             }
         except ZeroDivisionError:
-            import pdb
-
-            pdb.set_trace()
+            breakpoint()
         return probs_relative
 
     if response_format:
@@ -385,7 +363,6 @@ async def acompletion_wrapper(
 
 
 class LLM_Agent:
-
     def __init__(
         self,
         model: str = None,
@@ -405,58 +382,49 @@ class LLM_Agent:
 
     async def get_response(
         self,
+        messages: list[dict[str, str]] | None = None,
+        prompt: str | None = None,
         response_model: BaseModel | None = None,
-        prompt: str = None,
-        messages: list[dict[str, str]] = None,
-        system_prompt: str = None,
-        words_in_mouth: str = None,
         **kwargs,
     ):
+        assert (messages is not None) + (prompt is not None) == 1, "Exactly one of messages or prompt must be provided."
+
+        if messages is None:
+            messages = [{"role": "user", "content": prompt}]
+
         if is_localhf(self.model):
-            return self.generate_func(
-                prompt=prompt,
-                messages=messages,
-                system_message=system_prompt,
-                words_in_mouth=words_in_mouth,
-                **kwargs,
-            )
+            return self.generate_func(messages=messages, **kwargs)
         else:
             return await acompletion_wrapper(
                 model=self.model,
                 tools=self.tools,
                 response_format=response_model,
-                prompt=prompt,
                 messages=messages,
-                system_prompt=system_prompt,
-                words_in_mouth=words_in_mouth,
                 **kwargs,
             )
 
     async def get_probs(
         self,
         return_probs_for: list[str],
-        prompt: str = None,
-        messages: list[dict[str, str]] = None,
-        words_in_mouth: str = None,
-        system_prompt: str = None,
+        messages: list[dict[str, str]] | None = None,
+        prompt: str | None = None,
         **kwargs,
     ):
+        assert (messages is not None) + (prompt is not None) == 1, "Exactly one of messages or prompt must be provided."
+
+        if messages is None:
+            messages = [{"role": "user", "content": prompt}]
+
         if is_localhf(self.model):
             return self.return_probs_func(
                 return_probs_for=return_probs_for,
-                prompt=prompt,
                 messages=messages,
-                system_message=system_prompt,
-                words_in_mouth=words_in_mouth,
                 **kwargs,
             )
         else:
             return await acompletion_wrapper(
                 model=self.model,
                 return_probs_for=return_probs_for,
-                prompt=prompt,
                 messages=messages,
-                system_prompt=system_prompt,
-                words_in_mouth=words_in_mouth,
                 **kwargs,
             )
