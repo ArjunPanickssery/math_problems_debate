@@ -3,6 +3,7 @@ import logging
 
 # from typing import TYPE_CHECKING
 import torch
+torch.set_grad_enabled(False)
 from solib.utils.globals import HF_TOKEN
 from transformers import AutoTokenizer
 
@@ -36,13 +37,16 @@ def load_hf_model(model: str, hf_quantization_config=True):
         quantization_config=quant_config,
     )
 
+    model.eval()
+    model.generation_config.pad_token_id = tokenizer.eos_token_id
+
     return (tokenizer, model)
 
 
 def get_input_string(
-    prompt: str = None,
-    messages: list[dict[str, str]] = None,
-    input_string: str = None,
+    prompt: str | None = None,
+    messages: list[dict[str, str]] | None = None,
+    input_string: str | None = None,
     tokenizer: AutoTokenizer | None = None,
     system_message: str | None = None,
     words_in_mouth: str | None = None,
