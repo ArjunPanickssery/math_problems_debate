@@ -6,26 +6,26 @@ from solib.Experiment import Experiment
 from solib.data.loading import GSM8K
 from solib.utils.default_tools import math_eval
 
-questions = GSM8K.data(limit=20)
+questions = GSM8K.data(limit=1)
 
 init_exp = Experiment(
     questions=questions,
     agent_models=[
         "claude-3-5-sonnet-20241022",
-        "claude-3-5-haiku-20241022",
-        "claude-3-opus-20240229",
-        "ollama_chat/llama3.1:8b-instruct-q6_K",
+        # "claude-3-5-haiku-20241022",
+        # "claude-3-opus-20240229",
+        # "ollama_chat/llama3.1:8b-instruct-q6_K",
         # "openrouter/deepseek/deepseek-chat" # "ollama_chat/deepseek-v3"
     ],
     agent_toolss=[[], [math_eval]],
     judge_models=[
         # "localhf://meta-llama/Meta-Llama-3.1-8B-Instruct",
         "ollama_chat/llama3.1:8b-instruct-q6_K",
-        "openrouter/gpt-4o-mini-2024-07-18",
+        # "openrouter/gpt-4o-mini-2024-07-18",
         # "gpt-4o-mini-2024-07-18",
     ],
     protocols=["propaganda", "debate", "consultancy"], # "blind"
-    bon_ns=[1,4],  # , 8],#, 16, 32],
+    bon_ns=[1],#[1,4],  # , 8],#, 16, 32],
     write_path=Path(__file__).parent
     / "results"
     / f"init_exp_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}",
