@@ -1,12 +1,14 @@
 import logging
 import os
-from pydantic import BaseModel
+from costly.simulators.llm_simulator_faker import LLM_Simulator_Faker
 from dotenv import load_dotenv
 from costly import Costlog
 from jinja2 import Environment, FileSystemLoader
-from litellm.types.utils import ModelResponse, Choices, Message
+
 from solib.datatypes import Prob
-from costly.simulators.llm_simulator_faker import LLM_Simulator_Faker
+from litellm.types.utils import Choices, Message, ModelResponse
+from pydantic import BaseModel
+
 
 # from solib.utils.rate_limits.rate_limits import RateLimiter
 
@@ -55,14 +57,6 @@ jinja_env.get_source = lambda template: (
 )
 TOOL_CALL_TEMPLATE = jinja_env.get_template("tool_use/tool_call.jinja")
 TOOL_RESULT_TEMPLATE = jinja_env.get_template("tool_use/tool_result.jinja")
-
-# | {
-#     "deepseek/deepseek-chat": {"rpm": None, "tpm": None},
-#     "deepseek/deepseek-reasoner": {"rpm": None, "tpm": None},
-# }
-
-# RATE_LIMITER = RateLimiter()
-# ^initialized in solib.utils.rate_limits.rate_limits instead to avoid circular import
 
 
 class LLM_Simulator(LLM_Simulator_Faker):

@@ -1,6 +1,5 @@
 import json
 import logging
-import warnings
 import numpy as np
 from typing import Any, Literal, Optional, Union, Callable, Self
 from pydantic import BaseModel, field_validator, computed_field, model_validator, Field
@@ -99,8 +98,7 @@ class Score(BaseModel):
         score_log = np.log(answer_case_in_question.judge_prob.pad(eps))
         score_brier = -np.sum(
             [
-                (int(a.short == answer_case.short) - a.judge_prob)
-                ** 2
+                (int(a.short == answer_case.short) - a.judge_prob) ** 2
                 for a in question.answer_cases
             ]
         )
@@ -111,7 +109,12 @@ class Score(BaseModel):
             answer_case_in_question.judge_prob.pad(eps)
             > question.neg(answer_case_in_question).judge_prob.pad(eps)
         )
-        return Score(log=score_log, brier=score_brier, logodds=score_logodds, accuracy=score_accuracy)
+        return Score(
+            log=score_log,
+            brier=score_brier,
+            logodds=score_logodds,
+            accuracy=score_accuracy,
+        )
 
     # Helper method for pointwise operations
     def _operate(self, other, op) -> "Score":
