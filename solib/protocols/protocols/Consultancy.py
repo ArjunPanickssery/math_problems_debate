@@ -10,19 +10,25 @@ LOGGER = logging.getLogger(__name__)
 class Consultancy(Protocol):
     def __init__(
         self,
-        consultant_prompt_file: str = "consultant.jinja",
-        client_prompt_file: str = "client.jinja",
+        consultant_system_file: str = "consultancy/consultant_system.jinja",
+        consultant_user_file: str = "consultancy/consultant_user.jinja",
+        client_system_file: str = "consultancy/client_system.jinja",
+        client_user_file: str = "consultancy/client_user.jinja",
         num_turns: int = 2,
         consultant_goes_first: bool = False,
     ):
-        self.consultant_prompt_file = consultant_prompt_file
-        self.client_prompt_file = client_prompt_file
+        self.consultant_system_template = jinja_env.get_template(consultant_system_file)
+        self.consultant_user_template = jinja_env.get_template(consultant_user_file)
+        self.client_system_template = jinja_env.get_template(client_system_file)
+        self.client_user_template = jinja_env.get_template(client_user_file)
 
         self.num_turns = num_turns
         self.consultant_goes_first = consultant_goes_first
         super().__init__(
-            consultant_prompt=jinja_env.get_source(consultant_prompt_file),
-            client_prompt=jinja_env.get_source(client_prompt_file),
+            consultant_system=jinja_env.get_source(consultant_system_file),
+            consultant_user=jinja_env.get_source(consultant_user_file),
+            client_system=jinja_env.get_source(client_system_file),
+            client_user=jinja_env.get_source(client_user_file),
             num_turns=num_turns,
             consultant_goes_first=consultant_goes_first,
         )
@@ -50,25 +56,30 @@ class Consultancy(Protocol):
         caching: bool = True,
         temperature: float = 0.4,
     ) -> Question:
+        # Create consultant messages
+
         consultant = functools.partial(
             agent,
-            prompt_file=self.consultant_prompt_file,
+            system_prompt_template=self.consultant_system_template,
+            user_prompt_template=self.consultant_user_template,
             question=question,
             answer_case=answer_case,
             caching=caching,
             temperature=temperature,
         )
+
         client_agent = QA_Agent(
             model=judge.model,
             tools=judge.tools,
         )
         client = functools.partial(
             client_agent,
-            prompt_file=self.client_prompt_file,
-            question=question,
+            system_prompt_template=self.client_system_template,
+            user_prompt_template=self.client_user_template,
             caching=caching,
             temperature=temperature,
         )
+
         if (question.transcript in [None, []] and self.consultant_goes_first) or (
             question.transcript and question.transcript[-1].role == "client"
         ):

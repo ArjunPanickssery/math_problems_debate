@@ -1,5 +1,5 @@
 import logging
-from solib.datatypes import Prob, Question, Answer
+from solib.datatypes import Question, Prob, Answer
 from solib.protocols.judges.JustAskProbabilityJudge import JustAskProbabilityJudge
 from pydantic import BaseModel, Field
 
@@ -18,7 +18,7 @@ class JustAskProbabilitiesJudge(JustAskProbabilityJudge):
     """Like JustAskProbabilityJudge, but instead of asking for probabilities for each
     answer separately, we ask for probabilities for all answers at once."""
 
-    prompt_file = "just_ask_both_judge.jinja"
+    prompt_file = "judges/just_ask_both_judge.jinja"
 
     async def __call__(
         self,

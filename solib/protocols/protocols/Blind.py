@@ -14,7 +14,7 @@ class Blind(Protocol):
         question: Question,
         answer_case: Answer,
         judge: Judge,
-        caching: bool =True,
+        caching: bool = True,
     ) -> Question:
         result = await judge(
             question=question,

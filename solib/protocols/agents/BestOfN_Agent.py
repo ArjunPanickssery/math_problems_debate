@@ -1,7 +1,7 @@
 import logging
+from solib.datatypes import Question, Answer, Score
 from solib.utils import parallelized_call
 from solib.utils.llm_utils import DEFAULT_BON_MODEL
-from solib.datatypes import Question, Answer, Score
 from solib.protocols.abstract import QA_Agent, Protocol, Judge
 from solib.protocols.judges import JustAskProbabilityJudge
 from solib.protocols.protocols import Propaganda
@@ -26,18 +26,20 @@ class BestOfN_Agent(QA_Agent):
         # inherit other stuff
         self.model = self.agent.model
         self.tools = self.agent.tools
-        self.prompt_template = self.agent.prompt_template
+        self.user_template = self.agent.user_template
+        self.system_template = self.agent.system_template
         self.dict = self.agent.dict
 
     async def __call__(
         self,
-        prompt_file: str = None,
+        system_prompt_template: str | None = None,
+        user_prompt_template: str | None = None,
         question: Question = None,
         answer_case: Answer = None,
         context: str | None = None,
         words_in_mouth: str | None = None,
         max_tokens: int = 2048,
-        caching: bool =False,
+        caching: bool = False,
         temperature: float = None,
     ) -> str:
         async def run_agent(kwargs: dict):
@@ -46,7 +48,7 @@ class BestOfN_Agent(QA_Agent):
                 question=kwargs["question"],
                 answer_case=kwargs["answer_case"],
                 judge=self.judge,
-                caching=False, # IMPORTANT! want all n responses to be different
+                caching=False,  # IMPORTANT! want all n responses to be different
                 temperature=(
                     temperature if temperature is not None else kwargs["temperature"]
                 ),
@@ -58,6 +60,14 @@ class BestOfN_Agent(QA_Agent):
             )
             agent_score = Score.calc(result, kwargs["answer_case"]).log
             return response, agent_score
+
+
+        # icky hack to avoid having to pass in system_prompt_template and user_prompt_template everywhere
+        system_prompt_stored = self.system_template
+        user_prompt_stored = self.user_template
+
+        self.agent.system_template = system_prompt_template or self.system_template
+        self.agent.user_template = user_prompt_template or self.user_template
 
         results = await parallelized_call(
             run_agent,
@@ -71,6 +81,9 @@ class BestOfN_Agent(QA_Agent):
             ],
         )
 
+        self.agent.system_template = system_prompt_stored
+        self.agent.user_template = user_prompt_stored
+        
         best_response, best_score = max(results, key=lambda x: x[1])
 
         return best_response

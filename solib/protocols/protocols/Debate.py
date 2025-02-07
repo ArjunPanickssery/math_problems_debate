@@ -9,13 +9,20 @@ LOGGER = logging.getLogger(__name__)
 
 class Debate(Protocol):
     def __init__(
-        self, num_turns: int = 2, simultaneous=True, prompt_file: str = "qa_agent.jinja"
+        self,
+        debater_system_file: str = "qa_agent/qa_agent_system.jinja",
+        debater_user_file: str = "qa_agent/qa_agent_user.jinja",
+        num_turns: int = 2,
+        simultaneous: bool = True,
     ):
+        self.debater_system_template = jinja_env.get_template(debater_system_file)
+        self.debater_user_template = jinja_env.get_template(debater_user_file)
+
         self.num_turns = num_turns
         self.simultaneous = simultaneous
-        self.prompt_file = prompt_file
         super().__init__(
-            prompt=jinja_env.get_source(prompt_file),
+            debater_system=jinja_env.get_source(debater_system_file),
+            debater_user=jinja_env.get_source(debater_user_file),
             num_turns=num_turns,
             simultaneous=simultaneous,
         )
@@ -27,29 +34,45 @@ class Debate(Protocol):
         answer_case: Answer,
         adversary: QA_Agent,
         judge: Judge,
-        caching: bool =True,
+        caching: bool = True,
         temperature: float = 0.4,
     ):
         opp_case = question.neg(answer_case)
+
         debater_pro = functools.partial(
             agent,
-            prompt_file=self.prompt_file,
             question=question,
             answer_case=answer_case,
+            system_prompt_template=self.debater_system_template,
+            user_prompt_template=self.debater_user_template,
             caching=caching,
             temperature=temperature,
         )
         debater_con = functools.partial(
             adversary,
-            prompt_file=self.prompt_file,
             question=question,
             answer_case=opp_case,
+            system_prompt_template=self.debater_system_template,
+            user_prompt_template=self.debater_user_template,
             caching=caching,
             temperature=temperature,
         )
+
         if self.simultaneous:
-            debater_pro_arg = await debater_pro(context=self.ts_to_prompt(question))
-            debater_con_arg = await debater_con(context=self.ts_to_prompt(question))
+            debater_pro_arg = await debater_pro(
+                context=self.ts_to_prompt(question),
+                extra_user_renders={
+                    "answer_case_short": answer_case.short,
+                    "answer_opposite_short": opp_case.short,
+                },
+            )
+            debater_con_arg = await debater_con(
+                context=self.ts_to_prompt(question),
+                extra_user_renders={
+                    "answer_case_short": answer_case.short,
+                    "answer_opposite_short": opp_case.short,
+                },
+            )
             question.append(
                 TranscriptItem(role=answer_case.short, content=debater_pro_arg)
             )
@@ -57,11 +80,23 @@ class Debate(Protocol):
                 TranscriptItem(role=opp_case.short, content=debater_con_arg)
             )
         else:
-            debater_pro_arg = await debater_pro(context=self.ts_to_prompt(question))
+            debater_pro_arg = await debater_pro(
+                context=self.ts_to_prompt(question),
+                extra_user_renders={
+                    "answer_case_short": answer_case.short,
+                    "answer_opposite_short": opp_case.short,
+                },
+            )
             question.append(
                 TranscriptItem(role=answer_case.short, content=debater_pro_arg)
             )
-            debater_con_arg = await debater_con(context=self.ts_to_prompt(question))
+            debater_con_arg = await debater_con(
+                context=self.ts_to_prompt(question),
+                extra_user_renders={
+                    "answer_case_short": answer_case.short,
+                    "answer_opposite_short": opp_case.short,
+                },
+            )
             question.append(
                 TranscriptItem(role=opp_case.short, content=debater_con_arg)
             )
@@ -73,7 +108,7 @@ class Debate(Protocol):
         question: Question,
         judge: Judge,
         adversary: QA_Agent,
-        caching: bool =True,
+        caching: bool = True,
         temperature: float = 0.4,
     ) -> Question:
         """Debate specifically is symmetric, so we can subclass this to only run the

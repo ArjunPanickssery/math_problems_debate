@@ -1,5 +1,6 @@
 import logging
 from pathlib import Path
+from solib.datatypes import Answer, Question, TranscriptItem
 from solib.utils import (
     dump_config,
     AbstractionError,
@@ -8,7 +9,6 @@ from solib.utils import (
     write_json,
 )
 from solib.utils import LLM_Agent
-from solib.datatypes import Answer, Question, TranscriptItem
 from solib.data.loading import Dataset
 from solib.utils.llm_utils import jinja_env
 
@@ -33,22 +33,44 @@ class QA_Agent(LLM_Agent):
     """A generally convenient wrapper around an LLM, that answers a given prompt,
     optionally formatted with a context, question and answer case."""
 
+    def __init__(
+        self,
+        model: str = None,
+        tools: list[callable] | None = None,
+        system_prompt_file: str = "qa_agent/qa_agent_system.jinja",
+        user_prompt_file: str = "qa_agent/qa_agent_user.jinja",
+        words_in_mouth: str | None = None,
+    ):
+        super().__init__(model=model, tools=tools)
+        self.system_template = jinja_env.get_template(system_prompt_file)
+        self.user_template = jinja_env.get_template(user_prompt_file)
+        self.words_in_mouth = words_in_mouth
+        self.dict = {
+            "model": self.model,
+            "tools": self.tools,
+            "system_prompt": jinja_env.get_source(system_prompt_file),
+            "user_prompt": jinja_env.get_source(user_prompt_file),
+        }
+
     async def __call__(
         self,
-        prompt_file: str = None,
         question: Question = None,
         answer_case: Answer = None,
         context: str | None = None,
         words_in_mouth: str | None = None,
+        system_prompt_template: str | None = None,
+        user_prompt_template: str | None = None,
         max_tokens: int = 2048,
         caching: bool = True,
         temperature: float = 0.4,
+        extra_user_renders: dict | None = None,
     ) -> str:
         """Simulate an AI arguing to convince the judge in favour of answer_case.
 
         Args:
-            prompt_file (str): path to a jinja template file that overrides the default prompt template.
             words_in_mouth (str | None): e.g. " Sure, here's my response:\n\n". Only supported for HF / local models.
+            system_prompt_template (str | None): system prompt template.
+            user_prompt_template (str | None): user prompt template.
             context (str | None): context e.g. transcript of the conversation so far.
             question (Question): question.
             answer_case (Answer): answer case to argue for.
@@ -56,41 +78,39 @@ class QA_Agent(LLM_Agent):
             caching (bool): to disable caching.
             temperature (float): temperature for sampling.
         """
-        prompt_template = self.prompt_template
         words_in_mouth = words_in_mouth or self.words_in_mouth
         if isinstance(question, Question):
             question = question.to_prompt()
         if isinstance(answer_case, Answer):
             answer_case = answer_case.to_prompt()
-        prompt = prompt_template.render(
-            question=question,
-            answer_case=answer_case,
-            context=context,
-        )
+
+        sys_prompt = self.system_template or system_prompt_template
+        user_prompt = self.user_template or user_prompt_template
+
+        # Create messages list with system and user prompts
+        messages = [
+            {
+                "role": "system",
+                "content": sys_prompt.render(),
+            },
+            {
+                "role": "user",
+                "content": user_prompt.render(
+                    question=question,
+                    answer_case=answer_case,
+                    context=context,
+                    **(extra_user_renders or {}),
+                ),
+            },
+        ]
+
         return await self.get_response(
-            prompt=prompt,
+            messages=messages,
             words_in_mouth=words_in_mouth,
             max_tokens=max_tokens,
             caching=caching,
             temperature=temperature,
         )
-
-    def __init__(
-        self,
-        model: str = None,
-        tools: list[callable] | None = None,
-        prompt_file: str = "qa_agent.jinja",
-        words_in_mouth: str = None,
-    ):
-        super().__init__(model=model, tools=tools)
-        self.prompt_template = jinja_env.get_template(prompt_file)
-        self.words_in_mouth = words_in_mouth
-        self.dict = {
-            "model": self.model,
-            "tools": self.tools,
-            "prompt": jinja_env.get_source(prompt_file),
-            "words_in_mouth": self.words_in_mouth,
-        }
 
     def __repr__(self):
         return f"{self.__class__.__name__}(model={self.model}, tools={self.tools})"

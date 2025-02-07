@@ -1,5 +1,5 @@
 import logging
-from solib.datatypes import Question, Answer, Prob
+from solib.datatypes import Prob, Question, Answer
 from solib.protocols.abstract import Judge
 from solib.utils.llm_utils import jinja_env
 
@@ -11,24 +11,50 @@ class TipOfTongueJudge(Judge):
     answer is and extracting the probability of it answering each option from the logits
     layer of the LLM."""
 
+    def __init__(
+        self,
+        model: str = None,
+        tools: list[callable] | None = None,
+        user_prompt_file: str = "judges/tot_judge.jinja",
+        words_in_mouth: str | None = None,
+    ):
+        super().__init__(model=model, tools=tools)
+        self.user_template = jinja_env.get_template(user_prompt_file)
+
+        # Only allow HF models to default to using words_in_mouth
+        if model and model.startswith("hf:"):
+            self.words_in_mouth = words_in_mouth or " The answer is:\n\n("
+        else:
+            self.words_in_mouth = words_in_mouth
+
+        self.dict = {
+            "model": model,
+            "tools": tools,
+            "user_prompt": jinja_env.get_source(user_prompt_file),
+            "words_in_mouth": self.words_in_mouth,
+        }
+
     async def __call__(
         self,
         question: Question,
-        context: str,
+        context: str | None = None,
         caching: bool = True,
     ) -> Question:
-        prompt = self.prompt_template.render(
-            question=question.to_prompt(),
-            context=context,
-            answer_cases_short=", ".join(f"({a})" for a in question.answer_cases_short),
-        )
+        messages = [
+            {
+                "role": "user",
+                "content": self.user_template.render(
+                    question=question.to_prompt(),
+                    context=context,
+                ),
+            },
+        ]
 
         probs = await self.get_probs(
-            prompt=prompt,
-            return_probs_for=question.answer_cases_short,
+            return_probs_for=[a.short for a in question.answer_cases],
+            messages=messages,
             words_in_mouth=self.words_in_mouth,
             caching=caching,
-            temperature=0.0,
         )
 
         result = Question(
@@ -42,36 +68,4 @@ class TipOfTongueJudge(Judge):
             transcript=question.transcript,
         )
         assert result.is_elicited
-        assert result.is_normalized
         return result
-
-    def __init__(
-        self,
-        model: str = None,
-        tools: list[callable] | None = None,
-        prompt_file: str = "tot_judge.jinja",
-        words_in_mouth: str = None,
-    ):
-        """Initialize basic / default Judge. Can be overriden in subclasses.
-
-        Args:
-            prompt (str): prompt for the judge. Default None.
-            model (str): model for the judge. Default None.
-        """
-
-        self.prompt_template = jinja_env.get_template(prompt_file)
-
-        if model.startswith(
-            "hf:"
-        ):  # only allow hf models to default to using words_in_mouth
-            self.words_in_mouth = words_in_mouth or " The answer is:\n\n("
-        else:
-            self.words_in_mouth = words_in_mouth
-
-        self.dict = {
-            "model": model,
-            "tools": tools,
-            "prompt": jinja_env.get_source(prompt_file),
-            "words_in_mouth": self.words_in_mouth,
-        }
-        super().__init__(model=model, tools=tools)
