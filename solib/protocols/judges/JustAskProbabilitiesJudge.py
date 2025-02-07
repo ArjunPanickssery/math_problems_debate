@@ -31,9 +31,10 @@ class JustAskProbabilitiesJudge(JustAskProbabilityJudge):
             question=question.to_prompt(),
             context=context,
         )
+        messages = [{"role": "user", "content": prompt}]
 
         response = await self.get_response(
-            prompt=prompt,
+            messages=messages,
             response_model=ProbResponse,
             max_tokens=100,
             caching=caching,
