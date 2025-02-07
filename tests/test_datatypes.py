@@ -1,6 +1,6 @@
 import pytest
 from pydantic import ValidationError
-from solib.datatypes import Prob, Score, Answer, Question, TranscriptItem
+from solib.datatypes import Prob, Score, TranscriptItem, Answer, Question
 
 
 def test_prob():

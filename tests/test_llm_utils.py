@@ -96,7 +96,10 @@ async def test_get_probs_returns_dict(llm_agent):
 async def test_get_response_with_max_tokens(llm_agent):
     prompt = "What is das capital of France?"
     max_tokens = 50
-    response = await llm_agent.get_response(prompt=prompt, max_tokens=max_tokens)
+    response = await llm_agent.get_response(
+        prompt=prompt,
+        max_tokens=max_tokens,
+    )
     assert isinstance(response, str)
     assert len(response.split()) <= max_tokens
 
@@ -109,7 +112,8 @@ async def test_get_response_with_words_in_mouth(llm_agent):
     )
     words_in_mouth = " My guess for the correct answer is:\n\n"
     response = await llm_agent.get_response(
-        prompt=prompt, words_in_mouth=words_in_mouth
+        prompt=prompt,
+        words_in_mouth=words_in_mouth,
     )
     assert isinstance(response, str)
 
@@ -121,7 +125,10 @@ async def test_get_response_with_response_model(llm_agent):
         country: str
 
     prompt = "What is the capital of France?"
-    response = await llm_agent.get_response(prompt=prompt, response_model=ResponseModel)
+    response = await llm_agent.get_response(
+        prompt=prompt,
+        response_model=ResponseModel,
+    )
 
     # need to check instance weirdly since cloudpickle hack messes up class namespace a bit
     assert type(response).__name__ == ResponseModel.__name__
@@ -133,7 +140,10 @@ async def test_get_response_with_response_model(llm_agent):
 async def test_get_response_with_response_model_Prob(llm_agent):
 
     prompt = "What is the probability of the Russia-Ukraine war ending by 2025?"
-    response = await llm_agent.get_response(prompt=prompt, response_model=Prob)
+    response = await llm_agent.get_response(
+        prompt=prompt,
+        response_model=Prob,
+    )
 
     # need to check instance weirdly since cloudpickle hack messes up class namespace a bit
     assert type(response).__name__ == Prob.__name__
@@ -150,7 +160,10 @@ async def test_get_response_with_response_model_more_complicated(llm_agent):
 
     # prompt = "Create an object consisting of an attribute students, which is a dictionary of 5 students with IDs as keys and names as values."
     prompt = "Create a list of 5 example students."
-    response = await llm_agent.get_response(prompt=prompt, response_model=ResponseModel)
+    response = await llm_agent.get_response(
+        prompt=prompt,
+        response_model=ResponseModel,
+    )
     assert isinstance(response, ResponseModel)
     assert len(response.students) == 5
     assert all(isinstance(student, str) for student in response.students)
@@ -164,13 +177,19 @@ async def test_invalid_response_model(llm_agent):
 
     prompt = "Say something."
     with pytest.raises(Exception):
-        await llm_agent.get_response(prompt=prompt, response_model=InvalidModel)
+        await llm_agent.get_response(
+            prompt=prompt,
+            response_model=InvalidModel,
+        )
 
 
 @pytest.mark.parametrize("max_tokens", [10, 20, 50])
 async def test_response_length_with_max_tokens(llm_agent, max_tokens):
     prompt = "Write a story about a dog."
-    response = await llm_agent.get_response(prompt=prompt, max_tokens=max_tokens)
+    response = await llm_agent.get_response(
+        prompt=prompt,
+        max_tokens=max_tokens,
+    )
     # Rough approximation: tokens ≈ words * 1.3
     words = len(response.split())
     assert words <= max_tokens * 1.3
@@ -179,6 +198,8 @@ async def test_response_length_with_max_tokens(llm_agent, max_tokens):
 @pytest.mark.asyncio
 async def test_tool_calling(llm_agent_with_tool):
     prompt = "What is 25 * 48?"
-    response = await llm_agent_with_tool.get_response(prompt=prompt)
+    response = await llm_agent_with_tool.get_response(
+        prompt=prompt,
+    )
     assert isinstance(response, str)
     assert "1200" in response  # The result should appear in the response

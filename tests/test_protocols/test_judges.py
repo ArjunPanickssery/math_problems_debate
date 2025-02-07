@@ -1,8 +1,9 @@
 import pytest
 from unittest.mock import AsyncMock
-from solib.datatypes import Question, Answer, Prob
+from solib.datatypes import Prob, Answer, Question
 from solib.protocols.judges.JustAskProbabilityJudge import JustAskProbabilityJudge
 from solib.protocols.judges.TipOfTongueJudge import TipOfTongueJudge
+
 
 
 @pytest.fixture

@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import AsyncMock, patch
-from solib.datatypes import Question, Answer, Prob
+from solib.datatypes import Prob, Answer, Question
 from solib.protocols.agents.BestOfN_Agent import BestOfN_Agent
 from solib.protocols.abstract import QA_Agent
 from solib.protocols.judges import JustAskProbabilityJudge
