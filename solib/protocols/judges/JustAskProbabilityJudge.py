@@ -1,4 +1,5 @@
 import logging
+from pathlib import Path
 from solib.datatypes import Question, Answer, Prob
 from solib.utils import parallelized_call
 from solib.protocols.abstract import Judge
@@ -38,6 +39,7 @@ class JustAskProbabilityJudge(Judge):
         question: Question,
         context: str,
         caching: bool = True,
+        write: Path | str | None = None,
     ) -> Question:
         # we don't pass in temperature here since ToT Judge always uses 0.0, and
         # we don't distinguish between judge type in the code
@@ -61,6 +63,7 @@ class JustAskProbabilityJudge(Judge):
                 max_tokens=20,
                 caching=caching,
                 temperature=0.4,
+                write=write,
             )
 
             LOGGER.debug(f"response: {response}")

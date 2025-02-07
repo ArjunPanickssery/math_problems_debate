@@ -1,5 +1,6 @@
 import functools
 import logging
+from pathlib import Path
 from solib.datatypes import Question, Answer, TranscriptItem
 from solib.protocols.abstract import Protocol, QA_Agent, Judge
 from solib.utils.llm_utils import jinja_env
@@ -36,6 +37,8 @@ class Debate(Protocol):
         judge: Judge,
         caching: bool = True,
         temperature: float = 0.4,
+        write: Path | str | None = None,
+        **rendering_components,
     ):
         opp_case = question.neg(answer_case)
 
@@ -47,6 +50,7 @@ class Debate(Protocol):
             user_prompt_template=self.debater_user_template,
             caching=caching,
             temperature=temperature,
+            write=write,
         )
         debater_con = functools.partial(
             adversary,
@@ -56,6 +60,7 @@ class Debate(Protocol):
             user_prompt_template=self.debater_user_template,
             caching=caching,
             temperature=temperature,
+            write=write,
         )
 
         if self.simultaneous:
@@ -110,6 +115,7 @@ class Debate(Protocol):
         adversary: QA_Agent,
         caching: bool = True,
         temperature: float = 0.4,
+        write: Path | str | None = None,
     ) -> Question:
         """Debate specifically is symmetric, so we can subclass this to only run the
         debate once."""
@@ -122,6 +128,7 @@ class Debate(Protocol):
                 adversary=adversary,
                 caching=caching,
                 temperature=temperature,
+                write=write,
             )
         case_probs_0 = await self.run(
             agent=agent,
@@ -131,6 +138,7 @@ class Debate(Protocol):
             judge=judge,
             caching=caching,
             temperature=temperature,
+            write=write,
         )  # elicited probs after arguing for answer_cases[0]
         # but this is the same as the elicited probs after arguing for answer_cases[1]
         # because the adversary is arguing for the opposite answer

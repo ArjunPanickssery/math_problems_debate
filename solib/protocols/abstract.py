@@ -58,25 +58,25 @@ class QA_Agent(LLM_Agent):
         answer_case: Answer = None,
         context: str | None = None,
         words_in_mouth: str | None = None,
-        system_prompt_template: str | None = None,
-        user_prompt_template: str | None = None,
         max_tokens: int = 2048,
         caching: bool = True,
         temperature: float = 0.4,
         extra_user_renders: dict | None = None,
+        system_prompt_template: str | None = None,
+        user_prompt_template: str | None = None,
+        write: Path | str | None = None,
     ) -> str:
         """Simulate an AI arguing to convince the judge in favour of answer_case.
 
         Args:
             words_in_mouth (str | None): e.g. " Sure, here's my response:\n\n". Only supported for HF / local models.
-            system_prompt_template (str | None): system prompt template.
-            user_prompt_template (str | None): user prompt template.
             context (str | None): context e.g. transcript of the conversation so far.
             question (Question): question.
             answer_case (Answer): answer case to argue for.
             max_tokens (int): max tokens for the LLM.
             caching (bool): to disable caching.
             temperature (float): temperature for sampling.
+            write (Path | str | None): Path to write prompt history to.
         """
         words_in_mouth = words_in_mouth or self.words_in_mouth
         if isinstance(question, Question):
@@ -84,10 +84,9 @@ class QA_Agent(LLM_Agent):
         if isinstance(answer_case, Answer):
             answer_case = answer_case.to_prompt()
 
-        sys_prompt = self.system_template or system_prompt_template
-        user_prompt = self.user_template or user_prompt_template
+        sys_prompt = system_prompt_template or self.system_template
+        user_prompt = user_prompt_template or self.user_template
 
-        # Create messages list with system and user prompts
         messages = [
             {
                 "role": "system",
@@ -110,6 +109,7 @@ class QA_Agent(LLM_Agent):
             max_tokens=max_tokens,
             caching=caching,
             temperature=temperature,
+            write=write,
         )
 
     def __repr__(self):
@@ -143,6 +143,7 @@ class Protocol:
         question: Question,
         answer_case: Answer,
         judge: Judge,
+        write: Path | str | None = None,
         **other_components,
     ) -> Question:
         """You can subclass step() and end_communication() and have run() defined
@@ -154,6 +155,7 @@ class Protocol:
             question=question,
             answer_case=answer_case,
             judge=judge,
+            write=write,
             **other_components,
         )
 
@@ -163,6 +165,7 @@ class Protocol:
         question: Question,
         answer_case: Answer,
         judge: Judge,
+        write: Path | str | None = None,
         **other_components,
     ) -> Question:
         """Let agent argue for answer_case, and get the probability for answer_case
@@ -174,6 +177,7 @@ class Protocol:
             question (Question): question.
             answer_case (Answer): answer case the agent argues for.
             judge (Judge): judge to elicit a probability.
+            write (Path | str | None): Path to write prompt history to.
             other_components (dict): other components e.g. adversary.
 
         Returns:
@@ -186,10 +190,13 @@ class Protocol:
                 question=question,
                 answer_case=answer_case,
                 judge=judge,
+                write=write,
                 **other_components,
             )
             assert len(question.transcript) > t
-        result = await judge(question=question, context=self.ts_to_prompt(question))
+        result = await judge(
+            question=question, context=self.ts_to_prompt(question), write=write
+        )
         assert result.is_elicited
         assert result.transcript is not None
         return result
@@ -199,6 +206,7 @@ class Protocol:
         agent: QA_Agent,
         question: Question,
         judge: Judge,
+        write: Path | str | None = None,
         **other_components,
     ) -> Question:
         """For each answer_case in Question, run the protocol with that answer_case,
@@ -217,6 +225,7 @@ class Protocol:
                 question=question,
                 judge=judge,
                 answer_case=answer_case,
+                write=write,
                 **other_components,
             ),
             question.answer_cases,
@@ -257,6 +266,7 @@ class Protocol:
                 agent=agent,
                 question=question_censored,
                 judge=judge,
+                write=write,
                 **other_components,
             )
 

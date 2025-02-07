@@ -1,4 +1,5 @@
 import logging
+from pathlib import Path
 from solib.datatypes import Prob, Question, Answer
 from solib.protocols.abstract import Judge
 from solib.utils.llm_utils import jinja_env
@@ -39,6 +40,7 @@ class TipOfTongueJudge(Judge):
         question: Question,
         context: str | None = None,
         caching: bool = True,
+        write: Path | str | None = None,
     ) -> Question:
         messages = [
             {
@@ -55,6 +57,7 @@ class TipOfTongueJudge(Judge):
             messages=messages,
             words_in_mouth=self.words_in_mouth,
             caching=caching,
+            write=write,
         )
 
         result = Question(

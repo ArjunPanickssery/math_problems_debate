@@ -1,5 +1,6 @@
 import functools
 import logging
+from pathlib import Path
 from solib.datatypes import Question, Answer, TranscriptItem
 from solib.protocols.abstract import Protocol, QA_Agent, Judge
 from solib.utils.llm_utils import jinja_env
@@ -55,6 +56,8 @@ class Consultancy(Protocol):
         judge: Judge,
         caching: bool = True,
         temperature: float = 0.4,
+        write: Path | str | None = None,
+        **rendering_components,
     ) -> Question:
         # Create consultant messages
 
@@ -66,6 +69,7 @@ class Consultancy(Protocol):
             answer_case=answer_case,
             caching=caching,
             temperature=temperature,
+            write=write,
         )
 
         client_agent = QA_Agent(
@@ -74,10 +78,12 @@ class Consultancy(Protocol):
         )
         client = functools.partial(
             client_agent,
+            question=question,
             system_prompt_template=self.client_system_template,
             user_prompt_template=self.client_user_template,
             caching=caching,
             temperature=temperature,
+            write=write,
         )
 
         if (question.transcript in [None, []] and self.consultant_goes_first) or (

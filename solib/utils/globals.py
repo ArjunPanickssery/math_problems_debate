@@ -34,6 +34,7 @@ GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 HF_TOKEN = os.getenv("HF_TOKEN")
+ENABLE_PROMPT_HISTORY = os.getenv("ENABLE_PROMPT_HISTORY", "False").lower() == "true"
 
 TOOL_CALL_START_TAG = "<tool_call>"
 TOOL_CALL_END_TAG = "</tool_call>"

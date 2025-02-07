@@ -1,20 +1,19 @@
 import functools
+from pathlib import Path
 import uuid
 import logging
 import traceback
 import json
 import math
-from costly.simulators.llm_simulator_faker import LLM_Simulator_Faker
 import litellm
 from litellm import acompletion
-from litellm.types.utils import Choices, Message, ModelResponse
+from litellm.types.utils import ModelResponse
 from litellm.caching.caching import Cache
 from typing import Any, TYPE_CHECKING
 from collections import defaultdict
 from dotenv import load_dotenv
 from pydantic import BaseModel
 from costly import Costlog, costly, CostlyResponse
-from solib.datatypes import Prob
 from solib.utils.globals import *
 from solib.utils.llm_hf_utils import get_hf_llm
 from solib.utils.rate_limits.rate_limits import RATE_LIMITER
@@ -97,6 +96,7 @@ async def acompletion_ratelimited(
     caching: bool = CACHING,
     cost_log: Costlog = GLOBAL_COST_LOG,
     simulate: bool = SIMULATE,
+    write: Path | str | None = None,
     **kwargs,
 ) -> "ModelResponse":
 
@@ -123,6 +123,7 @@ async def acompletion_ratelimited(
             max_attempts=max_retries,
             call_function=acompletion_,
             is_valid=lambda x: x is not None,
+            write=write,
         )
     except Exception as e:
         LOGGER.error(f"{call_id}: Error in completion: {e}")
@@ -141,7 +142,11 @@ async def acompletion_ratelimited(
 
 
 async def acompletion_toolloop(
-    model: str, messages: list[dict[str, str]], tools: list[callable], **kwargs
+    model: str,
+    messages: list[dict[str, str]],
+    tools: list[callable],
+    write: Path | str | None = None,
+    **kwargs,
 ) -> list[dict[str, str]]:
     """
     Run a chat model in a tool use loop. The loop terminates when the model outputs a message that
@@ -179,6 +184,7 @@ async def acompletion_toolloop(
             messages=messages,
             tools=tools_,
             tool_choice="auto",
+            write=write,
             **kwargs,
         )
         response_text: str = response.choices[0].message.content
@@ -222,7 +228,7 @@ async def acompletion_toolloop(
                 )
         else:
             if i == 0:
-                LOGGER.warning(
+                LOGGER.info(
                     f"Tool loop {toolloop_id} did not result in any tool calls ({model=})"
                 )
             LOGGER.info(
@@ -282,6 +288,7 @@ async def acompletion_wrapper(
     return_probs_for: list[str] | None = None,
     messages: list[dict[str, str]] | None = None,
     words_in_mouth: str | None = None,
+    write: Path | str | None = None,
     **kwargs,
 ) -> str | BaseModel | dict[str, float]:
     """
@@ -305,7 +312,7 @@ async def acompletion_wrapper(
             f"Getting response from {model} with tools {[t.__name__ for t in tools]}."
         )
         response: list[dict[str, str]] = await acompletion_toolloop(
-            model=model, messages=messages, tools=tools, **kwargs
+            model=model, messages=messages, tools=tools, write=write, **kwargs
         )
         response_rendered: str = render_tool_call_conversation(response)
         return response_rendered
@@ -318,6 +325,7 @@ async def acompletion_wrapper(
             logprobs=True,
             top_logprobs=NUM_LOGITS,
             max_tokens=20,
+            write=write,
             **kwargs,
         )
         # logprob_content is a list of dicts -- each dict contains the next chosen token and
@@ -350,14 +358,16 @@ async def acompletion_wrapper(
             )
 
         response: ModelResponse = await acompletion_ratelimited(
-            model, messages, response_format=response_format, **kwargs
+            model, messages, response_format=response_format, write=write, **kwargs
         )
         response_json: str = response.choices[0].message.content
         response_obj: BaseModel = response_format.model_validate_json(response_json)
         return response_obj
 
     LOGGER.info(f"Getting native text response from {model}.")
-    response: ModelResponse = await acompletion_ratelimited(model, messages, **kwargs)
+    response: ModelResponse = await acompletion_ratelimited(
+        model, messages, write=write, **kwargs
+    )
     response_text: str = response.choices[0].message.content
     return response_text
 
@@ -385,9 +395,12 @@ class LLM_Agent:
         messages: list[dict[str, str]] | None = None,
         prompt: str | None = None,
         response_model: BaseModel | None = None,
+        write: Path | str | None = None,
         **kwargs,
     ):
-        assert (messages is not None) + (prompt is not None) == 1, "Exactly one of messages or prompt must be provided."
+        assert (messages is not None) + (
+            prompt is not None
+        ) == 1, "Exactly one of messages or prompt must be provided."
 
         if messages is None:
             messages = [{"role": "user", "content": prompt}]
@@ -400,6 +413,7 @@ class LLM_Agent:
                 tools=self.tools,
                 response_format=response_model,
                 messages=messages,
+                write=write,
                 **kwargs,
             )
 
@@ -410,7 +424,9 @@ class LLM_Agent:
         prompt: str | None = None,
         **kwargs,
     ):
-        assert (messages is not None) + (prompt is not None) == 1, "Exactly one of messages or prompt must be provided."
+        assert (messages is not None) + (
+            prompt is not None
+        ) == 1, "Exactly one of messages or prompt must be provided."
 
         if messages is None:
             messages = [{"role": "user", "content": prompt}]

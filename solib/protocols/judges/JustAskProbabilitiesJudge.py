@@ -1,4 +1,5 @@
 import logging
+from pathlib import Path
 from solib.datatypes import Question, Prob, Answer
 from solib.protocols.judges.JustAskProbabilityJudge import JustAskProbabilityJudge
 from pydantic import BaseModel, Field
@@ -25,6 +26,7 @@ class JustAskProbabilitiesJudge(JustAskProbabilityJudge):
         question: Question,
         context: str,
         caching: bool = True,
+        write: Path | str | None = None,
     ) -> Question:
         """Returns a .is_elicited Question."""
         prompt = self.prompt_template.render(
@@ -39,6 +41,7 @@ class JustAskProbabilitiesJudge(JustAskProbabilityJudge):
             max_tokens=100,
             caching=caching,
             temperature=0.4,
+            write=write,
         )
 
         LOGGER.debug(f"response: {response}")

@@ -1,4 +1,5 @@
 import logging
+from pathlib import Path
 from solib.datatypes import Question, Answer
 from solib.protocols.abstract import Protocol, QA_Agent, Judge
 
@@ -15,10 +16,13 @@ class Blind(Protocol):
         answer_case: Answer,
         judge: Judge,
         caching: bool = True,
+        write: Path | str | None = None,
+        **rendering_components,
     ) -> Question:
         result = await judge(
             question=question,
             context=self.ts_to_prompt(question),
             caching=caching,
+            write=write,
         )
         return result

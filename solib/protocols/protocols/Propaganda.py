@@ -1,4 +1,5 @@
 import logging
+from pathlib import Path
 from solib.datatypes import Question, Answer, TranscriptItem
 from solib.protocols.abstract import Protocol, QA_Agent, Judge
 
@@ -14,6 +15,8 @@ class Propaganda(Protocol):
         judge: Judge,
         caching: bool = True,
         temperature: float = 0.4,
+        write: Path | str | None = None,
+        **rendering_components,
     ) -> Question:
         assert isinstance(question, Question)
         agent_response = await agent(
@@ -22,6 +25,8 @@ class Propaganda(Protocol):
             context=self.ts_to_prompt(question),
             caching=caching,
             temperature=temperature,
+            write=write,
+            **rendering_components,
         )
         question.append(TranscriptItem(role=answer_case.short, content=agent_response))
         assert question.transcript is not None
@@ -29,6 +34,7 @@ class Propaganda(Protocol):
             question=question,
             context=self.ts_to_prompt(question),
             caching=caching,
+            write=write,
         )
         assert result.transcript is not None
         return result

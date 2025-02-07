@@ -1,13 +1,17 @@
 import asyncio
 import logging
 import time
+from litellm import Message
 import requests
 from traceback import format_exc
 from typing import Callable
+import json
+from datetime import datetime
+from pathlib import Path
 
 import tiktoken
 
-from solib.utils.globals import OPENROUTER_API_KEY
+from solib.utils.globals import OPENROUTER_API_KEY, ENABLE_PROMPT_HISTORY
 from solib.utils.rate_limits.rate_limit_utils import DEFAULT_RATES
 from solib.utils.utils import parse_time_interval
 
@@ -58,6 +62,8 @@ class RateLimiter:
     def __init__(
         self,
         frac_rate_limit: float = 0.9,
+        prompt_dir: str = "prompt_dir",
+        enable_prompt_history: bool = False,
     ):
         self.frac_rate_limit = frac_rate_limit
         self.model_ids = set()
@@ -66,16 +72,23 @@ class RateLimiter:
         self.request_capacity = dict()
         self.lock_add = asyncio.Lock()
         self.lock_consume = asyncio.Lock()
+        if enable_prompt_history:
+            self.prompt_dir = prompt_dir
+        else:
+            self.prompt_dir = None
         self.tokenizer = tiktoken.get_encoding("cl100k_base")
 
     def count_tokens(self, text: str) -> int:
         return len(self.tokenizer.encode(text))
 
     def update_openrouter_ratelimit(self, model_id: str):
-        resp = requests.get("https://openrouter.ai/api/v1/auth/key", headers={"Authorization": f"Bearer {OPENROUTER_API_KEY}"})
-        resp_ = resp.json()['data']['rate_limit']
-        rl = resp_['requests'] / parse_time_interval(resp_['interval'])
-        tl = 1e5 # meh
+        resp = requests.get(
+            "https://openrouter.ai/api/v1/auth/key",
+            headers={"Authorization": f"Bearer {OPENROUTER_API_KEY}"},
+        )
+        resp_ = resp.json()["data"]["rate_limit"]
+        rl = resp_["requests"] / parse_time_interval(resp_["interval"])
+        tl = 1e5  # meh
         return tl, rl
 
     async def add_model_id(self, model_id: str):
@@ -122,7 +135,7 @@ class RateLimiter:
             num_tokens += 1
             if message.get("content"):
                 num_tokens += len(message["content"]) / 4
-            else: # tool call
+            else:  # tool call
                 num_tokens += 2000
 
         return max(
@@ -138,6 +151,7 @@ class RateLimiter:
         max_attempts: int,
         call_function: Callable,
         is_valid=lambda x: True,
+        write: Path | str | None = None,
         **kwargs,
     ):
         async def attempt_api_call():
@@ -186,6 +200,37 @@ class RateLimiter:
                 f"Failed to get a response from the API after {max_attempts} attempts."
             )
 
+        if ENABLE_PROMPT_HISTORY and write is not None:
+            prompt_dir = Path(write) / "prompt_history"
+            prompt_dir.mkdir(parents=True, exist_ok=True)
+
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            filename = f"{model_id.replace('/', '_')}_{timestamp}.json"
+
+            history_entry = {
+                "timestamp": timestamp,
+                "model": model_id,
+                "messages": [
+                    m.model_dump() if hasattr(m, "model_dump") else m
+                    for m in messages
+                ],
+                "response": (
+                    response.model_dump()
+                    if hasattr(response, "model_dump")
+                    else response
+                ),
+            }
+            try:
+                with open(prompt_dir / filename, "w") as f:
+                    json.dump(history_entry, f, indent=2)
+            except Exception as e:
+                LOGGER.warn(
+                    f"Failed to write prompt history to {prompt_dir / filename}: {e}"
+                )
+
         return response
 
-RATE_LIMITER = RateLimiter() # initialize here instead of in solib.utils.globals to avoid circular import
+
+RATE_LIMITER = (
+    RateLimiter()
+)  # initialize here instead of in solib.utils.globals to avoid circular import
