@@ -215,7 +215,10 @@ async def acompletion_toolloop(
                     continue
                 tool: callable = tool_map[f_name]
                 tool_kwargs: dict = json.loads(f_args)
-                tool_result: Any = tool(**tool_kwargs)
+                try:
+                    tool_result: Any = tool(**tool_kwargs)
+                except Exception as e:
+                    tool_result: str = f"ERROR: {e}"
                 tool_result_msg = {
                     "tool_call_id": t.id,
                     "role": "tool",
