@@ -51,11 +51,7 @@ def format_prompt(
 
 
 def is_local(model: str) -> bool:
-    return (
-        model.startswith("ollama/")
-        or model.startswith("ollama_chat/")
-        or model.startswith("localhf://")
-    )
+    return model.startswith("localhf://")
 
 
 def is_localhf(model: str) -> bool:
@@ -65,11 +61,6 @@ def is_localhf(model: str) -> bool:
 def should_use_words_in_mouth(model: str) -> bool:
     """Models that should use the words_in_mouth. All other models will drop it."""
     return is_local(model)
-
-
-def supports_async(model: str) -> bool:
-    """Models that support async completion."""
-    return not is_local(model)
 
 
 def supports_tool_use(model: str) -> bool:
@@ -169,6 +160,9 @@ async def acompletion_toolloop(
     to the message history.
 
     Uses acompletion_ratelimited.
+
+    Important: There is a bug with ollama tool calling, where arguments are returned as dicts. I'm using
+    https://github.com/BerriAI/litellm/pull/6989/files to fix this.
     """
     toolloop_id = uuid.uuid4().hex
     for tool in tools:
@@ -195,19 +189,15 @@ async def acompletion_toolloop(
             model=model,
             messages=messages,
             tools=tools_,
+            tool_choice="auto",
             **kwargs,
         )
-
         response_text: str = response.choices[0].message.content
         response_tool_calls: list[ChatCompletionMessageToolCall] = response.choices[
             0
         ].message.tool_calls
-        response_msg = {
-            "role": "assistant",
-            "content": response_text,
-            "tool_calls": response_tool_calls,
-        }
-        messages.append(response_msg)
+
+        messages.append(response.choices[0].message)
 
         LOGGER.info(
             f"Tool loop {toolloop_id} iteration {i} response:\n"
@@ -217,32 +207,39 @@ async def acompletion_toolloop(
         )
 
         if response_tool_calls:
+            i += 1
             for t in response_tool_calls:
                 t: ChatCompletionMessageToolCall
                 f: Function = t.function
                 f_name: str = f.name
                 f_args: str = f.arguments
+                if f_name not in tool_map:
+                    LOGGER.warning(
+                        f"Tool {f_name} not found in tool_map, when called by {model=}"
+                    )
+                    continue
                 tool: callable = tool_map[f_name]
                 tool_kwargs: dict = json.loads(f_args)
                 tool_result: Any = tool(**tool_kwargs)
                 tool_result_msg = {
-                    "tool_call_id": response_tool_calls[0].id,
+                    "tool_call_id": t.id,
                     "role": "tool",
+                    "name": f_name,
                     "content": str(tool_result),
                 }
                 messages.append(tool_result_msg)
                 LOGGER.debug(
                     f"{len(messages)} messages in tool loop {toolloop_id} so far..."
                 )
-
         else:
             if i == 0:
                 LOGGER.warning(
-                    f"Tool loop {toolloop_id} did not result in any tool calls."
+                    f"Tool loop {toolloop_id} did not result in any tool calls ({model=})"
                 )
             LOGGER.info(
                 f"Tool loop {toolloop_id} terminated with {i} tool call iterations."
             )
+            print(f"messages: {messages}")
             return messages[start_len:]
 
 
@@ -271,9 +268,8 @@ def render_tool_call_conversation(messages: list[dict[str, str]]) -> str:
         if msg["role"] == "assistant":
             if msg["content"]:  # sometimes msg["content"] is None
                 raw_response += msg["content"]
-            if (
-                "tool_calls" in msg and msg["tool_calls"]
-            ):  # sometimes msg["tool_calls"] is None
+
+            if msg["tool_calls"]:  # sometimes msg["tool_calls"] is None
                 for t in msg["tool_calls"]:
                     t: ChatCompletionMessageToolCall
                     tool_calls[t.id] = t
@@ -417,7 +413,7 @@ class LLM_Agent:
         **kwargs,
     ):
         if is_localhf(self.model):
-            return await self.generate_func(
+            return self.generate_func(
                 prompt=prompt,
                 messages=messages,
                 system_message=system_prompt,
@@ -446,7 +442,7 @@ class LLM_Agent:
         **kwargs,
     ):
         if is_localhf(self.model):
-            return await self.return_probs_func(
+            return self.return_probs_func(
                 return_probs_for=return_probs_for,
                 prompt=prompt,
                 messages=messages,

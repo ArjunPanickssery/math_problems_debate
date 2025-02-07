@@ -89,6 +89,9 @@ class RateLimiter:
             token_capacity, request_capacity = self.update_openrouter_ratelimit(
                 model_id
             )
+        elif model_id.startswith("ollama"):
+            token_capacity = 1e20  # arbitrary large
+            request_capacity = 1e20
         else:
             amts = DEFAULT_RATES.get(model_id)
             token_capacity = amts["tpm"]
@@ -154,7 +157,7 @@ class RateLimiter:
                 # Make the API call outside the lock
                 return await asyncio.wait_for(
                     call_function(model_id, messages, **kwargs),
-                    timeout=90,
+                    timeout=180,  # this needs to be longer for ollama
                 )
 
         async with self.lock_add:
