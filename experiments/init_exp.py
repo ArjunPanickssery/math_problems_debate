@@ -6,7 +6,7 @@ from solib.Experiment import Experiment
 from solib.data.loading import GSM8K
 from solib.utils.default_tools import math_eval
 
-questions = GSM8K.data(limit=100)
+questions = GSM8K.data(limit=1)
 
 init_exp = Experiment(
     questions=questions,
@@ -25,7 +25,7 @@ init_exp = Experiment(
         # "gpt-4o-mini-2024-07-18",
     ],
     protocols=["propaganda", "debate", "consultancy"], # "blind"
-    bon_ns=[1,4],#[1,4],  # , 8],#, 16, 32],
+    bon_ns=[1],#[1,4],  # , 8],#, 16, 32],
     write_path=Path(__file__).parent
     / "results"
     / f"init_exp_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}",

@@ -80,9 +80,13 @@ class QA_Agent(LLM_Agent):
         """
         words_in_mouth = words_in_mouth or self.words_in_mouth
         if isinstance(question, Question):
-            question = question.to_prompt()
+            question_ = question.to_prompt()
+        else:
+            question_ = question
         if isinstance(answer_case, Answer):
-            answer_case = answer_case.to_prompt()
+            answer_case_ = answer_case.to_prompt()
+        else:
+            answer_case_ = answer_case
 
         sys_prompt = system_prompt_template or self.system_template
         user_prompt = user_prompt_template or self.user_template
@@ -95,8 +99,8 @@ class QA_Agent(LLM_Agent):
             {
                 "role": "user",
                 "content": user_prompt.render(
-                    question=question,
-                    answer_case=answer_case,
+                    question=question_,
+                    answer_case=answer_case_,
                     context=context,
                     **(extra_user_renders or {}),
                 ),

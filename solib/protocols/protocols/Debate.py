@@ -1,5 +1,6 @@
 import functools
 import logging
+import asyncio
 from pathlib import Path
 from solib.datatypes import Question, Answer, TranscriptItem
 from solib.protocols.abstract import Protocol, QA_Agent, Judge
@@ -43,13 +44,15 @@ class Debate(Protocol):
         opp_case = question.neg(answer_case)
         assert answer_case is not None and opp_case is not None
         assert answer_case.short != opp_case.short
-        for i, ti in enumerate(question.transcript):
-            ti: TranscriptItem
-            role: str = ti.role
-            if i % 2 == 0:
-                assert role == answer_case.short
-            else:
-                assert role == opp_case.short
+        if question.transcript is not None:
+            for i, ti in enumerate(question.transcript):
+                ti: TranscriptItem
+                role: str = ti.role
+                if i % 2 == 0:
+                    assert role == answer_case.short, f"{[ti.role for ti in question.transcript]}"
+                else:
+                    assert role == opp_case.short, f"{[ti.role for ti in question.transcript]}"
+        trans_len = len(question.transcript) if question.transcript is not None else 0
 
         debater_pro = functools.partial(
             agent,
@@ -79,17 +82,29 @@ class Debate(Protocol):
             temperature=temperature,
             write=write,
         )
+        if question.transcript is not None:
+            assert len(question.transcript) == trans_len
 
         if self.simultaneous:
-            debater_pro_arg = await debater_pro(context=self.ts_to_prompt(question))
-            debater_con_arg = await debater_con(context=self.ts_to_prompt(question))
+            tasks = [debater_pro(context=self.ts_to_prompt(question)), debater_con(context=self.ts_to_prompt(question))]
+            debater_pro_arg, debater_con_arg = await asyncio.gather(*tasks)
+            # debater_pro_arg = await debater_pro(context=self.ts_to_prompt(question))
+            # debater_con_arg = await debater_con(context=self.ts_to_prompt(question))
+            if question.transcript is not None:
+                assert len(question.transcript) == trans_len
             question.append(TranscriptItem(role=answer_case.short, content=debater_pro_arg))
             question.append(TranscriptItem(role=opp_case.short, content=debater_con_arg))
+            assert len(question.transcript) == trans_len + 2, f"Simultaneous debate, {trans_len}, {len(question.transcript)}"
         else:
             debater_pro_arg = await debater_pro(context=self.ts_to_prompt(question))
+            if question.transcript is not None:
+                assert len(question.transcript) == trans_len
             question.append(TranscriptItem(role=answer_case.short, content=debater_pro_arg))
+            assert len(question.transcript) == trans_len + 1
             debater_con_arg = await debater_con(context=self.ts_to_prompt(question))
+            assert len(question.transcript) == trans_len + 1
             question.append(TranscriptItem(role=opp_case.short, content=debater_con_arg))
+            assert len(question.transcript) == trans_len + 2, f"Sequential debate, {trans_len}, {len(question.transcript)}"
         return question
 
     async def run_on_all_answer_cases(
