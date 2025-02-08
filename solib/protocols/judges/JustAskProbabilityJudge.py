@@ -38,7 +38,7 @@ class JustAskProbabilityJudge(Judge):
         self,
         question: Question,
         context: str,
-        caching: bool = True,
+        caching: bool = None,
         write: Path | str | None = None,
     ) -> Question:
         # we don't pass in temperature here since ToT Judge always uses 0.0, and

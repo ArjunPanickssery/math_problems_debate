@@ -15,7 +15,7 @@ class Blind(Protocol):
         question: Question,
         answer_case: Answer,
         judge: Judge,
-        caching: bool = True,
+        caching: bool = None,
         write: Path | str | None = None,
         **rendering_components,
     ) -> Question:
