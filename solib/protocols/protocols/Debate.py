@@ -41,6 +41,8 @@ class Debate(Protocol):
         **rendering_components,
     ):
         opp_case = question.neg(answer_case)
+        assert answer_case is not None and opp_case is not None
+        assert answer_case.short != opp_case.short
 
         debater_pro = functools.partial(
             agent,
@@ -48,6 +50,10 @@ class Debate(Protocol):
             answer_case=answer_case,
             system_prompt_template=self.debater_system_template,
             user_prompt_template=self.debater_user_template,
+            extra_user_renders={
+                "answer_case_short": answer_case.short,
+                "answer_opposite_short": opp_case.short,
+            },
             caching=caching,
             temperature=temperature,
             write=write,
@@ -58,53 +64,25 @@ class Debate(Protocol):
             answer_case=opp_case,
             system_prompt_template=self.debater_system_template,
             user_prompt_template=self.debater_user_template,
+            extra_user_renders={
+                "answer_case_short": opp_case.short,
+                "answer_opposite_short": answer_case.short,
+            },
             caching=caching,
             temperature=temperature,
             write=write,
         )
 
         if self.simultaneous:
-            debater_pro_arg = await debater_pro(
-                context=self.ts_to_prompt(question),
-                extra_user_renders={
-                    "answer_case_short": answer_case.short,
-                    "answer_opposite_short": opp_case.short,
-                },
-            )
-            debater_con_arg = await debater_con(
-                context=self.ts_to_prompt(question),
-                extra_user_renders={
-                    "answer_case_short": opp_case.short,
-                    "answer_opposite_short": answer_case.short,
-                },
-            )
-            question.append(
-                TranscriptItem(role=answer_case.short, content=debater_pro_arg)
-            )
-            question.append(
-                TranscriptItem(role=opp_case.short, content=debater_con_arg)
-            )
+            debater_pro_arg = await debater_pro(context=self.ts_to_prompt(question))
+            debater_con_arg = await debater_con(context=self.ts_to_prompt(question))
+            question.append(TranscriptItem(role=answer_case.short, content=debater_pro_arg))
+            question.append(TranscriptItem(role=opp_case.short, content=debater_con_arg))
         else:
-            debater_pro_arg = await debater_pro(
-                context=self.ts_to_prompt(question),
-                extra_user_renders={
-                    "answer_case_short": answer_case.short,
-                    "answer_opposite_short": opp_case.short,
-                },
-            )
-            question.append(
-                TranscriptItem(role=answer_case.short, content=debater_pro_arg)
-            )
-            debater_con_arg = await debater_con(
-                context=self.ts_to_prompt(question),
-                extra_user_renders={
-                    "answer_case_short": opp_case.short,
-                    "answer_opposite_short": answer_case.short,
-                },
-            )
-            question.append(
-                TranscriptItem(role=opp_case.short, content=debater_con_arg)
-            )
+            debater_pro_arg = await debater_pro(context=self.ts_to_prompt(question))
+            question.append(TranscriptItem(role=answer_case.short, content=debater_pro_arg))
+            debater_con_arg = await debater_con(context=self.ts_to_prompt(question))
+            question.append(TranscriptItem(role=opp_case.short, content=debater_con_arg))
         return question
 
     async def run_on_all_answer_cases(
