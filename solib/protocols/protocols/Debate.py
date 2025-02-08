@@ -11,8 +11,8 @@ LOGGER = logging.getLogger(__name__)
 class Debate(Protocol):
     def __init__(
         self,
-        debater_system_file: str = "qa_agent/qa_agent_system.jinja",
-        debater_user_file: str = "qa_agent/qa_agent_user.jinja",
+        debater_system_file: str = "debate/qa_agent_system.jinja",
+        debater_user_file: str = "debate/qa_agent_user.jinja",
         num_turns: int = 2,
         simultaneous: bool = True,
     ):
@@ -74,8 +74,8 @@ class Debate(Protocol):
             debater_con_arg = await debater_con(
                 context=self.ts_to_prompt(question),
                 extra_user_renders={
-                    "answer_case_short": answer_case.short,
-                    "answer_opposite_short": opp_case.short,
+                    "answer_case_short": opp_case.short,
+                    "answer_opposite_short": answer_case.short,
                 },
             )
             question.append(
@@ -98,8 +98,8 @@ class Debate(Protocol):
             debater_con_arg = await debater_con(
                 context=self.ts_to_prompt(question),
                 extra_user_renders={
-                    "answer_case_short": answer_case.short,
-                    "answer_opposite_short": opp_case.short,
+                    "answer_case_short": opp_case.short,
+                    "answer_opposite_short": answer_case.short,
                 },
             )
             question.append(
