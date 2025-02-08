@@ -29,7 +29,7 @@ class Propaganda(Protocol):
             write=write,
             **rendering_components,
         )
-        question.append(TranscriptItem(role=answer_case.short, content=agent_response))
+        question = question.append(TranscriptItem(role=answer_case.short, content=agent_response))
         assert question.transcript is not None
         result = await judge(
             question=question,

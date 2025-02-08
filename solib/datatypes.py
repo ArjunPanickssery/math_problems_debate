@@ -1,5 +1,6 @@
 import json
 import logging
+import copy
 import numpy as np
 from typing import Any, Literal, Optional, Union, Callable, Self
 from pydantic import BaseModel, field_validator, computed_field, model_validator, Field
@@ -757,10 +758,12 @@ class Question(BaseModel):
 
     # following methods apply for treating Question as a transcript
 
-    def append(self, item: "TranscriptItem") -> None:
+    def append(self, item: "TranscriptItem") -> "Question":
+        question = copy.deepcopy(self)
         if self.transcript is None:
-            self.transcript = []
-        self.transcript.append(item)
+            question.transcript = []
+        question.transcript.append(item)
+        return question
 
 
 class TranscriptItem(BaseModel):

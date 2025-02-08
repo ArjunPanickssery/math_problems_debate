@@ -90,8 +90,12 @@ class Consultancy(Protocol):
             question.transcript and question.transcript[-1].role == "client"
         ):
             cons_resp = await consultant(context=self.ts_to_prompt(question))
-            question.append(TranscriptItem(role=answer_case.short, content=cons_resp))
-        else:
+            question_ = question.append(TranscriptItem(role=answer_case.short, content=cons_resp))
+        elif (question.transcript in [None, []] and not self.consultant_goes_first) or (
+            question.transcript and question.transcript[-1].role != "client"
+        ):
             client_resp = await client(context=self.ts_to_prompt(question))
-            question.append(TranscriptItem(role="client", content=client_resp))
-        return question
+            question_ = question.append(TranscriptItem(role="client", content=client_resp))
+        else:
+            raise ValueError("Logic is no longer valid in this universe. Please try another one.")
+        return question_
