@@ -81,6 +81,7 @@ class QA_Agent(LLM_Agent):
         words_in_mouth = words_in_mouth or self.words_in_mouth
         if isinstance(question, Question):
             question_ = question.to_prompt()
+            trans_len = len(question.transcript) if question.transcript is not None else 0
         else:
             question_ = question
         if isinstance(answer_case, Answer):
@@ -90,6 +91,9 @@ class QA_Agent(LLM_Agent):
 
         sys_prompt = system_prompt_template or self.system_template
         user_prompt = user_prompt_template or self.user_template
+
+        if isinstance(question, Question):
+            assert (len(question.transcript) if question.transcript is not None else 0) == trans_len
 
         messages = [
             {
@@ -107,7 +111,11 @@ class QA_Agent(LLM_Agent):
             },
         ]
 
-        return await self.get_response(
+
+        if isinstance(question, Question):
+            assert (len(question.transcript) if question.transcript is not None else 0) == trans_len
+
+        resp = await self.get_response(
             messages=messages,
             words_in_mouth=words_in_mouth,
             max_tokens=max_tokens,
@@ -115,6 +123,11 @@ class QA_Agent(LLM_Agent):
             temperature=temperature,
             write=write,
         )
+
+        if isinstance(question, Question):
+            assert (len(question.transcript) if question.transcript is not None else 0) == trans_len
+
+        return resp
 
     def __repr__(self):
         return f"{self.__class__.__name__}(model={self.model}, tools={self.tools})"

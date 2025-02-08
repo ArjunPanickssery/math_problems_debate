@@ -83,7 +83,7 @@ class Debate(Protocol):
             write=write,
         )
         if question.transcript is not None:
-            assert len(question.transcript) == trans_len
+            assert len(question.transcript) == trans_len, f"{len(question.transcript)}=={trans_len}"
 
         if self.simultaneous:
             tasks = [debater_pro(context=self.ts_to_prompt(question)), debater_con(context=self.ts_to_prompt(question))]
@@ -91,20 +91,22 @@ class Debate(Protocol):
             # debater_pro_arg = await debater_pro(context=self.ts_to_prompt(question))
             # debater_con_arg = await debater_con(context=self.ts_to_prompt(question))
             if question.transcript is not None:
-                assert len(question.transcript) == trans_len
+                assert len(question.transcript) == trans_len, f"{len(question.transcript)}=={trans_len}"
             question.append(TranscriptItem(role=answer_case.short, content=debater_pro_arg))
+            if question.transcript is not None:
+                assert len(question.transcript) == trans_len+1, f"{len(question.transcript)}=={trans_len}+1"
             question.append(TranscriptItem(role=opp_case.short, content=debater_con_arg))
-            assert len(question.transcript) == trans_len + 2, f"Simultaneous debate, {trans_len}, {len(question.transcript)}"
+            assert len(question.transcript) == trans_len + 2, f"Simultaneous debate, {len(question.transcript)}=={trans_len}+2"
         else:
             debater_pro_arg = await debater_pro(context=self.ts_to_prompt(question))
             if question.transcript is not None:
-                assert len(question.transcript) == trans_len
+                assert len(question.transcript) == trans_len, f"Sequential debate, {len(question.transcript)}=={trans_len}"
             question.append(TranscriptItem(role=answer_case.short, content=debater_pro_arg))
-            assert len(question.transcript) == trans_len + 1
+            assert len(question.transcript) == trans_len + 1, f"Sequential debate, {len(question.transcript)}=={trans_len}+1"
             debater_con_arg = await debater_con(context=self.ts_to_prompt(question))
-            assert len(question.transcript) == trans_len + 1
+            assert len(question.transcript) == trans_len + 1, f"Sequential debate, {len(question.transcript)}=={trans_len}+1"
             question.append(TranscriptItem(role=opp_case.short, content=debater_con_arg))
-            assert len(question.transcript) == trans_len + 2, f"Sequential debate, {trans_len}, {len(question.transcript)}"
+            assert len(question.transcript) == trans_len + 2, f"Sequential debate, {len(question.transcript)}=={trans_len}+2"
         return question
 
     async def run_on_all_answer_cases(
