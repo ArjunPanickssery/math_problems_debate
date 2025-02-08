@@ -36,7 +36,7 @@ class Debate(Protocol):
         answer_case: Answer,
         adversary: QA_Agent,
         judge: Judge,
-        caching: bool = True,
+        caching: bool = None,
         temperature: float = 0.4,
         write: Path | str | None = None,
         **rendering_components,
@@ -115,7 +115,7 @@ class Debate(Protocol):
         question: Question,
         judge: Judge,
         adversary: QA_Agent,
-        caching: bool = True,
+        caching: bool = None,
         temperature: float = 0.4,
         write: Path | str | None = None,
     ) -> Question:

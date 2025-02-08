@@ -1,3 +1,4 @@
+import copy
 import logging
 from pathlib import Path
 from solib.datatypes import Answer, Question, TranscriptItem
@@ -20,7 +21,7 @@ class Judge(LLM_Agent):
         self,
         question: Question,
         context: str | None = None,
-        caching: bool = True,
+        caching: bool = None,
     ) -> Question:
         """Add probabilities to each answer_case."""
         raise AbstractionError
@@ -59,7 +60,7 @@ class QA_Agent(LLM_Agent):
         context: str | None = None,
         words_in_mouth: str | None = None,
         max_tokens: int = 2048,
-        caching: bool = True,
+        caching: bool = None,
         temperature: float = 0.4,
         extra_user_renders: dict | None = None,
         system_prompt_template: str | None = None,
@@ -115,6 +116,11 @@ class QA_Agent(LLM_Agent):
         if isinstance(question, Question):
             assert (len(question.transcript) if question.transcript is not None else 0) == trans_len
 
+        for m in messages:
+            assert isinstance(m["content"], str)
+
+        question_original = copy.deepcopy(question)
+
         resp = await self.get_response(
             messages=messages,
             words_in_mouth=words_in_mouth,
@@ -125,7 +131,19 @@ class QA_Agent(LLM_Agent):
         )
 
         if isinstance(question, Question):
-            assert (len(question.transcript) if question.transcript is not None else 0) == trans_len
+            DEBUG_INFO = (
+                f"{type(self)}\n"
+                f"question.transcript: {question.transcript}\n"
+                f"original question.transcript: {question_original.transcript}\n"
+                f"messages: {messages}\n"
+                f"words_in_mouth: {words_in_mouth}\n"
+                f"max_tokens: {max_tokens}\n"
+                f"caching: {caching}\n"
+                f"temperature: {temperature}\n"
+                f"write: {write}\n"
+                f"response: {resp}\n"
+            )
+            assert (len(question.transcript) if question.transcript is not None else 0) == trans_len, DEBUG_INFO
 
         return resp
 

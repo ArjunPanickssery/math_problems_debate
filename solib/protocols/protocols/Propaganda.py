@@ -13,7 +13,7 @@ class Propaganda(Protocol):
         question: Question,
         answer_case: Answer,
         judge: Judge,
-        caching: bool = True,
+        caching: bool = None,
         temperature: float = 0.4,
         write: Path | str | None = None,
         **rendering_components,

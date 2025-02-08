@@ -39,7 +39,7 @@ class TipOfTongueJudge(Judge):
         self,
         question: Question,
         context: str | None = None,
-        caching: bool = True,
+        caching: bool = None,
         write: Path | str | None = None,
     ) -> Question:
         messages = [

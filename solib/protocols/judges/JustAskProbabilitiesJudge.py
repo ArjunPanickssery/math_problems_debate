@@ -25,7 +25,7 @@ class JustAskProbabilitiesJudge(JustAskProbabilityJudge):
         self,
         question: Question,
         context: str,
-        caching: bool = True,
+        caching: bool = None,
         write: Path | str | None = None,
     ) -> Question:
         """Returns a .is_elicited Question."""

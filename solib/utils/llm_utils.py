@@ -93,12 +93,15 @@ def supports_response_models(model: str) -> bool:
 async def acompletion_ratelimited(
     model: str,
     messages: list[dict[str, str]],
-    caching: bool = CACHING,
+    caching: bool = None,
     cost_log: Costlog = GLOBAL_COST_LOG,
     simulate: bool = SIMULATE,
     write: Path | str | None = None,
     **kwargs,
 ) -> "ModelResponse":
+
+    if caching is None:
+        caching = CACHING # default if not fored    
 
     max_retries = kwargs.pop("max_retries", 10)
     call_id = uuid.uuid4().hex
