@@ -43,6 +43,13 @@ class Debate(Protocol):
         opp_case = question.neg(answer_case)
         assert answer_case is not None and opp_case is not None
         assert answer_case.short != opp_case.short
+        for i, ti in enumerate(question.transcript):
+            ti: TranscriptItem
+            role: str = ti.role
+            if i % 2 == 0:
+                assert role == answer_case.short
+            else:
+                assert role == opp_case.short
 
         debater_pro = functools.partial(
             agent,
