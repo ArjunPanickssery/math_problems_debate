@@ -19,10 +19,14 @@ class Propaganda(Protocol):
         **rendering_components,
     ) -> Question:
         assert isinstance(question, Question)
+        if "extra_user_renders" in rendering_components:
+            if rendering_components["extra_user_renders"] is None:
+                rendering_components["extra_user_renders"] = {}
+            rendering_components["extra_user_renders"] |= {"answer_case_short": answer_case.short}
         agent_response = await agent(
             question=question,
             answer_case=answer_case,
-            extra_user_renders={"answer_case_short": answer_case.short},
+            # extra_user_renders={"answer_case_short": answer_case.short},
             context=self.ts_to_prompt(question),
             caching=caching,
             temperature=temperature,
