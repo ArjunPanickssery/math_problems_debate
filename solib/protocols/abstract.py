@@ -82,7 +82,9 @@ class QA_Agent(LLM_Agent):
         words_in_mouth = words_in_mouth or self.words_in_mouth
         if isinstance(question, Question):
             question_ = question.to_prompt()
-            trans_len = len(question.transcript) if question.transcript is not None else 0
+            trans_len = (
+                len(question.transcript) if question.transcript is not None else 0
+            )
         else:
             question_ = question
         if isinstance(answer_case, Answer):
@@ -94,7 +96,9 @@ class QA_Agent(LLM_Agent):
         user_prompt = user_prompt_template or self.user_template
 
         if isinstance(question, Question):
-            assert (len(question.transcript) if question.transcript is not None else 0) == trans_len
+            assert (
+                len(question.transcript) if question.transcript is not None else 0
+            ) == trans_len
 
         messages = [
             {
@@ -112,9 +116,10 @@ class QA_Agent(LLM_Agent):
             },
         ]
 
-
         if isinstance(question, Question):
-            assert (len(question.transcript) if question.transcript is not None else 0) == trans_len
+            assert (
+                len(question.transcript) if question.transcript is not None else 0
+            ) == trans_len
 
         for m in messages:
             assert isinstance(m["content"], str)
@@ -143,7 +148,9 @@ class QA_Agent(LLM_Agent):
                 f"write: {write}\n"
                 f"response: {resp}\n"
             )
-            assert (len(question.transcript) if question.transcript is not None else 0) == trans_len, DEBUG_INFO
+            assert (
+                len(question.transcript) if question.transcript is not None else 0
+            ) == trans_len, DEBUG_INFO
 
         return resp
 
@@ -275,55 +282,69 @@ class Protocol:
         assert result.is_argued
         return result
 
+    def get_experiment_config(
+        self, agent: QA_Agent, judge: Judge, **other_components
+    ) -> dict:
+        return {
+            "protocol": self,
+            "agent": agent,
+            "judge": judge,
+            **other_components,
+        }
+
     async def experiment(
         self,
         agent: QA_Agent,
         questions: Dataset,
         judge: Judge,
         write: Path | str | None = None,
+        continue_from_results: dict[tuple, Question] | None = None,
         **other_components,
     ) -> tuple[list[Question], dict]:
         results = []
 
         if write:
             Path(write).mkdir(parents=True, exist_ok=True)
+            write_config = Path(write) / "config.json"
             write_results = Path(write) / "results.jsonl"
             write_stats = Path(write) / "stats.json"
-            write_config = Path(write) / "config.json"
         else:
             write_results = write_stats = write_config = None
 
         write_json(
             dump_config(
-                {
-                    "protocol": self,
-                    "agent": agent,
-                    "judge": judge,
-                    **other_components,
-                }
+                self.get_experiment_config(agent=agent, judge=judge, **other_components)
             ),
             path=write_config,
         )
 
         async def process_question(question: Question):
-            # censor question before sending to any AI
-            question_censored = question.censor()
+            result = None
+            if continue_from_results is not None:
+                result = continue_from_results.get(question.id, None)
+            
+            if result is None:
+                # censor question before sending to any AI
+                question_censored = question.censor()
 
-            result = await self.run_on_all_answer_cases(
-                agent=agent,
-                question=question_censored,
-                judge=judge,
-                write=write,
-                **other_components,
-            )
+                result = await self.run_on_all_answer_cases(
+                    agent=agent,
+                    question=question_censored,
+                    judge=judge,
+                    write=write,
+                    **other_components,
+                )
 
-            # reattach ground truth values to trigger computation of scores
-            result = result.uncensor(question)
+                # reattach ground truth values to trigger computation of scores
+                result = result.uncensor(question)
+
+            assert result.is_argued
+            assert result.is_grounded
+
             await write_jsonl_async(
                 result.model_dump(exclude_none=True), path=write_results, append=True
             )
-            assert result.is_argued
-            assert result.is_grounded
+
             return result
 
         results = await parallelized_call(process_question, questions)

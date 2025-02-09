@@ -1,8 +1,11 @@
 import logging
+import traceback
+import json
 from datetime import datetime
 from pathlib import Path
 
 from solib.data.loading import Dataset
+from solib.datatypes import Question
 from solib.utils import str_config, write_json, dump_config, random
 from solib.utils import parallelized_call
 from solib.utils.llm_utils import (
@@ -59,11 +62,12 @@ class Experiment:
         judge_models: list[str],
         agent_models: list[str],
         agent_toolss: list[list[callable]] = None,
-        protocols: dict[str, type[Protocol]] = None,
+        protocols: dict[str, type[Protocol]] | list[str] = None,
         num_turnss: list[int] = None,
         bon_ns: list[int] = None,
         write_path: Path = Path("experiments")
         / f"results_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}",
+        continue_from: Path = None,
     ):
         """
         Args:
@@ -71,13 +75,15 @@ class Experiment:
             agent_models: List of models for the agents.
             agent_toolss: List of tools for the agents.
             judge_models: List of models for the judges.
-            protocols: Dictionary of protocols to run.
+            protocols: Dictionary of protocols to run, or list of keys
+                from default Experiment.protocols dict.
             num_turnss: List of number of turns for the protocols.
             bon_ns: List of n for BestOfN_Agent.
                 If None or [1], will only run with PLAIN agents.
                 If [1, ...], will run with PLAIN and BestOfN agents.
                 If [...] without 1, will only run with BestOfN agents.
             write_path: Folder directory to write the results to.
+            continue_from: Path to look for existing results to continue from.
         """
         self.default_quant_config = True
         self.questions = questions
@@ -109,6 +115,7 @@ class Experiment:
         self.num_turnss = num_turnss
         self.bon_ns = bon_ns
         self.write_path = write_path
+        self.continue_from = continue_from
 
     protocols = {
         "blind": Blind,
@@ -223,10 +230,73 @@ class Experiment:
         async def run_experiment(config: dict):
             LOGGER.status(f"Running experiment {self.get_path(config)}")
             setup = config["protocol"](**config["init_kwargs"])
+
+            if self.continue_from:
+                likely_path = self.continue_from / self.get_path(config).relative_to(
+                    self.write_path
+                )
+                config = setup.get_experiment_config(**config["call_kwargs"])
+
+                # we search through self.continue_from at depth level 2 (i.e. through
+                # its subdirectories and subsubdirectories), starting from likely_path,
+                # load its config.json if available, check if it equals config, and if
+                # so, load results.jsonl if available, and pass it to setup.experiment()
+                # as `continue_from_results: list[Question]`
+
+                def try_to_load(path: Path) -> dict[tuple, Question] | None:
+                    try:
+                        config_path = path / "config.json"
+                        results_path = path / "results.jsonl"
+                        with open(config_path) as f:
+                            loaded_config = json.load(f)
+                        if loaded_config == config:
+                            qs: dict[tuple, Question] = {}
+                            with open(results_path) as f:
+                                for q_ in json.load(f):
+                                    q_: dict
+                                    q: Question = Question(**q_)
+                                    assert q.is_elicited
+                                    assert q.is_grounded
+                                    qs[q.id] = q
+                            return qs
+                        else:
+                            return None
+                    except (
+                        FileNotFoundError,
+                        json.JSONDecodeError,
+                        KeyError,
+                        IOError,
+                        AssertionError,
+                    ):
+                        return None
+                    except Exception as e:
+                        LOGGER.error(
+                            f"Error loading {path}: {e}\n{traceback.format_exc()}"
+                        )
+                        return None
+
+                def recursively_try_to_load(path: Path) -> dict[tuple, Question] | None:
+                    qs = try_to_load(path)
+                    if qs is not None:
+                        return qs
+                    for subpath in path.iterdir():
+                        if subpath.is_dir():
+                            qs = recursively_try_to_load(subpath)
+                            if qs is not None:
+                                return qs
+                    return None
+
+                continue_from_results: dict[tuple, Question] | None = recursively_try_to_load(
+                    likely_path
+                ) or recursively_try_to_load(self.continue_from)
+            else:
+                continue_from_results = None
+
             stuff = await setup.experiment(
                 questions=self.questions,
                 **config["call_kwargs"],
                 write=self.get_path(config),
+                continue_from_results=continue_from_results,
             )
             results, stats = stuff
             return stats
@@ -351,8 +421,13 @@ class Experiment:
         call_kwargs_str = ""
         for k, v in config["call_kwargs"].items():
             if k in ["agent", "adversary"]:
-                k_ = "A"
-                v_ = v.model.split("/")[-1]
+                k_ = "A" if k == "agent" else "B"
+                v_type = f"BON-{v.n}-" if isinstance(v, BestOfN_Agent) else ""
+                v_model = v.model.split("/")[-1]
+                v_tools = ""
+                for tool in v.tools if v.tools else []:
+                    v_tools += f"-{tool.__name__}"
+                v_ = f"{v_type}{v_model}{v_tools}"
             elif k == "judge":
                 k_ = "J"
                 v_ = v.model.split("/")[-1]

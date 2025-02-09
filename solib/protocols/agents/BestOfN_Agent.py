@@ -26,7 +26,12 @@ class BestOfN_Agent(QA_Agent):
         # inherit other stuff
         self.model = self.agent.model
         self.tools = self.agent.tools
-        self.dict = self.agent.dict
+        self.dict = {
+            "n": self.n,
+            "agent": self.agent.dict,
+            "judge": self.judge.dict,
+            "protocol": self.protocol.dict,
+        }
 
     async def __call__(
         self,

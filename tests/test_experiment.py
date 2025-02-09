@@ -7,6 +7,7 @@ from solib.Experiment import Experiment
 from solib.data.loading import GSM8K
 from solib.utils.default_tools import math_eval
 from solib.protocols.abstract import QA_Agent, Judge
+from solib.protocols.agents import BestOfN_Agent
 
 experiment = Experiment(
     questions=[],
@@ -27,14 +28,14 @@ def test_get_path():
             },
             "call_kwargs": {
                 "judge": Judge("gpt-4o-mini"),
-                "agent": QA_Agent("gpt-4o-mini"),
-                "adversary": QA_Agent("gpt-4o-mini"),
+                "agent": QA_Agent("gpt-4o-mini", tools=[math_eval]),
+                "adversary": BestOfN_Agent(n=4, agent=QA_Agent("gpt-4o-mini")),
             },
         }
     )
     path = str(path)
     assert path.startswith("experiments/results_")
-    assert path.endswith("/Debate_t1_n4/_Jgpt-4o-mini_Agpt-4o-mini_Agpt-4o-mini")
+    assert path.endswith("/Debate_t1_n4/_Jgpt-4o-mini_Agpt-4o-mini-math_eval_BBON-4-gpt-4o-mini")
 
 
 questions = GSM8K.data(limit=1)

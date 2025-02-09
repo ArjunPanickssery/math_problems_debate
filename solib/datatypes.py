@@ -436,6 +436,10 @@ class Question(BaseModel):
     #         assert not self.is_argued
     #     return self
 
+    @property
+    def id(self) -> tuple:
+        return (self.question, ((a. short, a.long) for a in self.answer_cases))
+
     def censor(self) -> "Question":
         return Question(
             question=self.question,
