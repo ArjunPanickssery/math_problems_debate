@@ -1,5 +1,6 @@
 import asyncio  # noqa
 import pytest  # noqa
+import time
 from pathlib import Path
 from datetime import datetime
 from solib.protocols.protocols import Debate, Blind, Propaganda, Consultancy  # noqa
@@ -17,6 +18,7 @@ experiment = Experiment(
     judge_models=["gpt-4o-mini", "hf:meta-llama/Meta-Llama-3-8B-Instruct"],
 )
 
+TEST_RESULTS_PATH = Path(__file__).parent / "test_results" / f"{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
 
 def test_get_path():
     path = experiment.get_path(
@@ -28,7 +30,7 @@ def test_get_path():
             },
             "call_kwargs": {
                 "judge": Judge("gpt-4o-mini"),
-                "agent": QA_Agent("gpt-4o-mini", tools=[math_eval]),
+                "agent": QA_Agent("openrouter/gpt-4o-mini", tools=[math_eval]),
                 "adversary": BestOfN_Agent(n=4, agent=QA_Agent("gpt-4o-mini")),
             },
         }
@@ -56,12 +58,17 @@ test_experiment = Experiment(
     ],
     protocols=["blind", "propaganda", "debate", "consultancy"],
     bon_ns=[1,4],
-    write_path=Path(__file__).parent
-    / "test_results"
-    / f"{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}",
+    write_path=TEST_RESULTS_PATH,
+    continue_from=TEST_RESULTS_PATH,
 )
-
 
 @pytest.mark.asyncio
 async def test_experiment_runs():
     await test_experiment.experiment(max_configs=4)
+
+@pytest.mark.asyncio
+async def test_experiment_continue_from():
+    t0 = time.time()
+    await test_experiment.experiment(max_configs=4)
+    t1 = time.time()
+    assert t1 - t0 < 10

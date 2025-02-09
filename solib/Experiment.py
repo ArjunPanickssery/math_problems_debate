@@ -235,7 +235,7 @@ class Experiment:
                 likely_path = self.continue_from / self.get_path(config).relative_to(
                     self.write_path
                 )
-                config = setup.get_experiment_config(**config["call_kwargs"])
+                experiment_config = setup.get_experiment_config(**config["call_kwargs"])
 
                 # we search through self.continue_from at depth level 2 (i.e. through
                 # its subdirectories and subsubdirectories), starting from likely_path,
@@ -244,22 +244,27 @@ class Experiment:
                 # as `continue_from_results: list[Question]`
 
                 def try_to_load(path: Path) -> dict[tuple, Question] | None:
+                    LOGGER.debug(f"Trying to load {path} for {experiment_config}")
                     try:
                         config_path = path / "config.json"
                         results_path = path / "results.jsonl"
                         with open(config_path) as f:
                             loaded_config = json.load(f)
-                        if loaded_config == config:
+                        if loaded_config == experiment_config:
+                            LOGGER.debug(f"{loaded_config} == {experiment_config}")
                             qs: dict[tuple, Question] = {}
                             with open(results_path) as f:
-                                for q_ in json.load(f):
+                                qs_ = json.load(f)
+                                for q_ in qs_:
                                     q_: dict
                                     q: Question = Question(**q_)
                                     assert q.is_elicited
                                     assert q.is_grounded
                                     qs[q.id] = q
+                            LOGGER.debug(f"Loaded {len(qs)} out of {len(qs_)} questions from {results_path}")
                             return qs
                         else:
+                            LOGGER.debug(f"{loaded_config} != {experiment_config}")
                             return None
                     except (
                         FileNotFoundError,
@@ -267,11 +272,12 @@ class Experiment:
                         KeyError,
                         IOError,
                         AssertionError,
-                    ):
+                    ) as e:
+                        LOGGER.debug(f"Cannot load {path}: {e}")
                         return None
                     except Exception as e:
                         LOGGER.error(
-                            f"Error loading {path}: {e}\n{traceback.format_exc()}"
+                            f"Unexpected error loading {path}: {e}\n{traceback.format_exc()}"
                         )
                         return None
 
@@ -279,19 +285,21 @@ class Experiment:
                     qs = try_to_load(path)
                     if qs is not None:
                         return qs
-                    for subpath in path.iterdir():
-                        if subpath.is_dir():
-                            qs = recursively_try_to_load(subpath)
-                            if qs is not None:
-                                return qs
-                    return None
+                    try:
+                        for subpath in path.iterdir():
+                            if subpath.is_dir():
+                                qs = recursively_try_to_load(subpath)
+                                if qs is not None:
+                                    return qs
+                    except Exception as e:
+                        return None
 
                 continue_from_results: dict[tuple, Question] | None = recursively_try_to_load(
                     likely_path
                 ) or recursively_try_to_load(self.continue_from)
             else:
                 continue_from_results = None
-
+            print("wtfff", config)
             stuff = await setup.experiment(
                 questions=self.questions,
                 **config["call_kwargs"],
