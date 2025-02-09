@@ -305,9 +305,12 @@ async def acompletion_wrapper(
     Exactly one of prompt and messages should be provided.
     """
 
-    assert (tools is None) + (response_format is None) + (
+    assert (not tools) + (response_format is None) + (
         return_probs_for is None
-    ) >= 2, "At most one of tools, response_format, and return_probs_for should be provided."
+    ) >= 2, (
+        f"At most one of tools={tools}, response_format={response_format}, "
+        f"and return_probs_for={return_probs_for} should be provided."
+    )
 
     # TODO: implement checking if words_in_mouth supported
     # if words_in_mouth:  # litellm assistant prefill

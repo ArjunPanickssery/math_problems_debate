@@ -293,6 +293,18 @@ class Protocol:
         else:
             write_results = write_stats = write_config = None
 
+        write_json(
+            dump_config(
+                {
+                    "protocol": self,
+                    "agent": agent,
+                    "judge": judge,
+                    **other_components,
+                }
+            ),
+            path=write_config,
+        )
+
         async def process_question(question: Question):
             # censor question before sending to any AI
             question_censored = question.censor()
@@ -318,16 +330,4 @@ class Protocol:
         stats = Question.compute_stats(results)
 
         write_json(stats, path=write_stats)
-        write_json(
-            dump_config(
-                {
-                    "protocol": self,
-                    "agent": agent,
-                    "judge": judge,
-                    **other_components,
-                }
-            ),
-            path=write_config,
-        )
-
         return results, stats
