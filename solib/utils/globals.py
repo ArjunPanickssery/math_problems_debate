@@ -35,6 +35,7 @@ DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 HF_TOKEN = os.getenv("HF_TOKEN")
 ENABLE_PROMPT_HISTORY = os.getenv("ENABLE_PROMPT_HISTORY", "False").lower() == "true"
+RATE_LIMITER_FRAC_RATE_LIMIT = float(os.getenv("RATE_LIMITER_FRAC_RATE_LIMIT", "0.9"))
 
 TOOL_CALL_START_TAG = "<tool_call>"
 TOOL_CALL_END_TAG = "</tool_call>"

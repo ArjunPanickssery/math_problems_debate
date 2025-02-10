@@ -14,7 +14,7 @@ init_exp = Experiment(
         "claude-3-5-sonnet-20241022",
         "claude-3-5-haiku-20241022",
         "claude-3-opus-20240229",
-        "openrouter/deepseek/deepseek-chat" # "ollama_chat/deepseek-v3"
+        "openrouter/deepseek/deepseek-chat", # "ollama_chat/deepseek-v3"
         "ollama_chat/llama3.1:8b-instruct-q6_K",
     ],
     agent_toolss=[[], [math_eval]],

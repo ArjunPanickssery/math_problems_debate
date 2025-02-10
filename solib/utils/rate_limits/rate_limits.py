@@ -12,7 +12,7 @@ from pathlib import Path
 
 import tiktoken
 
-from solib.utils.globals import OPENROUTER_API_KEY, ENABLE_PROMPT_HISTORY
+from solib.utils.globals import OPENROUTER_API_KEY, ENABLE_PROMPT_HISTORY, RATE_LIMITER_FRAC_RATE_LIMIT
 from solib.utils.rate_limits.rate_limit_utils import DEFAULT_RATES
 from solib.utils.utils import parse_time_interval, rand_suffix
 
@@ -105,7 +105,7 @@ class RateLimiter:
             )
         elif model_id.startswith("ollama"):
             token_capacity = 1e20  # arbitrary large
-            request_capacity = 20  # don't make this too big
+            request_capacity = 80  # don't make this too big
         else:
             amts = DEFAULT_RATES.get(model_id)
             token_capacity = amts["tpm"]
@@ -236,5 +236,5 @@ class RateLimiter:
 
 
 RATE_LIMITER = (
-    RateLimiter()
+    RateLimiter(frac_rate_limit=RATE_LIMITER_FRAC_RATE_LIMIT)
 )  # initialize here instead of in solib.utils.globals to avoid circular import

@@ -35,6 +35,7 @@ litellm.add_function_to_prompt = (
 )
 litellm.drop_params = True  # make LLM calls ignore extra params
 litellm.cache = Cache(type="disk")
+litellm.suppress_debug_info = True
 # litellm.set_verbose = True
 
 
