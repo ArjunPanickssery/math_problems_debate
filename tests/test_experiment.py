@@ -19,8 +19,8 @@ experiment = Experiment(
     judge_models=["gpt-4o-mini", "hf:meta-llama/Meta-Llama-3-8B-Instruct"],
 )
 
-# TEST_RESULTS_PATH = Path(__file__).parent / "test_results" / f"{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
-TEST_RESULTS_PATH = Path(__file__).parent / "test_results" / "TEST_CONTINUE"
+TEST_RESULTS_PATH = Path(__file__).parent / "test_results" / f"{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
+# TEST_RESULTS_PATH = Path(__file__).parent / "test_results" / "TEST_CONTINUE"
 
 def test_get_path():
     path = experiment.get_path(

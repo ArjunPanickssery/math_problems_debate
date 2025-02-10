@@ -318,6 +318,8 @@ class Protocol:
             path=write_config,
         )
 
+        LOGGER.debug(f"continue_from_results passed as: {continue_from_results}")
+
         async def process_question(question: Question):
             result = None
             if continue_from_results is not None:
@@ -325,6 +327,11 @@ class Protocol:
                 LOGGER.debug(f"Continuing from result: {result}")
 
             if result is None:
+                if continue_from_results is not None:
+                    LOGGER.debug(
+                        f"Going to have to ask AI on this one, even though we were continuing "
+                        f"from {continue_from_results} as I could not find {question.id} in that one."
+                    )
                 # censor question before sending to any AI
                 question_censored = question.censor()
 

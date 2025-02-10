@@ -303,7 +303,6 @@ class Experiment:
                 LOGGER.debug(f"continue_from_results: {continue_from_results}")
             else:
                 continue_from_results = None
-            print("wtfff", config)
             stuff = await setup.experiment(
                 questions=self.questions,
                 **config["call_kwargs"],
