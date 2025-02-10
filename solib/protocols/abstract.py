@@ -285,12 +285,14 @@ class Protocol:
     def get_experiment_config(
         self, agent: QA_Agent, judge: Judge, **other_components
     ) -> dict:
-        return {
-            "protocol": self,
-            "agent": agent,
-            "judge": judge,
-            **other_components,
-        }
+        return dump_config(
+            {
+                "protocol": self,
+                "agent": agent,
+                "judge": judge,
+                **other_components,
+            }
+        )
 
     async def experiment(
         self,
@@ -312,9 +314,7 @@ class Protocol:
             write_results = write_stats = write_config = None
 
         write_json(
-            dump_config(
-                self.get_experiment_config(agent=agent, judge=judge, **other_components)
-            ),
+            self.get_experiment_config(agent=agent, judge=judge, **other_components),
             path=write_config,
         )
 
@@ -322,7 +322,8 @@ class Protocol:
             result = None
             if continue_from_results is not None:
                 result = continue_from_results.get(question.id, None)
-            
+                LOGGER.debug(f"Continuing from result: {result}")
+
             if result is None:
                 # censor question before sending to any AI
                 question_censored = question.censor()

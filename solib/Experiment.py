@@ -1,6 +1,7 @@
 import logging
 import traceback
 import json
+import jsonlines
 from datetime import datetime
 from pathlib import Path
 
@@ -253,15 +254,17 @@ class Experiment:
                         if loaded_config == experiment_config:
                             LOGGER.debug(f"{loaded_config} == {experiment_config}")
                             qs: dict[tuple, Question] = {}
-                            with open(results_path) as f:
-                                qs_ = json.load(f)
+                            with jsonlines.open(results_path, 'r') as qs_:
+                                len_qs_: int = 0 # qs_ is a jsonlines Reader obj so we can't len() it
                                 for q_ in qs_:
                                     q_: dict
+                                    assert isinstance(q_, dict), f"Expected dict, got {q_}"
                                     q: Question = Question(**q_)
-                                    assert q.is_elicited
+                                    assert q.is_argued
                                     assert q.is_grounded
                                     qs[q.id] = q
-                            LOGGER.debug(f"Loaded {len(qs)} out of {len(qs_)} questions from {results_path}")
+                                    len_qs_ += 1
+                            LOGGER.debug(f"Loaded {len(qs)} out of {len_qs_} questions from {results_path}")
                             return qs
                         else:
                             LOGGER.debug(f"{loaded_config} != {experiment_config}")
@@ -273,7 +276,7 @@ class Experiment:
                         IOError,
                         AssertionError,
                     ) as e:
-                        LOGGER.debug(f"Cannot load {path}: {e}")
+                        LOGGER.debug(f"Cannot load {path}: {e}\n{traceback.format_exc()}")
                         return None
                     except Exception as e:
                         LOGGER.error(
@@ -297,6 +300,7 @@ class Experiment:
                 continue_from_results: dict[tuple, Question] | None = recursively_try_to_load(
                     likely_path
                 ) or recursively_try_to_load(self.continue_from)
+                LOGGER.debug(f"continue_from_results: {continue_from_results}")
             else:
                 continue_from_results = None
             print("wtfff", config)

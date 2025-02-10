@@ -257,6 +257,10 @@ class Answer(BaseModel):
     judge_prob: Optional[Prob] = None
     case_probs: Optional["Question"] = None
 
+    @property
+    def id(self) -> tuple:
+        return (self.short, self.long)
+
     @model_validator(mode="after")
     def makes_sense(self) -> Self:
         if self.is_argued:
@@ -438,7 +442,7 @@ class Question(BaseModel):
 
     @property
     def id(self) -> tuple:
-        return (self.question, ((a. short, a.long) for a in self.answer_cases))
+        return (self.question, tuple(a.id for a in self.answer_cases))
 
     def censor(self) -> "Question":
         return Question(
