@@ -93,31 +93,36 @@ def supports_response_models(model: str) -> bool:
 async def acompletion_ratelimited(
     model: str,
     messages: list[dict[str, str]],
-    caching: bool = None,
     cost_log: Costlog = GLOBAL_COST_LOG,
     simulate: bool = SIMULATE,
     write: Path | str | None = None,
     **kwargs,
 ) -> "ModelResponse":
+    """
+    A completion call that is rate limited and cached.
+    """
 
-    if caching is None:
-        caching = CACHING # default if not fored    
+    caching = CACHING  # default if not fored
 
     max_retries = kwargs.pop("max_retries", 10)
     call_id = uuid.uuid4().hex
+
+    kwargs_ = kwargs.copy()
+    if "cache_breaker" in kwargs_:
+        kwargs_["user"] = kwargs_.pop("cache_breaker")
 
     LOGGER.info(
         f"Getting response [async]; params:\n"
         f"model: {model}\n"
         f"messages: {messages}\n"
-        f"kwargs: {kwargs}\n"
+        f"kwargs_: {kwargs_}\n"
         f"caching: {caching}\n"
         f"call_id: {call_id}\n"
     )
 
     LOGGER.info(f"{call_id}: Making request to {model}")
     acompletion_ = functools.partial(
-        acompletion, max_retries=1, caching=caching, **kwargs
+        acompletion, max_retries=1, caching=caching, **kwargs_
     )
     try:
         response = await RATE_LIMITER.call(
@@ -305,9 +310,7 @@ async def acompletion_wrapper(
     Exactly one of prompt and messages should be provided.
     """
 
-    assert (not tools) + (response_format is None) + (
-        return_probs_for is None
-    ) >= 2, (
+    assert (not tools) + (response_format is None) + (return_probs_for is None) >= 2, (
         f"At most one of tools={tools}, response_format={response_format}, "
         f"and return_probs_for={return_probs_for} should be provided."
     )
@@ -413,6 +416,7 @@ class LLM_Agent:
 
         if messages is None:
             messages = [{"role": "user", "content": prompt}]
+
 
         if is_localhf(self.model):
             return self.generate_func(messages=messages, **kwargs)

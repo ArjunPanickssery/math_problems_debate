@@ -21,7 +21,6 @@ class Judge(LLM_Agent):
         self,
         question: Question,
         context: str | None = None,
-        caching: bool = None,
     ) -> Question:
         """Add probabilities to each answer_case."""
         raise AbstractionError
@@ -60,12 +59,12 @@ class QA_Agent(LLM_Agent):
         context: str | None = None,
         words_in_mouth: str | None = None,
         max_tokens: int = 2048,
-        caching: bool = None,
         temperature: float = 0.4,
         extra_user_renders: dict | None = None,
         system_prompt_template: str | None = None,
         user_prompt_template: str | None = None,
         write: Path | str | None = None,
+        cache_breaker: str | int | None = None,
     ) -> str:
         """Simulate an AI arguing to convince the judge in favour of answer_case.
 
@@ -75,7 +74,6 @@ class QA_Agent(LLM_Agent):
             question (Question): question.
             answer_case (Answer): answer case to argue for.
             max_tokens (int): max tokens for the LLM.
-            caching (bool): to disable caching.
             temperature (float): temperature for sampling.
             write (Path | str | None): Path to write prompt history to.
         """
@@ -130,9 +128,9 @@ class QA_Agent(LLM_Agent):
             messages=messages,
             words_in_mouth=words_in_mouth,
             max_tokens=max_tokens,
-            caching=caching,
             temperature=temperature,
             write=write,
+            cache_breaker=cache_breaker,
         )
 
         if isinstance(question, Question):
@@ -143,7 +141,6 @@ class QA_Agent(LLM_Agent):
                 f"messages: {messages}\n"
                 f"words_in_mouth: {words_in_mouth}\n"
                 f"max_tokens: {max_tokens}\n"
-                f"caching: {caching}\n"
                 f"temperature: {temperature}\n"
                 f"write: {write}\n"
                 f"response: {resp}\n"

@@ -19,7 +19,7 @@ load_dotenv()
 GLOBAL_COST_LOG = Costlog(mode="jsonl", discard_extras=True)
 SIMULATE = os.getenv("SIMULATE", "False").lower() == "true"
 DISABLE_COSTLY = os.getenv("DISABLE_COSTLY", "False").lower() == "true"
-CACHING = os.getenv("CACHING", "False").lower() == "true"
+CACHING = os.getenv("CACHING", "True").lower() == "true"
 NUM_LOGITS = 5
 MAX_WORDS = 100
 DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "claude-3-haiku-20240307")

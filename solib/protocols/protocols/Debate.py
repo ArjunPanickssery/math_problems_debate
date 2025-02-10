@@ -36,7 +36,7 @@ class Debate(Protocol):
         answer_case: Answer,
         adversary: QA_Agent,
         judge: Judge,
-        caching: bool = None,
+        cache_breaker: str | int | None = None,
         temperature: float = 0.4,
         write: Path | str | None = None,
         **rendering_components,
@@ -64,7 +64,7 @@ class Debate(Protocol):
                 "answer_case_short": answer_case.short,
                 "answer_opposite_short": opp_case.short,
             },
-            caching=caching,
+            cache_breaker=cache_breaker,
             temperature=temperature,
             write=write,
         )
@@ -78,7 +78,7 @@ class Debate(Protocol):
                 "answer_case_short": opp_case.short,
                 "answer_opposite_short": answer_case.short,
             },
-            caching=caching,
+            cache_breaker=cache_breaker,
             temperature=temperature,
             write=write,
         )
@@ -115,7 +115,7 @@ class Debate(Protocol):
         question: Question,
         judge: Judge,
         adversary: QA_Agent,
-        caching: bool = None,
+        cache_breaker: str | int | None = None,
         temperature: float = 0.4,
         write: Path | str | None = None,
     ) -> Question:
@@ -128,7 +128,7 @@ class Debate(Protocol):
                 question=question,
                 judge=judge,
                 adversary=adversary,
-                caching=caching,
+                cache_breaker=cache_breaker,
                 temperature=temperature,
                 write=write,
             )
@@ -138,7 +138,7 @@ class Debate(Protocol):
             answer_case=question.answer_cases[0],
             adversary=adversary,
             judge=judge,
-            caching=caching,
+            cache_breaker=cache_breaker,
             temperature=temperature,
             write=write,
         )  # elicited probs after arguing for answer_cases[0]

@@ -54,7 +54,7 @@ class Consultancy(Protocol):
         question: Question,
         answer_case: Answer,
         judge: Judge,
-        caching: bool = None,
+        cache_breaker: str | int | None = None,
         temperature: float = 0.4,
         write: Path | str | None = None,
         **rendering_components,
@@ -67,7 +67,7 @@ class Consultancy(Protocol):
             user_prompt_template=self.consultant_user_template,
             question=question,
             answer_case=answer_case,
-            caching=caching,
+            cache_breaker=cache_breaker,
             temperature=temperature,
             write=write,
         )
@@ -81,7 +81,7 @@ class Consultancy(Protocol):
             question=question,
             system_prompt_template=self.client_system_template,
             user_prompt_template=self.client_user_template,
-            caching=caching,
+            cache_breaker=cache_breaker,
             temperature=temperature,
             write=write,
         )

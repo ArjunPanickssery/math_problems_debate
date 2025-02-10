@@ -25,8 +25,8 @@ class JustAskProbabilitiesJudge(JustAskProbabilityJudge):
         self,
         question: Question,
         context: str,
-        caching: bool = None,
         write: Path | str | None = None,
+        cache_breaker: str | int | None = None,
     ) -> Question:
         """Returns a .is_elicited Question."""
         prompt = self.prompt_template.render(
@@ -39,9 +39,9 @@ class JustAskProbabilitiesJudge(JustAskProbabilityJudge):
             messages=messages,
             response_model=ProbResponse,
             max_tokens=100,
-            caching=caching,
             temperature=0.4,
             write=write,
+            cache_breaker=cache_breaker,
         )
 
         LOGGER.debug(f"response: {response}")

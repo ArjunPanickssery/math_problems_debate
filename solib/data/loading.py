@@ -85,6 +85,9 @@ class Dataset:
     def __iter__(self):
         return iter(self.questions)
 
+    def shuffle(self, random_seed=0):
+        random(user_seed=random_seed).shuffle(self.questions)
+
 
 class GPQA(Dataset):
     def extract_info(self, data_item: dict, user_seed=0) -> Tuple[str, str, str]:

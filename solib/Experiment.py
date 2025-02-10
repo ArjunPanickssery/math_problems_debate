@@ -68,6 +68,8 @@ class Experiment:
         bon_ns: list[int] = None,
         write_path: Path = Path("experiments")
         / f"results_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}",
+        shuffle: bool = False,
+        random_seed: int = None,
         continue_from: Path = None,
     ):
         """
@@ -91,6 +93,9 @@ class Experiment:
         self.agent_models = agent_models
         self.agent_toolss = agent_toolss if agent_toolss is not None else [[]]
         self.judge_models = judge_models
+
+        if shuffle:
+            self.questions.shuffle(random_seed=random_seed)
 
         if SIMULATE:
             LOGGER.debug("Running in simulation mode, skipping local models...")

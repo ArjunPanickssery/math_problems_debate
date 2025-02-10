@@ -39,8 +39,8 @@ class TipOfTongueJudge(Judge):
         self,
         question: Question,
         context: str | None = None,
-        caching: bool = None,
         write: Path | str | None = None,
+        cache_breaker: str | int | None = None,
     ) -> Question:
         messages = [
             {
@@ -56,8 +56,8 @@ class TipOfTongueJudge(Judge):
             return_probs_for=[a.short for a in question.answer_cases],
             messages=messages,
             words_in_mouth=self.words_in_mouth,
-            caching=caching,
             write=write,
+            cache_breaker=cache_breaker,
         )
 
         result = Question(

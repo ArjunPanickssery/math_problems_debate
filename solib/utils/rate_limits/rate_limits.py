@@ -1,4 +1,5 @@
 import asyncio
+import functools
 import logging
 import time
 from litellm import Message
@@ -13,7 +14,7 @@ import tiktoken
 
 from solib.utils.globals import OPENROUTER_API_KEY, ENABLE_PROMPT_HISTORY
 from solib.utils.rate_limits.rate_limit_utils import DEFAULT_RATES
-from solib.utils.utils import parse_time_interval
+from solib.utils.utils import parse_time_interval, rand_suffix
 
 LOGGER = logging.getLogger(__name__)
 
@@ -104,7 +105,7 @@ class RateLimiter:
             )
         elif model_id.startswith("ollama"):
             token_capacity = 1e20  # arbitrary large
-            request_capacity = 1e20
+            request_capacity = 20  # don't make this too big
         else:
             amts = DEFAULT_RATES.get(model_id)
             token_capacity = amts["tpm"]
@@ -116,7 +117,6 @@ class RateLimiter:
         token_cap = token_capacity * self.frac_rate_limit
         request_cap = request_capacity * self.frac_rate_limit
 
-        print(f"setting cap for model {model_id}: {token_cap}, {request_cap}")
         token_capacity = Resource(token_cap)
         request_capacity = Resource(request_cap)
         token_capacity.consume(token_cap)
@@ -149,11 +149,12 @@ class RateLimiter:
         model_id: str,
         messages: list[dict[str, str]],
         max_attempts: int,
-        call_function: Callable,
+        call_function: functools.partial,
         is_valid=lambda x: True,
         write: Path | str | None = None,
         **kwargs,
     ):
+        uniq_id = rand_suffix()
         async def attempt_api_call():
             while True:
                 async with self.lock_consume:
@@ -182,6 +183,7 @@ class RateLimiter:
         for i in range(max_attempts):
             try:
                 response = await attempt_api_call()
+
                 if not is_valid(response):
                     raise RuntimeError(
                         f"Invalid response according to is_valid {response}"
@@ -201,11 +203,12 @@ class RateLimiter:
             )
 
         if ENABLE_PROMPT_HISTORY and write is not None:
+
             prompt_dir = Path(write) / "prompt_history"
             prompt_dir.mkdir(parents=True, exist_ok=True)
 
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-            filename = f"{model_id.replace('/', '_')}_{timestamp}.json"
+            filename = f"{model_id.replace('/', '_')}_{timestamp}_{rand_suffix()}.json"
 
             history_entry = {
                 "timestamp": timestamp,
@@ -219,6 +222,7 @@ class RateLimiter:
                     if hasattr(response, "model_dump")
                     else response
                 ),
+                "completion_kwargs": str(call_function.keywords | kwargs),
             }
             try:
                 with open(prompt_dir / filename, "w") as f:

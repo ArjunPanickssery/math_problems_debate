@@ -15,14 +15,14 @@ class Blind(Protocol):
         question: Question,
         answer_case: Answer,
         judge: Judge,
-        caching: bool = None,
+        cache_breaker: str | int | None = None,
         write: Path | str | None = None,
         **rendering_components,
     ) -> Question:
         result = await judge(
             question=question,
             context=self.ts_to_prompt(question),
-            caching=caching,
+            cache_breaker=cache_breaker,
             write=write,
         )
         return result

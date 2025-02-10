@@ -15,11 +15,12 @@ init_exp = Experiment(
         "claude-3-5-haiku-20241022",
         "claude-3-opus-20240229",
         "openrouter/deepseek/deepseek-chat" # "ollama_chat/deepseek-v3"
+        "ollama_chat/llama3.1:8b-instruct-q6_K",
     ],
     agent_toolss=[[], [math_eval]],
     judge_models=[
         # "localhf://meta-llama/Meta-Llama-3.1-8B-Instruct",
-        # "ollama_chat/llama3.1:8b-instruct-q6_K",
+        "ollama_chat/llama3.1:8b-instruct-q6_K",
         "openrouter/gpt-4o-mini-2024-07-18",
         # "gpt-4o-mini-2024-07-18",
     ],

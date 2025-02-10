@@ -11,6 +11,7 @@ import hashlib
 import inspect
 import os
 import asyncio
+import string
 
 from tqdm.asyncio import tqdm as atqdm
 
@@ -61,6 +62,10 @@ class random:
 
     def __getattr__(self, name):
         return getattr(rnd, name, None)
+
+
+def rand_suffix(size: int = 10) -> str:
+    return "".join(rnd.choices(string.ascii_letters, k=size))
 
 
 def update_recursive(source, overrides):
