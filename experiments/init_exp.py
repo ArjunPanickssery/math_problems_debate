@@ -28,6 +28,7 @@ init_exp = Experiment(
     write_path=Path(__file__).parent
     / "results"
     / f"init_exp_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}",
+    continue_from = Path(__file__).parent / "results" / "init_exp_2025-02-09_04-40-15",
 )
 
 

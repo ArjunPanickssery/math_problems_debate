@@ -49,7 +49,7 @@ test_experiment = Experiment(
     agent_models=[
         # "gpt-4o-mini",
         "claude-3-5-sonnet-20241022",
-        "openrouter/deepseek/deepseek-chat",
+        # "openrouter/deepseek/deepseek-chat",
         # "hf:meta-llama/Meta-Llama-3-8B-Instruct",
     ],
     agent_toolss=[[], [math_eval]],
@@ -58,8 +58,8 @@ test_experiment = Experiment(
         # "claude-3-5-sonnet-20241022",
         # "hf:meta-llama/Llama-2-7b-chat-hf",
     ],
-    protocols=["blind"],
-    bon_ns=[1],
+    protocols=["blind", "propaganda", "consultancy", "debate"],
+    bon_ns=[1,4],
     write_path=TEST_RESULTS_PATH,
     continue_from=TEST_RESULTS_PATH,
 )

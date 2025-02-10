@@ -1,9 +1,14 @@
 from aiolimiter import AsyncLimiter
 import asyncio
+import logging
 import time
 import tiktoken
 
 from solib.utils import estimate_tokens, parse_time_interval
+
+from solib.utils.globals import OPENROUTER_API_KEY
+
+LOGGER = logging.getLogger(__name__)
 
 COMPLETION_MODELS = {
     "davinci-002",
