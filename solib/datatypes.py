@@ -1,6 +1,6 @@
 import json
 import logging
-import warnings
+import copy
 import numpy as np
 from typing import Any, Literal, Optional, Union, Callable, Self
 from pydantic import BaseModel, field_validator, computed_field, model_validator, Field
@@ -99,8 +99,7 @@ class Score(BaseModel):
         score_log = np.log(answer_case_in_question.judge_prob.pad(eps))
         score_brier = -np.sum(
             [
-                (int(a.short == answer_case.short) - a.judge_prob)
-                ** 2
+                (int(a.short == answer_case.short) - a.judge_prob) ** 2
                 for a in question.answer_cases
             ]
         )
@@ -111,7 +110,12 @@ class Score(BaseModel):
             answer_case_in_question.judge_prob.pad(eps)
             > question.neg(answer_case_in_question).judge_prob.pad(eps)
         )
-        return Score(log=score_log, brier=score_brier, logodds=score_logodds, accuracy=score_accuracy)
+        return Score(
+            log=score_log,
+            brier=score_brier,
+            logodds=score_logodds,
+            accuracy=score_accuracy,
+        )
 
     # Helper method for pointwise operations
     def _operate(self, other, op) -> "Score":
@@ -252,6 +256,10 @@ class Answer(BaseModel):
     value: Optional[float] = None
     judge_prob: Optional[Prob] = None
     case_probs: Optional["Question"] = None
+
+    @property
+    def id(self) -> tuple:
+        return (self.short, self.long)
 
     @model_validator(mode="after")
     def makes_sense(self) -> Self:
@@ -431,6 +439,10 @@ class Question(BaseModel):
     #     if self.is_elicited:
     #         assert not self.is_argued
     #     return self
+
+    @property
+    def id(self) -> tuple:
+        return (self.question, tuple(a.id for a in self.answer_cases))
 
     def censor(self) -> "Question":
         return Question(
@@ -754,10 +766,12 @@ class Question(BaseModel):
 
     # following methods apply for treating Question as a transcript
 
-    def append(self, item: "TranscriptItem") -> None:
+    def append(self, item: "TranscriptItem") -> "Question":
+        question = copy.deepcopy(self)
         if self.transcript is None:
-            self.transcript = []
-        self.transcript.append(item)
+            question.transcript = []
+        question.transcript.append(item)
+        return question
 
 
 class TranscriptItem(BaseModel):

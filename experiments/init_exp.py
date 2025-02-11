@@ -13,18 +13,23 @@ init_exp = Experiment(
     agent_models=[
         "claude-3-5-sonnet-20241022",
         "claude-3-5-haiku-20241022",
-        "openrouter/deepseek/deepseek-chat" # "ollama_chat/deepseek-v3"
+        "claude-3-opus-20240229",
+        "openrouter/deepseek/deepseek-chat", # "ollama_chat/deepseek-v3"
+        "ollama_chat/llama3.1:8b-instruct-q6_K",
     ],
     agent_toolss=[[], [math_eval]],
     judge_models=[
-        # "localhf://meta-llama/Meta-Llama-3.1-8B",
+        # "localhf://meta-llama/Meta-Llama-3.1-8B-Instruct",
+        "ollama_chat/llama3.1:8b-instruct-q6_K",
         "openrouter/gpt-4o-mini-2024-07-18",
+        # "gpt-4o-mini-2024-07-18",
     ],
-    protocols=["propaganda", "debate", "consultancy"], # "blind"
-    bon_ns=[1,4],  # , 8],#, 16, 32],
+    protocols=["blind", "propaganda", "debate", "consultancy"],
+    bon_ns=[1,4],#[1,4],  # , 8],#, 16, 32],
     write_path=Path(__file__).parent
     / "results"
     / f"init_exp_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}",
+    continue_from = Path(__file__).parent / "results" / "init_exp_2025-02-09_04-40-15",
 )
 
 

@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import AsyncMock
-from solib.datatypes import Question, Answer, Prob
+from solib.datatypes import Prob, Answer, Question
 from solib.protocols.protocols.Blind import Blind
 from solib.protocols.protocols.Consultancy import Consultancy
 from solib.protocols.protocols.Propaganda import Propaganda

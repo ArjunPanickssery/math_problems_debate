@@ -1,5 +1,7 @@
 import functools
 import logging
+import asyncio
+from pathlib import Path
 from solib.datatypes import Question, Answer, TranscriptItem
 from solib.protocols.abstract import Protocol, QA_Agent, Judge
 from solib.utils.llm_utils import jinja_env
@@ -9,13 +11,20 @@ LOGGER = logging.getLogger(__name__)
 
 class Debate(Protocol):
     def __init__(
-        self, num_turns: int = 2, simultaneous=True, prompt_file: str = "qa_agent.jinja"
+        self,
+        debater_system_file: str = "debate/qa_agent_system.jinja",
+        debater_user_file: str = "debate/qa_agent_user.jinja",
+        num_turns: int = 2,
+        simultaneous: bool = True,
     ):
+        self.debater_system_template = jinja_env.get_template(debater_system_file)
+        self.debater_user_template = jinja_env.get_template(debater_user_file)
+
         self.num_turns = num_turns
         self.simultaneous = simultaneous
-        self.prompt_file = prompt_file
         super().__init__(
-            prompt=jinja_env.get_source(prompt_file),
+            debater_system=jinja_env.get_source(debater_system_file),
+            debater_user=jinja_env.get_source(debater_user_file),
             num_turns=num_turns,
             simultaneous=simultaneous,
         )
@@ -27,44 +36,77 @@ class Debate(Protocol):
         answer_case: Answer,
         adversary: QA_Agent,
         judge: Judge,
-        caching: bool =True,
+        cache_breaker: str | int | None = None,
         temperature: float = 0.4,
+        write: Path | str | None = None,
+        **rendering_components,
     ):
         opp_case = question.neg(answer_case)
+        assert answer_case is not None and opp_case is not None
+        assert answer_case.short != opp_case.short
+        if question.transcript is not None:
+            for i, ti in enumerate(question.transcript):
+                ti: TranscriptItem
+                role: str = ti.role
+                if i % 2 == 0:
+                    assert role == answer_case.short, f"{[ti.role for ti in question.transcript]}"
+                else:
+                    assert role == opp_case.short, f"{[ti.role for ti in question.transcript]}"
+        trans_len = len(question.transcript) if question.transcript is not None else 0
+
         debater_pro = functools.partial(
             agent,
-            prompt_file=self.prompt_file,
             question=question,
             answer_case=answer_case,
-            caching=caching,
+            system_prompt_template=self.debater_system_template,
+            user_prompt_template=self.debater_user_template,
+            extra_user_renders={
+                "answer_case_short": answer_case.short,
+                "answer_opposite_short": opp_case.short,
+            },
+            cache_breaker=cache_breaker,
             temperature=temperature,
+            write=write,
         )
         debater_con = functools.partial(
             adversary,
-            prompt_file=self.prompt_file,
             question=question,
             answer_case=opp_case,
-            caching=caching,
+            system_prompt_template=self.debater_system_template,
+            user_prompt_template=self.debater_user_template,
+            extra_user_renders={
+                "answer_case_short": opp_case.short,
+                "answer_opposite_short": answer_case.short,
+            },
+            cache_breaker=cache_breaker,
             temperature=temperature,
+            write=write,
         )
+        if question.transcript is not None:
+            assert len(question.transcript) == trans_len, f"{len(question.transcript)}=={trans_len}"
+
         if self.simultaneous:
-            debater_pro_arg = await debater_pro(context=self.ts_to_prompt(question))
-            debater_con_arg = await debater_con(context=self.ts_to_prompt(question))
-            question.append(
-                TranscriptItem(role=answer_case.short, content=debater_pro_arg)
-            )
-            question.append(
-                TranscriptItem(role=opp_case.short, content=debater_con_arg)
-            )
+            tasks = [debater_pro(context=self.ts_to_prompt(question)), debater_con(context=self.ts_to_prompt(question))]
+            debater_pro_arg, debater_con_arg = await asyncio.gather(*tasks)
+            # debater_pro_arg = await debater_pro(context=self.ts_to_prompt(question))
+            # debater_con_arg = await debater_con(context=self.ts_to_prompt(question))
+            if question.transcript is not None:
+                assert len(question.transcript) == trans_len, f"{len(question.transcript)}=={trans_len}"
+            question = question.append(TranscriptItem(role=answer_case.short, content=debater_pro_arg))
+            if question.transcript is not None:
+                assert len(question.transcript) == trans_len+1, f"{len(question.transcript)}=={trans_len}+1"
+            question = question.append(TranscriptItem(role=opp_case.short, content=debater_con_arg))
+            assert len(question.transcript) == trans_len + 2, f"Simultaneous debate, {len(question.transcript)}=={trans_len}+2"
         else:
             debater_pro_arg = await debater_pro(context=self.ts_to_prompt(question))
-            question.append(
-                TranscriptItem(role=answer_case.short, content=debater_pro_arg)
-            )
+            if question.transcript is not None:
+                assert len(question.transcript) == trans_len, f"Sequential debate, {len(question.transcript)}=={trans_len}"
+            question = question.append(TranscriptItem(role=answer_case.short, content=debater_pro_arg))
+            assert len(question.transcript) == trans_len + 1, f"Sequential debate, {len(question.transcript)}=={trans_len}+1"
             debater_con_arg = await debater_con(context=self.ts_to_prompt(question))
-            question.append(
-                TranscriptItem(role=opp_case.short, content=debater_con_arg)
-            )
+            assert len(question.transcript) == trans_len + 1, f"Sequential debate, {len(question.transcript)}=={trans_len}+1"
+            question = question.append(TranscriptItem(role=opp_case.short, content=debater_con_arg))
+            assert len(question.transcript) == trans_len + 2, f"Sequential debate, {len(question.transcript)}=={trans_len}+2"
         return question
 
     async def run_on_all_answer_cases(
@@ -73,8 +115,9 @@ class Debate(Protocol):
         question: Question,
         judge: Judge,
         adversary: QA_Agent,
-        caching: bool =True,
+        cache_breaker: str | int | None = None,
         temperature: float = 0.4,
+        write: Path | str | None = None,
     ) -> Question:
         """Debate specifically is symmetric, so we can subclass this to only run the
         debate once."""
@@ -85,8 +128,9 @@ class Debate(Protocol):
                 question=question,
                 judge=judge,
                 adversary=adversary,
-                caching=caching,
+                cache_breaker=cache_breaker,
                 temperature=temperature,
+                write=write,
             )
         case_probs_0 = await self.run(
             agent=agent,
@@ -94,8 +138,9 @@ class Debate(Protocol):
             answer_case=question.answer_cases[0],
             adversary=adversary,
             judge=judge,
-            caching=caching,
+            cache_breaker=cache_breaker,
             temperature=temperature,
+            write=write,
         )  # elicited probs after arguing for answer_cases[0]
         # but this is the same as the elicited probs after arguing for answer_cases[1]
         # because the adversary is arguing for the opposite answer

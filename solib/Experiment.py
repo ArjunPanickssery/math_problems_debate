@@ -1,11 +1,20 @@
 import logging
+import traceback
+import json
+import jsonlines
 from datetime import datetime
 from pathlib import Path
 
 from solib.data.loading import Dataset
+from solib.datatypes import Question
 from solib.utils import str_config, write_json, dump_config, random
 from solib.utils import parallelized_call
-from solib.utils.llm_utils import SIMULATE, is_local
+from solib.utils.llm_utils import (
+    SIMULATE,
+    is_local,
+    supports_tool_use,
+    supports_response_models,
+)
 from solib.protocols.protocols import (
     Blind,
     Propaganda,
@@ -54,11 +63,14 @@ class Experiment:
         judge_models: list[str],
         agent_models: list[str],
         agent_toolss: list[list[callable]] = None,
-        protocols: dict[str, type[Protocol]] = None,
+        protocols: dict[str, type[Protocol]] | list[str] = None,
         num_turnss: list[int] = None,
         bon_ns: list[int] = None,
         write_path: Path = Path("experiments")
         / f"results_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}",
+        shuffle: bool = False,
+        random_seed: int = None,
+        continue_from: Path = None,
     ):
         """
         Args:
@@ -66,19 +78,24 @@ class Experiment:
             agent_models: List of models for the agents.
             agent_toolss: List of tools for the agents.
             judge_models: List of models for the judges.
-            protocols: Dictionary of protocols to run.
+            protocols: Dictionary of protocols to run, or list of keys
+                from default Experiment.protocols dict.
             num_turnss: List of number of turns for the protocols.
             bon_ns: List of n for BestOfN_Agent.
                 If None or [1], will only run with PLAIN agents.
                 If [1, ...], will run with PLAIN and BestOfN agents.
                 If [...] without 1, will only run with BestOfN agents.
             write_path: Folder directory to write the results to.
+            continue_from: Path to look for existing results to continue from.
         """
         self.default_quant_config = True
         self.questions = questions
         self.agent_models = agent_models
         self.agent_toolss = agent_toolss if agent_toolss is not None else [[]]
         self.judge_models = judge_models
+
+        if shuffle:
+            self.questions.shuffle(random_seed=random_seed)
 
         if SIMULATE:
             LOGGER.debug("Running in simulation mode, skipping local models...")
@@ -104,6 +121,7 @@ class Experiment:
         self.num_turnss = num_turnss
         self.bon_ns = bon_ns
         self.write_path = write_path
+        self.continue_from = continue_from
 
     protocols = {
         "blind": Blind,
@@ -202,6 +220,8 @@ class Experiment:
             and self._filter_nolocaljap(config)
             and self._filter_noapitot(config)
             and self._filter_nojaps(config)
+            and self._filter_no_unsupported_tools(config)
+            and self._filter_no_unsupported_response_models(config)
         )
 
     @property
@@ -216,10 +236,83 @@ class Experiment:
         async def run_experiment(config: dict):
             LOGGER.status(f"Running experiment {self.get_path(config)}")
             setup = config["protocol"](**config["init_kwargs"])
+
+            if self.continue_from:
+                likely_path = self.continue_from / self.get_path(config).relative_to(
+                    self.write_path
+                )
+                experiment_config = setup.get_experiment_config(**config["call_kwargs"])
+
+                # we search through self.continue_from at depth level 2 (i.e. through
+                # its subdirectories and subsubdirectories), starting from likely_path,
+                # load its config.json if available, check if it equals config, and if
+                # so, load results.jsonl if available, and pass it to setup.experiment()
+                # as `continue_from_results: list[Question]`
+
+                def try_to_load(path: Path) -> dict[tuple, Question] | None:
+                    LOGGER.debug(f"Trying to load {path} for {experiment_config}")
+                    try:
+                        config_path = path / "config.json"
+                        results_path = path / "results.jsonl"
+                        with open(config_path) as f:
+                            loaded_config = json.load(f)
+                        if loaded_config == experiment_config:
+                            LOGGER.debug(f"{loaded_config} == {experiment_config}")
+                            qs: dict[tuple, Question] = {}
+                            with jsonlines.open(results_path, 'r') as qs_:
+                                len_qs_: int = 0 # qs_ is a jsonlines Reader obj so we can't len() it
+                                for q_ in qs_:
+                                    q_: dict
+                                    assert isinstance(q_, dict), f"Expected dict, got {q_}"
+                                    q: Question = Question(**q_)
+                                    assert q.is_argued
+                                    assert q.is_grounded
+                                    qs[q.id] = q
+                                    len_qs_ += 1
+                            LOGGER.debug(f"Loaded {len(qs)} out of {len_qs_} questions from {results_path}")
+                            return qs
+                        else:
+                            LOGGER.debug(f"{loaded_config} != {experiment_config}")
+                            return None
+                    except (
+                        FileNotFoundError,
+                        json.JSONDecodeError,
+                        KeyError,
+                        IOError,
+                        AssertionError,
+                    ) as e:
+                        LOGGER.debug(f"Cannot load {path}: {e}\n{traceback.format_exc()}")
+                        return None
+                    except Exception as e:
+                        LOGGER.error(
+                            f"Unexpected error loading {path}: {e}\n{traceback.format_exc()}"
+                        )
+                        return None
+
+                def recursively_try_to_load(path: Path) -> dict[tuple, Question] | None:
+                    qs = try_to_load(path)
+                    if qs is not None:
+                        return qs
+                    try:
+                        for subpath in path.iterdir():
+                            if subpath.is_dir():
+                                qs = recursively_try_to_load(subpath)
+                                if qs is not None:
+                                    return qs
+                    except Exception as e:
+                        return None
+
+                continue_from_results: dict[tuple, Question] | None = recursively_try_to_load(
+                    likely_path
+                ) or recursively_try_to_load(self.continue_from)
+                LOGGER.debug(f"continue_from_results: {continue_from_results}")
+            else:
+                continue_from_results = None
             stuff = await setup.experiment(
                 questions=self.questions,
                 **config["call_kwargs"],
                 write=self.get_path(config),
+                continue_from_results=continue_from_results,
             )
             results, stats = stuff
             return stats
@@ -235,7 +328,7 @@ class Experiment:
             raise Exception("Experiment aborted by user.")
         LOGGER.debug(filtered_configs)
         statss = await parallelized_call(
-            run_experiment, filtered_configs, use_tqdm=True, max_concurrent_queries=5
+            run_experiment, filtered_configs, use_tqdm=True
         )
         all_stats = [
             {"config": config, "stats": stats}
@@ -301,6 +394,24 @@ class Experiment:
                 return False
         return True
 
+    def _filter_no_unsupported_tools(self, config: dict):
+        """Filter out configs where tools are used with models that don't support them."""
+        for component in config["call_kwargs"].values():
+            if isinstance(component, QA_Agent):
+                if component.tools and not supports_tool_use(component.model):
+                    return False
+        return True
+
+    def _filter_no_unsupported_response_models(self, config: dict):
+        """Filter out configs where response models are used with models that don't support them."""
+        for component in config["call_kwargs"].values():
+            if isinstance(
+                component, (JustAskProbabilitiesJudge, JustAskProbabilityJudge)
+            ):
+                if not supports_response_models(component.model):
+                    return False
+        return True
+
     def _get_path_protocol(self, config: dict):
         protocol_str = config["protocol"]
         if not isinstance(protocol_str, str):
@@ -326,8 +437,13 @@ class Experiment:
         call_kwargs_str = ""
         for k, v in config["call_kwargs"].items():
             if k in ["agent", "adversary"]:
-                k_ = "A"
-                v_ = v.model.split("/")[-1]
+                k_ = "A" if k == "agent" else "B"
+                v_type = f"BON-{v.n}-" if isinstance(v, BestOfN_Agent) else ""
+                v_model = v.model.split("/")[-1]
+                v_tools = ""
+                for tool in v.tools if v.tools else []:
+                    v_tools += f"-{tool.__name__}"
+                v_ = f"{v_type}{v_model}{v_tools}"
             elif k == "judge":
                 k_ = "J"
                 v_ = v.model.split("/")[-1]

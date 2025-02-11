@@ -27,9 +27,6 @@ def math_eval(expr: str) -> Union[str, float]:
         ast.USub: operator.neg,
         ast.Pow: operator.pow
     }
-    # Parse the expression into an AST
-    node = ast.parse(expr, mode='eval').body
-
     def eval_node(node):
         if isinstance(node, ast.BinOp):
             if type(node.op) in operators:
@@ -44,6 +41,8 @@ def math_eval(expr: str) -> Union[str, float]:
             raise ValueError(f"Unsupported type {type(node)}")
 
     try:
+        # Parse the expression into an AST
+        node = ast.parse(expr, mode='eval').body
         return str(eval_node(node))
-    except ValueError as e:
-        return "Invalid expression"
+    except Exception as e:
+        return f"ERROR: {type(e)}"

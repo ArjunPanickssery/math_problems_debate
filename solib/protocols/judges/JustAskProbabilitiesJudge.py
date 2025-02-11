@@ -1,5 +1,6 @@
 import logging
-from solib.datatypes import Prob, Question, Answer
+from pathlib import Path
+from solib.datatypes import Question, Prob, Answer
 from solib.protocols.judges.JustAskProbabilityJudge import JustAskProbabilityJudge
 from pydantic import BaseModel, Field
 
@@ -18,26 +19,29 @@ class JustAskProbabilitiesJudge(JustAskProbabilityJudge):
     """Like JustAskProbabilityJudge, but instead of asking for probabilities for each
     answer separately, we ask for probabilities for all answers at once."""
 
-    prompt_file = "just_ask_both_judge.jinja"
+    prompt_file = "judges/just_ask_both_judge.jinja"
 
     async def __call__(
         self,
         question: Question,
         context: str,
-        caching: bool = True,
+        write: Path | str | None = None,
+        cache_breaker: str | int | None = None,
     ) -> Question:
         """Returns a .is_elicited Question."""
         prompt = self.prompt_template.render(
             question=question.to_prompt(),
             context=context,
         )
+        messages = [{"role": "user", "content": prompt}]
 
         response = await self.get_response(
-            prompt=prompt,
+            messages=messages,
             response_model=ProbResponse,
             max_tokens=100,
-            caching=caching,
             temperature=0.4,
+            write=write,
+            cache_breaker=cache_breaker,
         )
 
         LOGGER.debug(f"response: {response}")

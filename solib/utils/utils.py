@@ -11,6 +11,9 @@ import hashlib
 import inspect
 import os
 import asyncio
+import string
+
+from tqdm.asyncio import tqdm as atqdm
 
 LOGGER = logging.getLogger(__name__)
 
@@ -61,6 +64,10 @@ class random:
         return getattr(rnd, name, None)
 
 
+def rand_suffix(size: int = 10) -> str:
+    return "".join(rnd.choices(string.ascii_letters, k=size))
+
+
 def update_recursive(source, overrides):
     for key, value in overrides.items():
         if isinstance(value, dict) and key in source and isinstance(source[key], dict):
@@ -82,7 +89,9 @@ def coerce(val, coercer: callable):
         return None
     return coercer(val)
 
+
 AbstractionError = NotImplementedError("Must be implemented in subclass.")
+
 
 class DefaultDict(dict):
     def __init__(self, key_fn):
@@ -179,7 +188,7 @@ def str_config(config: dict | list[dict]):
 async def parallelized_call(
     func: Coroutine,
     data: list[any],
-    max_concurrent_queries: int = None,
+    max_concurrent_queries: int | None = None,
     use_tqdm: bool = False,
 ) -> list[any]:
     """
@@ -214,27 +223,26 @@ async def parallelized_call(
         tasks = [call_func(func, d) for d in data]
     else:
         tasks = [func(d) for d in data]
-    return await asyncio.gather(*tasks)
+    return await atqdm.gather(*tasks, disable=not use_tqdm)
+
 
 def parse_time_interval(interval_str):
     # Extract number and unit using regex
-    match = re.match(r'(\d+)([smh])', interval_str)
+    match = re.match(r"(\d+)([smh])", interval_str)
     if not match:
-        raise ValueError(f"Unexpected interval format: {interval_str}. Expected format: number followed by s, m, or h")
-    
+        raise ValueError(
+            f"Unexpected interval format: {interval_str}. Expected format: number followed by s, m, or h"
+        )
+
     number, unit = match.groups()
-    if unit not in ['s', 'm', 'h']:
+    if unit not in ["s", "m", "h"]:
         raise ValueError(f"Unexpected time unit: {unit}. Expected s, m, or h")
-    
+
     number = int(number)
-    
+
     # Convert to seconds
-    multipliers = {
-        's': 1,
-        'm': 60,
-        'h': 3600
-    }
-    
+    multipliers = {"s": 1, "m": 60, "h": 3600}
+
     return number * multipliers[unit]
 
 
@@ -246,5 +254,4 @@ def estimate_tokens(messages: list[dict[str, str]]) -> int:
             s += len(m["content"]) // 3
         if m.get("tool_calls"):
             s += 1000
-    LOGGER.info(f"{messages=}, {s=}, {foo=}")
-    return max(s, foo)
+    return s
