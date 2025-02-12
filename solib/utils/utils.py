@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Coroutine
+from typing import Coroutine, Any
 from pydantic import BaseModel
 import logging
 import json
@@ -122,7 +122,6 @@ def write_jsonl(
     else:
         pass
 
-
 def write_json(data: dict | list | str | BaseModel, path: Path | str | None = None):
     if path:
         with open(path, "w") as f:
@@ -183,6 +182,120 @@ def str_config(config: dict | list[dict]):
                 for k, v in config.items()
             }
         )
+
+class NestedJSONSerializer:
+    """
+    A serializer that can handle nested structures of:
+    - Pydantic models
+    - Basic Python types (int, float, str, bool, None)
+    - Collections (dict, list, tuple, set)
+    - Common Python types (datetime, date, Decimal, UUID, Enum)
+    - Numpy arrays and numbers
+    - Pathlib Path objects
+    """
+    
+    @classmethod
+    def serialize(cls, obj: Any) -> Any:
+        """
+        Serialize an object to a JSON-compatible format.
+        
+        Args:
+            obj: Any Python object to serialize
+            
+        Returns:
+            JSON-serializable object
+            
+        Raises:
+            TypeError: If object cannot be serialized
+        """
+        import numpy as np
+        from pathlib import Path
+        from datetime import datetime, date
+        from enum import Enum
+        from decimal import Decimal
+        from uuid import UUID
+        from pydantic import BaseModel
+        # Handle None
+        if obj is None:
+            return None
+            
+        # Handle basic types
+        if isinstance(obj, (bool, int, float, str)):
+            return obj
+            
+        # Handle Pydantic models
+        if isinstance(obj, BaseModel):
+            return cls.serialize(obj.model_dump())
+            
+        # Handle dicts
+        if isinstance(obj, dict):
+            return {cls.serialize(k): cls.serialize(v) for k, v in obj.items()}
+            
+        # Handle lists, tuples, and sets
+        if isinstance(obj, (list, tuple, set)):
+            return [cls.serialize(item) for item in obj]
+            
+        # Handle datetime and date
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        if isinstance(obj, date):
+            return obj.isoformat()
+            
+        # Handle Decimal
+        if isinstance(obj, Decimal):
+            return str(obj)
+            
+        # Handle UUID
+        if isinstance(obj, UUID):
+            return str(obj)
+            
+        # Handle Enum
+        if isinstance(obj, Enum):
+            return obj.value
+            
+        # Handle Path
+        if isinstance(obj, Path):
+            return str(obj)
+            
+        # Handle numpy types
+        if isinstance(obj, np.ndarray):
+            return cls.serialize(obj.tolist())
+        if isinstance(obj, (np.int_, np.intc, np.intp, np.int8, np.int16, np.int32, np.int64)):
+            return int(obj)
+        if isinstance(obj, (np.float_, np.float16, np.float32, np.float64)):
+            return float(obj)
+        if isinstance(obj, np.bool_):
+            return bool(obj)
+            
+        # Try to convert to dict if object has __dict__
+        if hasattr(obj, '__dict__'):
+            return cls.serialize(obj.__dict__)
+            
+        raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
+
+def serialize_to_json(obj: Any, file_path: str | Path, indent: int = 4) -> None:
+    """
+    Serialize an object and save it to a JSON file.
+    
+    Args:
+        obj: Object to serialize
+        file_path: Path to save the JSON file
+        indent: Number of spaces for indentation (default: 2)
+        
+    Raises:
+        TypeError: If object cannot be serialized
+        OSError: If file cannot be written
+    """
+    # Convert to Path object if string
+    if isinstance(file_path, str):
+        file_path = Path(file_path)
+        
+    # Create directory if it doesn't exist
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    # Serialize and write to file
+    with open(file_path, 'w') as f:
+        json.dump(NestedJSONSerializer.serialize(obj), f, indent=indent)
 
 
 async def parallelized_call(
