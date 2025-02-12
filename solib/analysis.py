@@ -177,7 +177,7 @@ class Analyzer:
 
             plot = (
                 ggplot(scatter_df, aes(x="ASE", y="ASD"))
-                + geom_point(alpha=0.6, color="steelblue")
+                + geom_point(alpha=0.8, color="darkred", size=3, shape='x')
                 + white_theme
                 + theme(figure_size=(8, 6))  # Override figure size for scatter plots
                 + labs(
