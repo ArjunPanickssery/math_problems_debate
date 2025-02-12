@@ -7,6 +7,8 @@ from plotnine import (
     labs,
     geom_point,
     element_text,
+    element_rect,
+    element_line,
     save_as_pdf_pages,
 )
 import pandas as pd
@@ -139,6 +141,15 @@ class Analyzer:
         serialize_to_json(asds, self.plots_path / "asds.json")
         serialize_to_json(asd_vs_ases, self.plots_path / "asd_vs_ases.json")
 
+        # Common theme with white background
+        white_theme = theme_minimal() + theme(
+            figure_size=(12, 6),
+            panel_background=element_rect(fill='white'),
+            plot_background=element_rect(fill='white'),
+            panel_grid_major=element_line(color='lightgray'),
+            panel_grid_minor=element_line(color='lightgray')
+        )
+
         # Convert ASD data to DataFrame for plotting
         asd_df = pd.DataFrame(
             {"Protocol": list(asds.keys()), "ASD": list(asds.values())}
@@ -148,15 +159,14 @@ class Analyzer:
         asd_plot = (
             ggplot(asd_df, aes(x="Protocol", y="ASD"))
             + geom_bar(stat="identity", fill="steelblue", alpha=0.7)
-            + theme_minimal()
-            + theme(axis_text_x=element_text(angle=45, hjust=1), figure_size=(12, 6))
+            + white_theme
             + labs(
-                title="Agent Score Difference (ASD) by Protocol",
+                title=f"Agent Score Difference (ASD) by Protocol ({scoring_rule})",
                 x="Protocol",
                 y="ASD Value",
             )
         )
-        asd_plot.save(self.plots_path / "asds.png", dpi=300)
+        asd_plot.save(self.plots_path / "asds.png", dpi=300, verbose=False)
 
         # Create scatter plots for each protocol
         scatter_plots = []
@@ -168,17 +178,17 @@ class Analyzer:
             plot = (
                 ggplot(scatter_df, aes(x="ASE", y="ASD"))
                 + geom_point(alpha=0.6, color="steelblue")
-                + theme_minimal()
+                + white_theme
+                + theme(figure_size=(8, 6))  # Override figure size for scatter plots
                 + labs(
-                    title=f"ASD vs ASE for {protocol}",
+                    title=f"ASD vs ASE for {protocol} ({scoring_rule})",
                     x="Agent Score Expected (ASE)",
                     y="Agent Score Difference (ASD)",
                 )
-                + theme(figure_size=(8, 6))
             )
 
             # Save individual plot
-            plot.save(self.plots_path / f"{protocol}.png", dpi=300)
+            plot.save(self.plots_path / f"{protocol}.png", dpi=300, verbose=False)
             scatter_plots.append(plot)
 
         # save all scatter plots as a single PDF
