@@ -249,7 +249,7 @@ class Experiment:
                 # so, load results.jsonl if available, and pass it to setup.experiment()
                 # as `continue_from_results: list[Question]`
 
-                def try_to_load(path: Path) -> dict[tuple, Question] | None:
+                def try_to_load(path: Path) -> dict[tuple, Question]:
                     LOGGER.debug(f"Trying to load {path} for {experiment_config}")
                     try:
                         config_path = path / "config.json"
@@ -273,7 +273,7 @@ class Experiment:
                             return qs
                         else:
                             LOGGER.debug(f"{loaded_config} != {experiment_config}")
-                            return None
+                            return {}
                     except (
                         FileNotFoundError,
                         json.JSONDecodeError,
@@ -282,29 +282,30 @@ class Experiment:
                         AssertionError,
                     ) as e:
                         LOGGER.debug(f"Cannot load {path}: {e}\n{traceback.format_exc()}")
-                        return None
+                        return {}
                     except Exception as e:
                         LOGGER.error(
                             f"Unexpected error loading {path}: {e}\n{traceback.format_exc()}"
                         )
-                        return None
+                        return {}
 
-                def recursively_try_to_load(path: Path) -> dict[tuple, Question] | None:
+                def recursively_try_to_load(path: Path) -> dict[tuple, Question]:
                     qs = try_to_load(path)
-                    if qs is not None:
-                        return qs
+                    # if qs is not None:
+                    #     return qs
                     try:
                         for subpath in path.iterdir():
                             if subpath.is_dir():
-                                qs = recursively_try_to_load(subpath)
-                                if qs is not None:
-                                    return qs
+                                qs |= recursively_try_to_load(subpath)
+                                # if qs is not None:
+                                #     return qs
                     except Exception as e:
-                        return None
+                        pass
+                    return qs
 
-                continue_from_results: dict[tuple, Question] | None = recursively_try_to_load(
+                continue_from_results: dict[tuple, Question] = recursively_try_to_load(
                     likely_path
-                ) or recursively_try_to_load(self.continue_from)
+                ) | recursively_try_to_load(self.continue_from)
                 LOGGER.debug(f"continue_from_results: {continue_from_results}")
             else:
                 continue_from_results = None

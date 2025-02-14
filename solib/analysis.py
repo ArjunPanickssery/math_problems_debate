@@ -71,6 +71,12 @@ class Analyzer:
                     "config": config,
                     "stats": Stats.model_validate(stats),
                 }
+            if not results[protocol_dir.name] or all(
+                not run for run in results[protocol_dir.name].values()
+            ):
+                # avoid nans
+                LOGGER.warning(f"protocol_dir {protocol_dir} has no valid runs")
+                del results[protocol_dir.name]
         self.results = results
 
     def get_protocol_asd(self, protocol) -> Score:
@@ -110,7 +116,7 @@ class Analyzer:
         }
 
     def analyze_and_plot(
-        self, scoring_rule: Literal["log", "logodds", "brier", "accuracy"] = "brier"
+        self, scoring_rule: Literal["log", "logodds", "brier", "accuracy"] = "brier", beta: Literal["0", "1", "inf"] = "1"
     ):
         """
         Run get_asds and get_asd_vs_ases and dump their results into
@@ -123,7 +129,7 @@ class Analyzer:
         By default we take the brier score for everything.
         """
         asds_: dict[str, Score] = self.get_asds()
-        asd_vs_ases_: dict[str, list[tuple[Score, Score]]] = self.get_asd_vs_ases()
+        asd_vs_ases_: dict[str, list[tuple[Score, Score]]] = self.get_asd_vs_ases(beta)
 
         asds: dict[str, float] = {
             protocol: getattr(asd, scoring_rule) for protocol, asd in asds_.items()
