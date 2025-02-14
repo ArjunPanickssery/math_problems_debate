@@ -105,7 +105,7 @@ async def acompletion_ratelimited(
 
     caching = CACHING  # default if not fored
 
-    max_retries = kwargs.pop("max_retries", 5)
+    max_retries = kwargs.pop("max_retries", 10)
     call_id = uuid.uuid4().hex
 
     kwargs_ = kwargs.copy()
