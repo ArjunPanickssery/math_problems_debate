@@ -363,7 +363,7 @@ class Experiment:
             adversary = config["call_kwargs"]["adversary"]
             if (
                 agent.model != adversary.model
-                or agent.tools == adversary.tools
+                or agent.tools != adversary.tools
                 or (
                     isinstance(agent, BestOfN_Agent)
                     != isinstance(adversary, BestOfN_Agent)
