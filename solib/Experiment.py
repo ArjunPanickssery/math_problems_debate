@@ -295,7 +295,7 @@ class Experiment:
                     #     return qs
                     try:
                         for subpath in path.iterdir():
-                            if subpath.is_dir():
+                            if subpath.is_dir() and subpath.name != "prompt_history":
                                 qs |= recursively_try_to_load(subpath)
                                 # if qs is not None:
                                 #     return qs
