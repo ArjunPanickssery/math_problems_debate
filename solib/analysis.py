@@ -263,12 +263,10 @@ class Analyzer:
                 for run_id, ase, ase_std, asd, asd_std, n in ase_asd_pairs
             ])
             
-            # Calculate confidence intervals if needed
-            if show_error_bars_scatter:
-                scatter_df["ASE_min"] = scatter_df["ASE"] - std_factor * scatter_df["ASE_std"] / np.sqrt(scatter_df["n"])
-                scatter_df["ASE_max"] = scatter_df["ASE"] + std_factor * scatter_df["ASE_std"] / np.sqrt(scatter_df["n"])
-                scatter_df["ASD_min"] = scatter_df["ASD"] - std_factor * scatter_df["ASD_std"] / np.sqrt(scatter_df["n"])
-                scatter_df["ASD_max"] = scatter_df["ASD"] + std_factor * scatter_df["ASD_std"] / np.sqrt(scatter_df["n"])
+            scatter_df["ASE_min"] = scatter_df["ASE"] - std_factor * scatter_df["ASE_std"] / np.sqrt(scatter_df["n"])
+            scatter_df["ASE_max"] = scatter_df["ASE"] + std_factor * scatter_df["ASE_std"] / np.sqrt(scatter_df["n"])
+            scatter_df["ASD_min"] = scatter_df["ASD"] - std_factor * scatter_df["ASD_std"] / np.sqrt(scatter_df["n"])
+            scatter_df["ASD_max"] = scatter_df["ASD"] + std_factor * scatter_df["ASD_std"] / np.sqrt(scatter_df["n"])
             
             if show_labels_scatter:
                 scatter_df["Label"] = scatter_df["Run"].apply(shortened_call_path)
@@ -280,9 +278,19 @@ class Analyzer:
             plot = (
                 ggplot(scatter_df, aes(x="ASE", y="ASD"))
                 + geom_point(alpha=0.8, color="darkred", size=3, shape='x')
-                + stat_smooth(method="lm", color="blue", alpha=0.3)  # Add line of best fit
-                + annotate("text", x=scatter_df["ASE"].min(), y=scatter_df["ASD"].max(), 
-                        label=corr_text, ha="left", va="top", size=8)
+                + stat_smooth(method="lm", color="blue", alpha=0.3)
+                # Place annotation at bottom-right using data coordinates
+                + annotate(
+                    "text",
+                    x=scatter_df["ASE_max"].max(),
+                    y=scatter_df["ASD_min"].min(),
+                    label=corr_text,
+                    ha="right",
+                    va="bottom", 
+                    color="darkred",
+                    fontweight="bold",
+                    size=8
+                )
                 + self.WHITE_THEME
                 + theme(figure_size=(8, 6))
                 + labs(
