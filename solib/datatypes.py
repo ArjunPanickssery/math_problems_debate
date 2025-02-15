@@ -192,6 +192,16 @@ class Score(BaseModel):
     def std(cls, scores: list["Score"]) -> "Score":
         return cls._arroperate(scores, np.std)
 
+    def sqrt(self) -> "Score":
+        """Return square root of each score metric."""
+        return Score(
+            log=None if self.log is None else np.sqrt(self.log),
+            brier=None if self.brier is None else np.sqrt(self.brier),
+            logodds=None if self.logodds is None else np.sqrt(self.logodds),
+            accuracy=None if self.accuracy is None else np.sqrt(self.accuracy)
+        )
+
+
 
 class Stats(BaseModel):
     asd_mean: Score

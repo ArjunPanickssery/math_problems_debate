@@ -2,6 +2,8 @@ from plotnine import (
     ggplot,
     aes,
     geom_bar,
+    geom_errorbar,
+    geom_errorbarh,
     theme_minimal,
     theme,
     labs,
@@ -28,6 +30,17 @@ def shortened_call_path(call_path: str) -> str:
     return call_path
 
 class Analyzer:
+
+    SD_FACTOR = 1.0 # e.g. self.SD_FACTOR for 95% confidence interval
+
+    WHITE_THEME = theme_minimal() + theme(
+        figure_size=(12, 6),
+        panel_background=element_rect(fill='white'),
+        plot_background=element_rect(fill='white'),
+        panel_grid_major=element_line(color='lightgray'),
+        panel_grid_minor=element_line(color='lightgray')
+    )
+
     def __init__(self, results_path: Path, plots_path: Path):
         self.results_path = results_path
         self.plots_path = plots_path
@@ -41,38 +54,49 @@ class Analyzer:
             "Debate_t0_n2": {
                 "_Aclaude...": {
                     config: dict,
+                    n: int,
                     stats: Stats
                 },
             },
         }
         """
         results: dict[
-            str, dict[str, dict[Literal["config", "stats"], dict | Stats]]
+            str, dict[str, dict[Literal["config", "n", "stats"], dict | int | Stats]]
         ] = {}
         for protocol_dir in self.results_path.iterdir():
             LOGGER.info(f"Loading from protocol_dir {protocol_dir}")
             if not protocol_dir.is_dir():
                 LOGGER.warning(f"protocol_dir {protocol_dir} is not a directory")
                 continue
-            results[protocol_dir.name] = {}  # type: dict[str, dict[Literal["config", "stats"], dict|Stats]]
+            results[protocol_dir.name] = {}
             for run_dir in protocol_dir.iterdir():
                 if not run_dir.is_dir():
                     LOGGER.warning(f"run_dir {run_dir} is not a directory")
                     continue
                 config_path = run_dir / "config.json"
                 stats_path = run_dir / "stats.json"
+                results_path = run_dir / "results.jsonl"
                 if not config_path.exists():
                     LOGGER.warning(f"config_path {config_path} does not exist")
                     continue
                 if not stats_path.exists():
                     LOGGER.warning(f"stats_path {stats_path} does not exist")
                     continue
+                if not results_path.exists():
+                    LOGGER.warning(f"results_path {results_path} does not exist")
+                    continue
+                
+                # Count lines in results.jsonl for n
+                with open(results_path) as f:
+                    n = sum(1 for _ in f)
+                
                 with open(config_path) as f:
                     config = json.load(f)
                 with open(stats_path) as f:
                     stats = json.load(f)
                 results[protocol_dir.name][run_dir.name] = {
                     "config": config,
+                    "n": n,
                     "stats": Stats.model_validate(stats),
                 }
             if not results[protocol_dir.name] or all(
@@ -83,28 +107,40 @@ class Analyzer:
                 del results[protocol_dir.name]
         self.results = results
 
-    def get_protocol_asd(self, protocol) -> Score:
-        protocol_results: dict[str, dict[Literal["config", "stats"], dict | Stats]] = (
-            self.results[protocol]
-        )
-        asd_mean: Score = np.mean(
-            [results["stats"].asd_mean for results in protocol_results.values()]
-        )
-        return asd_mean
+    def get_protocol_asd(self, protocol) -> tuple[Score, Score, int]:
+        """Returns (mean, std, n) for the protocol's ASD"""
+        protocol_results = self.results[protocol]
+        asd_means = [results["stats"].asd_mean for results in protocol_results.values()]
+        asd_stds = [results["stats"].asd_std for results in protocol_results.values()]
+        ns = [results["n"] for results in protocol_results.values()]
+        
+        # Combine the means and standard deviations
+        asd_mean = np.mean(asd_means)
+        # Standard error of the mean
+        asd_std = np.sqrt(np.sum(np.array(asd_stds)**2)) / len(asd_stds)
+        total_n = sum(ns)
+        
+        return asd_mean, asd_std, total_n
 
     def get_protocol_asd_vs_ase(
         self, protocol, beta: Literal["0", "1", "inf"] = "1"
-    ) -> list[tuple[str, Score, Score]]:  # Changed return type to include run_id
-        """Get tuples of (run_id, ASE, ASD) for a given protocol"""
-        ase_attr_str: str = f"ase_b{beta}_mean"
-        protocol_results: dict[str, dict[Literal["config", "stats"], dict | Stats]] = (
-            self.results[protocol]
-        )
-        ase_asd: list[tuple[str, Score, Score]] = [
-            (run_id, getattr(results["stats"], ase_attr_str), results["stats"].asd_mean)
+    ) -> list[tuple[str, Score, Score, Score, Score, int]]:
+        """Get tuples of (run_id, ASE_mean, ASE_std, ASD_mean, ASD_std, n) for a given protocol"""
+        ase_mean_attr = f"ase_b{beta}_mean"
+        ase_std_attr = f"ase_b{beta}_std"
+        protocol_results = self.results[protocol]
+        
+        return [
+            (
+                run_id,
+                getattr(results["stats"], ase_mean_attr),
+                getattr(results["stats"], ase_std_attr),
+                results["stats"].asd_mean,
+                results["stats"].asd_std,
+                results["n"]
+            )
             for run_id, results in protocol_results.items()
         ]
-        return ase_asd
 
     def get_asds(self) -> dict[str, Score]:
         """Get ASDs for all protocols in self.results"""
@@ -122,54 +158,62 @@ class Analyzer:
     def analyze_and_plot(
         self, scoring_rule: Literal["log", "logodds", "brier", "accuracy"] = "brier", beta: Literal["0", "1", "inf"] = "1"
     ):
-        """
-        Run get_asds and get_asd_vs_ases and dump their results into
-        self.plots_path/asds.json and self.plots_path/asd_vs_ases.json.
-
-        Then generate:
-        - a bar chart of ASDs for each protocol, and save it to self.plots_path/asds.png
-        - a scatter plot of ASD vs ASE for each protocol, and save it to self.plots_path/{protocol}.png
-
-        By default we take the brier score for everything.
-        """
-        asds_: dict[str, Score] = self.get_asds()
-        asd_vs_ases_: dict[str, list[tuple[str, Score, Score]]] = self.get_asd_vs_ases(beta)
-
-        asds: dict[str, float] = {
-            protocol: getattr(asd, scoring_rule) for protocol, asd in asds_.items()
+        asds_: dict[str, tuple[Score, Score, int]] = {
+            protocol: self.get_protocol_asd(protocol) for protocol in self.results
         }
-        asd_vs_ases: dict[str, list[tuple[str, float, float]]] = {
+        asd_vs_ases_: dict[str, list[tuple[str, Score, Score, Score, Score, int]]] = self.get_asd_vs_ases(beta)
+
+        # Process ASDs with error bars
+        asds: dict[str, tuple[float, float, int]] = {
+            protocol: (
+                getattr(asd_mean, scoring_rule),
+                getattr(asd_std, scoring_rule),
+                n
+            )
+            for protocol, (asd_mean, asd_std, n) in asds_.items()
+        }
+        
+        # Process ASE vs ASD with error bars
+        asd_vs_ases: dict[str, list[tuple[str, float, float, float, float, int]]] = {
             protocol: [
-                (run_id, getattr(ase, scoring_rule), getattr(asd, scoring_rule))
-                for run_id, ase, asd in ase_asd_pairs
+                (
+                    run_id,
+                    getattr(ase_mean, scoring_rule),
+                    getattr(ase_std, scoring_rule),
+                    getattr(asd_mean, scoring_rule),
+                    getattr(asd_std, scoring_rule),
+                    n
+                )
+                for run_id, ase_mean, ase_std, asd_mean, asd_std, n in ase_asd_pairs
             ]
             for protocol, ase_asd_pairs in asd_vs_ases_.items()
         }
 
         self.plots_path.mkdir(parents=True, exist_ok=True)
-
         serialize_to_json(asds, self.plots_path / "asds.json")
         serialize_to_json(asd_vs_ases, self.plots_path / "asd_vs_ases.json")
 
-        # Common theme with white background
-        white_theme = theme_minimal() + theme(
-            figure_size=(12, 6),
-            panel_background=element_rect(fill='white'),
-            plot_background=element_rect(fill='white'),
-            panel_grid_major=element_line(color='lightgray'),
-            panel_grid_minor=element_line(color='lightgray')
-        )
+        # Convert ASD data to DataFrame with error bars
+        asd_df = pd.DataFrame([
+            {
+                "Protocol": protocol,
+                "ASD": asd,
+                "ASD_std": std,
+                "n": n
+            }
+            for protocol, (asd, std, n) in asds.items()
+        ])
 
-        # Convert ASD data to DataFrame for plotting
-        asd_df = pd.DataFrame(
-            {"Protocol": list(asds.keys()), "ASD": list(asds.values())}
-        )
+        # Calculate confidence intervals
+        asd_df["ymin"] = asd_df["ASD"] - self.SD_FACTOR * asd_df["ASD_std"] / np.sqrt(asd_df["n"])
+        asd_df["ymax"] = asd_df["ASD"] + self.SD_FACTOR * asd_df["ASD_std"] / np.sqrt(asd_df["n"])
 
-        # Create and save bar plot
+        # Bar plot with error bars
         asd_plot = (
             ggplot(asd_df, aes(x="Protocol", y="ASD"))
             + geom_bar(stat="identity", fill="steelblue", alpha=0.7)
-            + white_theme
+            + geom_errorbar(aes(ymin="ymin", ymax="ymax"), width=0.2)
+            + self.WHITE_THEME
             + labs(
                 title=f"Agent Score Difference (ASD) by Protocol ({scoring_rule})",
                 x="Protocol",
@@ -178,25 +222,38 @@ class Analyzer:
         )
         asd_plot.save(self.plots_path / "asds.png", dpi=300, verbose=False)
 
-        # Create scatter plots for each protocol
+        # Scatter plots with error bars
         scatter_plots = []
         for protocol, ase_asd_pairs in asd_vs_ases.items():
-            # Convert to DataFrame
-            scatter_df = pd.DataFrame(
-                [(run_id, ase, asd) for run_id, ase, asd in ase_asd_pairs],
-                columns=["Run", "ASE", "ASD"]
-            )
-            scatter_df["Protocol"] = protocol
+            scatter_df = pd.DataFrame([
+                {
+                    "Run": run_id,
+                    "ASE": ase,
+                    "ASE_std": ase_std,
+                    "ASD": asd,
+                    "ASD_std": asd_std,
+                    "n": n,
+                    "Protocol": protocol
+                }
+                for run_id, ase, ase_std, asd, asd_std, n in ase_asd_pairs
+            ])
             
-            # Extract a shorter label from the run ID for better readability
+            # Calculate confidence intervals
+            scatter_df["ASE_min"] = scatter_df["ASE"] - self.SD_FACTOR * scatter_df["ASE_std"] / np.sqrt(scatter_df["n"])
+            scatter_df["ASE_max"] = scatter_df["ASE"] + self.SD_FACTOR * scatter_df["ASE_std"] / np.sqrt(scatter_df["n"])
+            scatter_df["ASD_min"] = scatter_df["ASD"] - self.SD_FACTOR * scatter_df["ASD_std"] / np.sqrt(scatter_df["n"])
+            scatter_df["ASD_max"] = scatter_df["ASD"] + self.SD_FACTOR * scatter_df["ASD_std"] / np.sqrt(scatter_df["n"])
+            
             scatter_df["Label"] = scatter_df["Run"].apply(shortened_call_path)
 
             plot = (
                 ggplot(scatter_df, aes(x="ASE", y="ASD"))
                 + geom_point(alpha=0.8, color="darkred", size=3, shape='x')
+                + geom_errorbar(aes(ymin="ASD_min", ymax="ASD_max"), width=0.002)
+                + geom_errorbarh(aes(xmin="ASE_min", xmax="ASE_max"), height=0.002)
                 + geom_text(aes(label="Label"), nudge_x=0.002, nudge_y=0.002, size=8)
-                + white_theme
-                + theme(figure_size=(8, 6))  # Override figure size for scatter plots
+                + self.WHITE_THEME
+                + theme(figure_size=(8, 6))
                 + labs(
                     title=f"ASD vs ASE for {protocol} ({scoring_rule})",
                     x="Agent Score Expected (ASE)",
@@ -204,9 +261,7 @@ class Analyzer:
                 )
             )
 
-            # Save individual plot
             plot.save(self.plots_path / f"{protocol}.png", dpi=300, verbose=False)
             scatter_plots.append(plot)
 
-        # save all scatter plots as a single PDF
         save_as_pdf_pages(scatter_plots, self.plots_path / "all_protocols.pdf")
