@@ -7,12 +7,15 @@ from plotnine import (
     theme_minimal,
     theme,
     labs,
+    annotate,
     geom_point,
     geom_text,
     element_rect,
     element_line,
     save_as_pdf_pages,
 )
+from scipy import stats
+from plotnine import stat_smooth
 import pandas as pd
 import numpy as np
 import json
@@ -112,9 +115,7 @@ class Analyzer:
         asd_stds = [results["stats"].asd_std for results in protocol_results.values()]
         ns = [results["n"] for results in protocol_results.values()]
         
-        # Combine the means and standard deviations
         asd_mean = np.mean(asd_means)
-        # Standard error of the mean
         asd_std = np.sqrt(np.sum(np.array(asd_stds)**2)) / len(asd_stds)
         total_n = sum(ns)
         
@@ -176,7 +177,7 @@ class Analyzer:
             show_error_bars_barchart: Whether to show error bars on the bar chart
             show_error_bars_scatter: Whether to show error bars on scatter plots
             show_labels_scatter: Whether to show point labels on scatter plots
-            std_factor: Number of standard deviations to use for error bars, e.g. 1.96 for 95% CI
+            std_factor: Number of standard deviations to use for error bars, e.g. std_factor for 95% CI
         """
         asds_: dict[str, tuple[Score, Score, int]] = {
             protocol: self.get_protocol_asd(protocol) for protocol in self.results
@@ -272,9 +273,16 @@ class Analyzer:
             if show_labels_scatter:
                 scatter_df["Label"] = scatter_df["Run"].apply(shortened_call_path)
 
+            # Calculate correlation
+            corr, p_value = stats.pearsonr(scatter_df["ASE"], scatter_df["ASD"])
+            corr_text = f"r = {corr:.3f} (p = {p_value:.3f})"
+
             plot = (
                 ggplot(scatter_df, aes(x="ASE", y="ASD"))
                 + geom_point(alpha=0.8, color="darkred", size=3, shape='x')
+                + stat_smooth(method="lm", color="blue", alpha=0.3)  # Add line of best fit
+                + annotate("text", x=scatter_df["ASE"].min(), y=scatter_df["ASD"].max(), 
+                        label=corr_text, ha="left", va="top", size=8)
                 + self.WHITE_THEME
                 + theme(figure_size=(8, 6))
                 + labs(
