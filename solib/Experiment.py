@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 
 from solib.data.loading import Dataset
-from solib.datatypes import Question
+from solib.datatypes import Question, Stats
 from solib.utils import str_config, write_json, dump_config, random
 from solib.utils import parallelized_call
 from solib.utils.llm_utils import (
@@ -233,7 +233,7 @@ class Experiment:
         random(filtered_configs).shuffle(filtered_configs)
         filtered_configs = filtered_configs[:max_configs]
 
-        async def run_experiment(config: dict):
+        async def run_experiment(config: dict) -> Stats:
             LOGGER.status(f"Running experiment {self.get_path(config)}")
             setup = config["protocol"](**config["init_kwargs"])
 
@@ -467,3 +467,37 @@ class Experiment:
             i += 1
             path_new = path.with_name(path.stem + f"_{i}")
         return path_new
+    
+    def recompute_stats(self, overwrite_existing: bool = False):
+        """
+        Recompute stats.json files for each self.write_path / protocol / call
+        directory, using the existing results.jsonl files (optionally even if
+        stats.json already exists), and then compute all_stats.json.
+        """
+        all_stats = []
+        for protocol_dir in self.write_path.iterdir():
+            if not protocol_dir.is_dir():
+                continue
+            for run_dir in protocol_dir.iterdir():
+                if not run_dir.is_dir():
+                    continue
+                config_path = run_dir / "config.json"
+                results_path = run_dir / "results.jsonl"
+                stats_path = run_dir / "stats.json"
+                if not config_path.exists():
+                    continue
+                if not results_path.exists():
+                    continue
+                with open(config_path) as f:
+                    config = json.load(f)
+                if stats_path.exists() and not overwrite_existing:
+                    stats_ = json.load(open(stats_path))
+                    stats = Stats.model_validate(stats_)
+                else:
+                    with jsonlines.open(results_path, 'r') as f:
+                        results = [Question.model_validate(q) for q in f]
+                    stats = Question.compute_stats(results)
+                write_json(stats, path=stats_path)
+                all_stats.append({"config": config, "stats": stats})
+        write_json(dump_config(all_stats), path=self.write_path / "all_stats.json")
+        return all_stats
