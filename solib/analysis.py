@@ -30,14 +30,14 @@ LOGGER = logging.getLogger(__name__)
 def shortened_protocol_path(protocol_path: str) -> str:
     """Shorten the protocol name for better readability in plots"""
     PATH_SHORTENER = {
-        "Debate_t0_n2": "SequentialDebate [2 turns]",
-        "Debate_t0_n4": "SequentialDebate [4 turns]",
-        "Debate_t1_n2": "SimultaneousDebate [2 turns]",
-        "Debate_t1_n4": "SimultaneousDebate [4 turns]",
-        "Consultancy_t0_n2": "ClientInitiatedConsultancy [2 turns]",
-        "Consultancy_t0_n4": "ClientInitiatedConsultancy [4 turns]",
-        "Consultancy_t1_n2": "ConsultantInitiatedConsultancy [2 turns]",
-        "Consultancy_t1_n4": "ConsultantInitiatedConsultancy [4 turns]",
+        "Debate_t0_n2": "Debate [sequential, 2 turns]",
+        "Debate_t0_n4": "Debate [sequential, 4 turns]",
+        "Debate_t1_n2": "Debate [simultaneous, 2 turns]",
+        "Debate_t1_n4": "Debate [simultaneous, 4 turns]",
+        "Consultancy_t0_n2": "Consultancy [client starts, 2 turns]",
+        "Consultancy_t0_n4": "Consultancy [client starts, turns]",
+        "Consultancy_t1_n2": "Consultancy [consultant starts, 2 turns]",
+        "Consultancy_t1_n4": "Consultancy [consultant starts, 4 turns]",
     }
     return PATH_SHORTENER.get(protocol_path, protocol_path)
 
@@ -286,7 +286,7 @@ class Analyzer:
                     "ASD": asd,
                     "ASD_std": asd_std,
                     "n": n,
-                    "Protocol": protocol
+                    "Protocol": protocol,
                 }
                 for run_id, ase, ase_std, asd, asd_std, n in ase_asd_pairs
             ])
@@ -322,7 +322,7 @@ class Analyzer:
                 + self.WHITE_THEME
                 + theme(figure_size=(8, 6))
                 + labs(
-                    title=f"ASD vs ASE for {protocol} ({scoring_rule})",
+                    title=f"ASD vs ASE for {shortened_protocol_path(protocol)} ({scoring_rule})",
                     x="Agent Score Expected (ASE)",
                     y="Agent Score Difference (ASD)",
                 )
