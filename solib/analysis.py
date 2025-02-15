@@ -31,8 +31,6 @@ def shortened_call_path(call_path: str) -> str:
 
 class Analyzer:
 
-    SD_FACTOR = 1.0 # e.g. self.SD_FACTOR for 95% confidence interval
-
     WHITE_THEME = theme_minimal() + theme(
         figure_size=(12, 6),
         panel_background=element_rect(fill='white'),
@@ -156,8 +154,30 @@ class Analyzer:
         }
 
     def analyze_and_plot(
-        self, scoring_rule: Literal["log", "logodds", "brier", "accuracy"] = "brier", beta: Literal["0", "1", "inf"] = "1"
+        self,
+        scoring_rule: Literal["log", "logodds", "brier", "accuracy"] = "brier",
+        beta: Literal["0", "1", "inf"] = "1",
+        show_error_bars_barchart: bool = True,
+        show_error_bars_scatter: bool = True,
+        show_labels_scatter: bool = True,
+        std_factor: float = 1.0,
     ):
+        """
+        Run get_asds and get_asd_vs_ases and dump their results into
+        self.plots_path/asds.json and self.plots_path/asd_vs_ases.json.
+
+        Then generate:
+        - a bar chart of ASDs for each protocol, save to self.plots_path/asds.png
+        - scatter plot of ASD vs ASE for each protocol, save to self.plots_path/{protocol}.png
+
+        Args:
+            scoring_rule: Which scoring rule to use for the metrics
+            beta: Beta parameter for ASE calculation
+            show_error_bars_barchart: Whether to show error bars on the bar chart
+            show_error_bars_scatter: Whether to show error bars on scatter plots
+            show_labels_scatter: Whether to show point labels on scatter plots
+            std_factor: Number of standard deviations to use for error bars, e.g. 1.96 for 95% CI
+        """
         asds_: dict[str, tuple[Score, Score, int]] = {
             protocol: self.get_protocol_asd(protocol) for protocol in self.results
         }
@@ -205,14 +225,14 @@ class Analyzer:
         ])
 
         # Calculate confidence intervals
-        asd_df["ymin"] = asd_df["ASD"] - self.SD_FACTOR * asd_df["ASD_std"] / np.sqrt(asd_df["n"])
-        asd_df["ymax"] = asd_df["ASD"] + self.SD_FACTOR * asd_df["ASD_std"] / np.sqrt(asd_df["n"])
+        if show_error_bars_barchart:
+            asd_df["ymin"] = asd_df["ASD"] - std_factor * asd_df["ASD_std"] / np.sqrt(asd_df["n"])
+            asd_df["ymax"] = asd_df["ASD"] + std_factor * asd_df["ASD_std"] / np.sqrt(asd_df["n"])
 
-        # Bar plot with error bars
+        # Bar plot with optional error bars
         asd_plot = (
             ggplot(asd_df, aes(x="Protocol", y="ASD"))
             + geom_bar(stat="identity", fill="steelblue", alpha=0.7)
-            + geom_errorbar(aes(ymin="ymin", ymax="ymax"), width=0.2)
             + self.WHITE_THEME
             + labs(
                 title=f"Agent Score Difference (ASD) by Protocol ({scoring_rule})",
@@ -220,9 +240,13 @@ class Analyzer:
                 y="ASD Value",
             )
         )
+        
+        if show_error_bars_barchart:
+            asd_plot = asd_plot + geom_errorbar(aes(ymin="ymin", ymax="ymax"), width=0.2)
+        
         asd_plot.save(self.plots_path / "asds.png", dpi=300, verbose=False)
 
-        # Scatter plots with error bars
+        # Scatter plots with optional error bars and labels
         scatter_plots = []
         for protocol, ase_asd_pairs in asd_vs_ases.items():
             scatter_df = pd.DataFrame([
@@ -238,20 +262,19 @@ class Analyzer:
                 for run_id, ase, ase_std, asd, asd_std, n in ase_asd_pairs
             ])
             
-            # Calculate confidence intervals
-            scatter_df["ASE_min"] = scatter_df["ASE"] - self.SD_FACTOR * scatter_df["ASE_std"] / np.sqrt(scatter_df["n"])
-            scatter_df["ASE_max"] = scatter_df["ASE"] + self.SD_FACTOR * scatter_df["ASE_std"] / np.sqrt(scatter_df["n"])
-            scatter_df["ASD_min"] = scatter_df["ASD"] - self.SD_FACTOR * scatter_df["ASD_std"] / np.sqrt(scatter_df["n"])
-            scatter_df["ASD_max"] = scatter_df["ASD"] + self.SD_FACTOR * scatter_df["ASD_std"] / np.sqrt(scatter_df["n"])
+            # Calculate confidence intervals if needed
+            if show_error_bars_scatter:
+                scatter_df["ASE_min"] = scatter_df["ASE"] - std_factor * scatter_df["ASE_std"] / np.sqrt(scatter_df["n"])
+                scatter_df["ASE_max"] = scatter_df["ASE"] + std_factor * scatter_df["ASE_std"] / np.sqrt(scatter_df["n"])
+                scatter_df["ASD_min"] = scatter_df["ASD"] - std_factor * scatter_df["ASD_std"] / np.sqrt(scatter_df["n"])
+                scatter_df["ASD_max"] = scatter_df["ASD"] + std_factor * scatter_df["ASD_std"] / np.sqrt(scatter_df["n"])
             
-            scatter_df["Label"] = scatter_df["Run"].apply(shortened_call_path)
+            if show_labels_scatter:
+                scatter_df["Label"] = scatter_df["Run"].apply(shortened_call_path)
 
             plot = (
                 ggplot(scatter_df, aes(x="ASE", y="ASD"))
                 + geom_point(alpha=0.8, color="darkred", size=3, shape='x')
-                + geom_errorbar(aes(ymin="ASD_min", ymax="ASD_max"), width=0.002)
-                + geom_errorbarh(aes(xmin="ASE_min", xmax="ASE_max"), height=0.002)
-                + geom_text(aes(label="Label"), nudge_x=0.002, nudge_y=0.002, size=8)
                 + self.WHITE_THEME
                 + theme(figure_size=(8, 6))
                 + labs(
@@ -260,6 +283,16 @@ class Analyzer:
                     y="Agent Score Difference (ASD)",
                 )
             )
+
+            if show_error_bars_scatter:
+                plot = (
+                    plot 
+                    + geom_errorbar(aes(ymin="ASD_min", ymax="ASD_max"), width=0.002)
+                    + geom_errorbarh(aes(xmin="ASE_min", xmax="ASE_max"), height=0.002)
+                )
+                
+            if show_labels_scatter:
+                plot = plot + geom_text(aes(label="Label"), nudge_x=0.002, nudge_y=0.002, size=8)
 
             plot.save(self.plots_path / f"{protocol}.png", dpi=300, verbose=False)
             scatter_plots.append(plot)
