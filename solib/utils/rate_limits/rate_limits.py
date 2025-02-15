@@ -172,7 +172,7 @@ class RateLimiter:
                 # Make the API call outside the lock
                 return await asyncio.wait_for(
                     call_function(model_id, messages, **kwargs),
-                    timeout=180,  # this needs to be longer for ollama
+                    timeout=222,  # this needs to be longer for ollama
                 )
 
         async with self.lock_add:
@@ -180,6 +180,7 @@ class RateLimiter:
 
         token_count = self._count_prompt_token_capacity(messages, **kwargs)
 
+        response = None
         for i in range(max_attempts):
             try:
                 response = await attempt_api_call()
