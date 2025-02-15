@@ -27,10 +27,38 @@ from solib.utils import serialize_to_json
 
 LOGGER = logging.getLogger(__name__)
 
+def shortened_protocol_path(protocol_path: str) -> str:
+    """Shorten the protocol name for better readability in plots"""
+    PATH_SHORTENER = {
+        "Debate_t0_n2": "SequentialDebate [2 turns]",
+        "Debate_t0_n4": "SequentialDebate [4 turns]",
+        "Debate_t1_n2": "SimultaneousDebate [2 turns]",
+        "Debate_t1_n4": "SimultaneousDebate [4 turns]",
+        "Consultancy_t0_n2": "ClientInitiatedConsultancy [2 turns]",
+        "Consultancy_t0_n4": "ClientInitiatedConsultancy [4 turns]",
+        "Consultancy_t1_n2": "ConsultantInitiatedConsultancy [2 turns]",
+        "Consultancy_t1_n4": "ConsultantInitiatedConsultancy [4 turns]",
+    }
+    return PATH_SHORTENER.get(protocol_path, protocol_path)
 
 def shortened_call_path(call_path: str) -> str:
     """Shorten the run ID for better readability in plots"""
-    return call_path
+    # FRAGILE.
+    index_of_A = call_path.index("_A")
+    index_of_J = call_path.index("_J")
+    try:
+        index_of_B = call_path.index("_B")
+    except ValueError:
+        index_of_B = -1
+    agent_name = call_path[index_of_A + 2:index_of_J]
+    judge_name = call_path[index_of_J + 2:index_of_B]
+    adversary_name = call_path[index_of_B + 2:]
+    agent_name = agent_name.replace("-20241022", "")
+    agent_name = agent_name.replace("-2024-07-18", "")
+    agent_name = agent_name.replace("-math_eval", "+calculator")
+    agent_name = agent_name.replace("deepseek-chat", "deepseek-v3")
+    return agent_name
+
 
 class Analyzer:
 
