@@ -6,7 +6,7 @@ from plotnine import (
     theme,
     labs,
     geom_point,
-    element_text,
+    geom_text,
     element_rect,
     element_line,
     save_as_pdf_pages,
@@ -22,6 +22,10 @@ from solib.utils import serialize_to_json
 
 LOGGER = logging.getLogger(__name__)
 
+
+def shortened_call_path(call_path: str) -> str:
+    """Shorten the run ID for better readability in plots"""
+    return call_path
 
 class Analyzer:
     def __init__(self, results_path: Path, plots_path: Path):
@@ -90,15 +94,15 @@ class Analyzer:
 
     def get_protocol_asd_vs_ase(
         self, protocol, beta: Literal["0", "1", "inf"] = "1"
-    ) -> list[tuple[Score, Score]]:
-        """Get tuples of (ASE, ASD) for a given protocol"""
+    ) -> list[tuple[str, Score, Score]]:  # Changed return type to include run_id
+        """Get tuples of (run_id, ASE, ASD) for a given protocol"""
         ase_attr_str: str = f"ase_b{beta}_mean"
         protocol_results: dict[str, dict[Literal["config", "stats"], dict | Stats]] = (
             self.results[protocol]
         )
-        ase_asd: list[tuple[Score, Score]] = [
-            (getattr(results["stats"], ase_attr_str), results["stats"].asd_mean)
-            for results in protocol_results.values()
+        ase_asd: list[tuple[str, Score, Score]] = [
+            (run_id, getattr(results["stats"], ase_attr_str), results["stats"].asd_mean)
+            for run_id, results in protocol_results.items()
         ]
         return ase_asd
 
@@ -108,7 +112,7 @@ class Analyzer:
 
     def get_asd_vs_ases(
         self, beta: Literal["0", "1", "inf"] = "1"
-    ) -> dict[str, list[tuple[Score, Score]]]:
+    ) -> dict[str, list[tuple[str, Score, Score]]]:
         """Get ASDs vs ASEs for all protocols in self.results"""
         return {
             protocol: self.get_protocol_asd_vs_ase(protocol, beta)
@@ -129,15 +133,15 @@ class Analyzer:
         By default we take the brier score for everything.
         """
         asds_: dict[str, Score] = self.get_asds()
-        asd_vs_ases_: dict[str, list[tuple[Score, Score]]] = self.get_asd_vs_ases(beta)
+        asd_vs_ases_: dict[str, list[tuple[str, Score, Score]]] = self.get_asd_vs_ases(beta)
 
         asds: dict[str, float] = {
             protocol: getattr(asd, scoring_rule) for protocol, asd in asds_.items()
         }
-        asd_vs_ases: dict[str, list[tuple[float, float]]] = {
+        asd_vs_ases: dict[str, list[tuple[str, float, float]]] = {
             protocol: [
-                (getattr(ase, scoring_rule), getattr(asd, scoring_rule))
-                for ase, asd in ase_asd_pairs
+                (run_id, getattr(ase, scoring_rule), getattr(asd, scoring_rule))
+                for run_id, ase, asd in ase_asd_pairs
             ]
             for protocol, ase_asd_pairs in asd_vs_ases_.items()
         }
@@ -178,12 +182,19 @@ class Analyzer:
         scatter_plots = []
         for protocol, ase_asd_pairs in asd_vs_ases.items():
             # Convert to DataFrame
-            scatter_df = pd.DataFrame(ase_asd_pairs, columns=["ASE", "ASD"])
+            scatter_df = pd.DataFrame(
+                [(run_id, ase, asd) for run_id, ase, asd in ase_asd_pairs],
+                columns=["Run", "ASE", "ASD"]
+            )
             scatter_df["Protocol"] = protocol
+            
+            # Extract a shorter label from the run ID for better readability
+            scatter_df["Label"] = scatter_df["Run"].apply(shortened_call_path)
 
             plot = (
                 ggplot(scatter_df, aes(x="ASE", y="ASD"))
                 + geom_point(alpha=0.8, color="darkred", size=3, shape='x')
+                + geom_text(aes(label="Label"), nudge_x=0.002, nudge_y=0.002, size=8)
                 + white_theme
                 + theme(figure_size=(8, 6))  # Override figure size for scatter plots
                 + labs(
