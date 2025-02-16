@@ -215,6 +215,7 @@ class Analyzer:
         show_error_bars_scatter: bool = True,
         show_labels_scatter: bool = True,
         std_factor: float = 1.0,
+        show_correlation: bool = False,
     ):
         """
         Run get_asds and get_asd_vs_ases and dump their results into
@@ -366,9 +367,22 @@ class Analyzer:
             if show_labels_scatter:
                 scatter_df["Label"] = scatter_df["Run"].apply(shortened_call_path)
 
-            # Calculate correlation
+            # Calculate correlation and slope
+            X = scatter_df["ASE"].values.reshape(-1, 1)
+            y = scatter_df["ASD"].values
+            
+            # For correlation
             corr, p_value = stats.pearsonr(scatter_df["ASE"], scatter_df["ASD"])
-            corr_text = f"r = {corr:.3f} (p = {p_value:.3f})"
+            
+            # For slope
+            model = stats.linregress(scatter_df["ASE"], scatter_df["ASD"])
+            slope = model.slope
+            
+            # Choose which metric to display
+            if show_correlation:
+                stat_text = f"r = {corr:.3f} (p = {p_value:.3f})"
+            else:
+                stat_text = f"slope = {slope:.3f}"
 
             plot = (
                 ggplot(scatter_df, aes(x="ASE", y="ASD"))
@@ -378,7 +392,7 @@ class Analyzer:
                     "text",
                     x=scatter_df["ASE_max"].max(),
                     y=scatter_df["ASD_min"].min(),
-                    label=corr_text,
+                    label=stat_text,
                     ha="right",
                     va="bottom", 
                     color="darkred",
