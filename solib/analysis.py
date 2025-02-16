@@ -174,6 +174,22 @@ class Analyzer:
             for run_id, results in protocol_results.items()
         ]
 
+    def get_protocol_jse(self, protocol: str, beta: Literal["0", "1", "inf"] = "1") -> tuple[Score, Score, int]:
+        """Returns (mean, std, n) for the protocol's JSE with given beta parameter"""
+        protocol_results = self.results[protocol]
+        jse_mean_attr = f"jse_b{beta}_mean"
+        jse_std_attr = f"jse_b{beta}_std"
+        
+        jse_means = [getattr(results["stats"], jse_mean_attr) for results in protocol_results.values()]
+        jse_stds = [getattr(results["stats"], jse_std_attr) for results in protocol_results.values()]
+        ns = [results["n"] for results in protocol_results.values()]
+        
+        jse_mean = np.mean(jse_means)
+        jse_std = np.sqrt(np.sum(np.array(jse_stds)**2)) / len(jse_stds)
+        total_n = sum(ns)
+        
+        return jse_mean, jse_std, total_n
+
     def get_asds(self) -> dict[str, Score]:
         """Get ASDs for all protocols in self.results"""
         return {protocol: self.get_protocol_asd(protocol) for protocol in self.results}
@@ -186,6 +202,10 @@ class Analyzer:
             protocol: self.get_protocol_asd_vs_ase(protocol, beta)
             for protocol in self.results
         }
+
+    def get_jses(self, beta: Literal["0", "1", "inf"] = "1") -> dict[str, tuple[Score, Score, int]]:
+        """Get JSEs for all protocols in self.results with given beta parameter"""
+        return {protocol: self.get_protocol_jse(protocol, beta) for protocol in self.results}
 
     def analyze_and_plot(
         self,
@@ -212,9 +232,9 @@ class Analyzer:
             show_labels_scatter: Whether to show point labels on scatter plots
             std_factor: Number of standard deviations to use for error bars, e.g. std_factor for 95% CI
         """
-        asds_: dict[str, tuple[Score, Score, int]] = {
-            protocol: self.get_protocol_asd(protocol) for protocol in self.results
-        }
+        # Get ASDs and JSEs
+        asds_: dict[str, tuple[Score, Score, int]] = self.get_asds()
+        jses_: dict[str, tuple[Score, Score, int]] = self.get_jses(beta)
         asd_vs_ases_: dict[str, list[tuple[str, Score, Score, Score, Score, int]]] = self.get_asd_vs_ases(beta)
 
         # Process ASDs with error bars
@@ -225,6 +245,16 @@ class Analyzer:
                 n
             )
             for protocol, (asd_mean, asd_std, n) in asds_.items()
+        }
+
+        # Process JSEs with error bars
+        jses: dict[str, tuple[float, float, int]] = {
+            protocol: (
+                getattr(jse_mean, scoring_rule),
+                getattr(jse_std, scoring_rule),
+                n
+            )
+            for protocol, (jse_mean, jse_std, n) in jses_.items()
         }
         
         # Process ASE vs ASD with error bars
@@ -245,6 +275,7 @@ class Analyzer:
 
         self.plots_path.mkdir(parents=True, exist_ok=True)
         serialize_to_json(asds, self.plots_path / "asds.json")
+        serialize_to_json(jses, self.plots_path / "jses.json")
         serialize_to_json(asd_vs_ases, self.plots_path / "asd_vs_ases.json")
 
         # Convert ASD data to DataFrame with error bars
@@ -258,12 +289,26 @@ class Analyzer:
             for protocol, (asd, std, n) in asds.items()
         ])
 
+        # Convert JSE data to DataFrame with error bars
+        jse_df = pd.DataFrame([
+            {
+                "Protocol": shortened_protocol_path(protocol, alt=True),
+                "JSE": jse,
+                "JSE_std": std,
+                "n": n
+            }
+            for protocol, (jse, std, n) in jses.items()
+        ])
+
         # Calculate confidence intervals
         if show_error_bars_barchart:
             asd_df["ymin"] = asd_df["ASD"] - std_factor * asd_df["ASD_std"] / np.sqrt(asd_df["n"])
             asd_df["ymax"] = asd_df["ASD"] + std_factor * asd_df["ASD_std"] / np.sqrt(asd_df["n"])
+            
+            jse_df["ymin"] = jse_df["JSE"] - std_factor * jse_df["JSE_std"] / np.sqrt(jse_df["n"])
+            jse_df["ymax"] = jse_df["JSE"] + std_factor * jse_df["JSE_std"] / np.sqrt(jse_df["n"])
 
-        # Bar plot with optional error bars
+        # Bar plot for ASD with optional error bars
         asd_plot = (
             ggplot(asd_df, aes(x="Protocol", y="ASD"))
             + geom_bar(stat="identity", fill="steelblue", alpha=0.7)
@@ -279,6 +324,23 @@ class Analyzer:
             asd_plot = asd_plot + geom_errorbar(aes(ymin="ymin", ymax="ymax"), width=0.2)
         
         asd_plot.save(self.plots_path / "asds.png", dpi=300, verbose=False)
+
+        # Bar plot for JSE with optional error bars
+        jse_plot = (
+            ggplot(jse_df, aes(x="Protocol", y="JSE"))
+            + geom_bar(stat="identity", fill="darkgreen", alpha=0.7)
+            + self.WHITE_THEME
+            + labs(
+                title=f"Judge Score Expected (JSE) by Protocol (β={beta}, {scoring_rule})",
+                x="Protocol",
+                y="JSE Value",
+            )
+        )
+        
+        if show_error_bars_barchart:
+            jse_plot = jse_plot + geom_errorbar(aes(ymin="ymin", ymax="ymax"), width=0.2)
+        
+        jse_plot.save(self.plots_path / "jses.png", dpi=300, verbose=False)
 
         # Scatter plots with optional error bars and labels
         scatter_plots = []
@@ -312,7 +374,6 @@ class Analyzer:
                 ggplot(scatter_df, aes(x="ASE", y="ASD"))
                 + geom_point(alpha=0.8, color="darkred", size=3, shape='x')
                 + stat_smooth(method="lm", color="blue", alpha=0.3)
-                # Place annotation at bottom-right using data coordinates
                 + annotate(
                     "text",
                     x=scatter_df["ASE_max"].max(),
