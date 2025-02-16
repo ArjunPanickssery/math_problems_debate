@@ -27,8 +27,11 @@ from solib.utils import serialize_to_json
 
 LOGGER = logging.getLogger(__name__)
 
-def shortened_protocol_path(protocol_path: str) -> str:
+def shortened_protocol_path(protocol_path: str, alt=False) -> str:
     """Shorten the protocol name for better readability in plots"""
+    protocol_path=protocol_path.replace("Blind", "NaiveJudge")
+    if alt:
+        return protocol_path.replace("Consultancy", "Consul...")
     PATH_SHORTENER = {
         "Debate_t0_n2": "Debate [sequential, 2 turns]",
         "Debate_t0_n4": "Debate [sequential, 4 turns]",
@@ -40,6 +43,8 @@ def shortened_protocol_path(protocol_path: str) -> str:
         "Consultancy_t1_n4": "Consultancy [consultant starts, 4 turns]",
     }
     return PATH_SHORTENER.get(protocol_path, protocol_path)
+
+
 
 def shortened_call_path(call_path: str) -> str:
     """Shorten the run ID for better readability in plots"""
@@ -245,7 +250,7 @@ class Analyzer:
         # Convert ASD data to DataFrame with error bars
         asd_df = pd.DataFrame([
             {
-                "Protocol": protocol,
+                "Protocol": shortened_protocol_path(protocol, alt=True),
                 "ASD": asd,
                 "ASD_std": std,
                 "n": n
