@@ -422,3 +422,79 @@ class Analyzer:
             scatter_plots.append(plot)
 
         save_as_pdf_pages(scatter_plots, self.plots_path / "all_protocols.pdf")
+
+    def generate_latex_table(
+        self,
+        scoring_rule: Literal["log", "logodds", "brier", "accuracy"] = "brier",
+        beta: Literal["0", "1", "inf"] = "1",
+        filename: str = "results_table.tex"
+    ) -> None:
+        """
+        Generate a LaTeX table showing ASD mean, slope, and JSE for each protocol
+        and save it to a file.
+        
+        Args:
+            scoring_rule: Which scoring rule to use for the metrics
+            beta: Beta parameter for JSE calculation
+            filename: Name of the file to save the table to
+        """
+        # Get the data
+        asds_ = self.get_asds()
+        jses_ = self.get_jses(beta)
+        
+        # Process to get actual values
+        results = {}
+        for protocol in self.results:
+            # Get ASD
+            asd_mean, _, _ = asds_[protocol]
+            asd_value = getattr(asd_mean, scoring_rule)
+            
+            # Get JSE
+            jse_mean, _, _ = jses_[protocol]
+            jse_value = getattr(jse_mean, scoring_rule)
+            
+            # Calculate slope
+            ase_asd_pairs = self.get_protocol_asd_vs_ase(protocol, beta)
+            ases = []
+            asds = []
+            for _, ase_mean, _, asd_mean, _, _ in ase_asd_pairs:
+                ases.append(getattr(ase_mean, scoring_rule))
+                asds.append(getattr(asd_mean, scoring_rule))
+            slope = stats.linregress(ases, asds).slope
+            
+            results[protocol] = {
+                'asd': asd_value,
+                'slope': slope,
+                'jse': jse_value
+            }
+        
+        # Generate the LaTeX table
+        table = [
+            r"\begin{table}[h]",
+            r"\centering",
+            r"\begin{tabular}{lccc}",
+            r"\toprule",
+            r"Protocol & ASD & Slope & JSE \\",
+            r"\midrule"
+        ]
+        
+        for protocol, values in results.items():
+            protocol_name = shortened_protocol_path(protocol)
+            # Escape underscores in protocol name
+            protocol_name = protocol_name.replace("_", r"\_")
+            row = f"{protocol_name} & {values['asd']:.3f} & {values['slope']:.3f} & {values['jse']:.3f} \\\\"
+            table.append(row)
+        
+        table.extend([
+            r"\bottomrule",
+            r"\end{tabular}",
+            fr"\caption{{Results table comparing protocols using {scoring_rule} scoring rule and $\beta={beta}$}}",
+            r"\label{tab:protocol-comparison}",
+            r"\end{table}"
+        ])
+        
+        # Save to file
+        table_str = "\n".join(table)
+        filepath = self.plots_path / filename
+        with open(filepath, 'w') as f:
+            f.write(table_str)

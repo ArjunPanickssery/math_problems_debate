@@ -12,5 +12,8 @@ analyzer2 = Analyzer(
 )
 
 
-analyzer1.analyze_and_plot()
-analyzer2.analyze_and_plot()
+# analyzer1.analyze_and_plot()
+# analyzer2.analyze_and_plot()
+
+analyzer1.generate_latex_table()
+analyzer2.generate_latex_table()
