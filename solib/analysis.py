@@ -521,6 +521,10 @@ class Analyzer:
             protocol_name = shortened_protocol_path(protocol)
             # Escape underscores in protocol name
             protocol_name = protocol_name.replace("_", r"\_")
+            if protocol_name == "NaiveJudge":
+                slope_str = '--'
+            else:
+                slope_str = f"{values['slope']:.3f}"
             protocol_name = (
                 protocol_name.replace("Debate", r"\textbf{Debate}")
                 .replace("Consultancy", r"\textbf{Consultancy}")
@@ -528,7 +532,7 @@ class Analyzer:
                 .replace("Propaganda", r"\textbf{Propaganda}")
             ) # HACK. FRAGILE.
             row = (
-                f"{protocol_name} & {values['asd']:.3f} & {values['slope']:.3f} & {values['jse']:.3f}"
+                f"{protocol_name} & {values['asd']:.3f} & {slope_str} & {values['jse']:.3f}"
                 + r" \\"
             )
             table.append(row)
