@@ -42,3 +42,6 @@ Logs are written to `.logs/` by default. In general use the logger rather than p
 `./clean.sh --all 5` will remove all but the 5 most recent items in each folder `.logs/`, `.litellm_cache/`, `.costly/`, and `tests/test_results/`. Options: `--logs`, `--cache`, `--costly`, `--tests`, `--all`. If you don't specify a number, it will remove everything.
 
 
+# Our experiment
+
+The experiment we perform is in experiments/init_exp.py

@@ -83,14 +83,25 @@ class RateLimiter:
         return len(self.tokenizer.encode(text))
 
     def update_openrouter_ratelimit(self, model_id: str):
-        resp = requests.get(
-            "https://openrouter.ai/api/v1/auth/key",
-            headers={"Authorization": f"Bearer {OPENROUTER_API_KEY}"},
-        )
-        resp_ = resp.json()["data"]["rate_limit"]
-        rl = resp_["requests"] / parse_time_interval(resp_["interval"])
-        tl = 1e5  # meh
-        return tl, rl
+        try:
+            resp = requests.get(
+                "https://openrouter.ai/api/v1/auth/key",
+                headers={"Authorization": f"Bearer {OPENROUTER_API_KEY}"},
+            )
+            resp_json = resp.json()
+            # Handle different API response formats
+            if "data" in resp_json and "rate_limit" in resp_json["data"]:
+                resp_ = resp_json["data"]["rate_limit"]
+                rl = resp_["requests"] / parse_time_interval(resp_["interval"])
+            else:
+                # Fallback to reasonable defaults if API format changed
+                print(f"OpenRouter rate limit API format changed, using defaults. Response: {resp_json}")
+                rl = 60  # 60 requests per second as fallback
+            tl = 1e5  # meh
+            return tl, rl
+        except Exception as e:
+            print(f"Error getting OpenRouter rate limit: {e}, using defaults")
+            return 1e5, 60  # fallback defaults
 
     async def add_model_id(self, model_id: str):
         if model_id in self.model_ids:

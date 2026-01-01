@@ -234,11 +234,14 @@ class Experiment:
         filtered_configs = filtered_configs[:max_configs]
 
         async def run_experiment(config: dict) -> Stats:
-            LOGGER.status(f"Running experiment {self.get_path(config)}")
+            write_path = self.get_path(config)
+            # Handle tuple paths (e.g., for Propaganda which also produces MarketMaking)
+            primary_path = write_path[0] if isinstance(write_path, tuple) else write_path
+            LOGGER.status(f"Running experiment {primary_path}")
             setup = config["protocol"](**config["init_kwargs"])
 
             if self.continue_from:
-                likely_path = self.continue_from / self.get_path(config).relative_to(
+                likely_path = self.continue_from / primary_path.relative_to(
                     self.write_path
                 )
                 experiment_config = setup.get_experiment_config(**config["call_kwargs"])
@@ -312,7 +315,7 @@ class Experiment:
             stuff = await setup.experiment(
                 questions=self.questions,
                 **config["call_kwargs"],
-                write=self.get_path(config),
+                write=write_path,
                 continue_from_results=continue_from_results,
             )
             results, stats = stuff
@@ -466,6 +469,27 @@ class Experiment:
         while path_new.exists():
             i += 1
             path_new = path.with_name(path.stem + f"_{i}")
+
+        # For Propaganda, also return a MarketMaking path
+        if config["protocol"] == Propaganda or (
+            isinstance(config["protocol"], type) and issubclass(config["protocol"], Propaganda)
+        ):
+            # Create corresponding MarketMaking path
+            propaganda_protocol_str = self._get_path_protocol(config)
+            market_making_protocol_str = propaganda_protocol_str.replace("Propaganda", "MarketMaking")
+            market_making_path = (
+                self.write_path
+                / market_making_protocol_str
+                / self._get_path_call(config)
+            )
+            # Ensure MarketMaking path doesn't conflict either
+            j = 0
+            market_making_path_new = market_making_path
+            while market_making_path_new.exists():
+                j += 1
+                market_making_path_new = market_making_path.with_name(market_making_path.stem + f"_{j}")
+            return (path_new, market_making_path_new)
+
         return path_new
     
     def recompute_stats(self, overwrite_existing: bool = False):
