@@ -48,21 +48,17 @@ class Propaganda(Protocol):
         **rendering_components,
     ) -> Question:
         assert isinstance(question, Question)
-        if "extra_user_renders" in rendering_components:
-            if rendering_components["extra_user_renders"] is None:
-                rendering_components["extra_user_renders"] = {}
-            rendering_components["extra_user_renders"] |= {
-                "answer_case_short": answer_case.short
-            }
+        # Ensure answer_case_short is always passed to the template
+        extra_user_renders = rendering_components.get("extra_user_renders") or {}
+        extra_user_renders["answer_case_short"] = answer_case.short
         agent_response = await agent(
             question=question,
             answer_case=answer_case,
-            # extra_user_renders={"answer_case_short": answer_case.short},
+            extra_user_renders=extra_user_renders,
             context=self.ts_to_prompt(question),
             cache_breaker=cache_breaker,
             temperature=temperature,
             write=write,
-            **rendering_components,
         )
         question = question.append(
             TranscriptItem(role=answer_case.short, content=agent_response)
