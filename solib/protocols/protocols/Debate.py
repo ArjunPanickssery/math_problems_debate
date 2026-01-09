@@ -5,7 +5,7 @@ from pathlib import Path
 from solib.datatypes import Question, Answer, TranscriptItem
 from solib.protocols.abstract import Protocol, QA_Agent, Judge
 from solib.utils.llm_utils import jinja_env
-from solib.utils.verification import generate_argument_with_verification
+from solib.utils.verification import generate_argument_with_verification, verify_quotes_in_text
 
 LOGGER = logging.getLogger(__name__)
 
@@ -105,6 +105,10 @@ class Debate(Protocol):
             ]
             (debater_pro_arg, pro_meta), (debater_con_arg, con_meta) = await asyncio.gather(*tasks)
 
+            # verify quotes
+            debater_pro_arg = verify_quotes_in_text(debater_pro_arg, question.source_text)
+            debater_con_arg = verify_quotes_in_text(debater_con_arg, question.source_text)
+
             if question.transcript is not None:
                 assert len(question.transcript) == trans_len, f"{len(question.transcript)}=={trans_len}"
             question = question.append(TranscriptItem(
@@ -125,6 +129,9 @@ class Debate(Protocol):
             debater_pro_arg, pro_meta = await generate_argument_with_verification(
                 debater_pro_callable, question, answer_case
             )
+            # verify quotes
+            debater_pro_arg = verify_quotes_in_text(debater_pro_arg, question.source_text)
+
             if question.transcript is not None:
                 assert len(question.transcript) == trans_len, f"Sequential debate, {len(question.transcript)}=={trans_len}"
             question = question.append(TranscriptItem(
@@ -155,6 +162,9 @@ class Debate(Protocol):
             debater_con_arg, con_meta = await generate_argument_with_verification(
                 debater_con_callable_seq, question, opp_case
             )
+            # verify quotes
+            debater_con_arg = verify_quotes_in_text(debater_con_arg, question.source_text)
+
             assert len(question.transcript) == trans_len + 1, f"Sequential debate, {len(question.transcript)}=={trans_len}+1"
             question = question.append(TranscriptItem(
                 role=opp_case.short,

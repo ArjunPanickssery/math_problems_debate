@@ -445,6 +445,7 @@ class Question(BaseModel):
     """
 
     question: str
+    source_text: str | None = None
     answer_cases: list[Answer]
     transcript: list["TranscriptItem"] | None = None
 
@@ -464,6 +465,7 @@ class Question(BaseModel):
     def censor(self) -> "Question":
         return Question(
             question=self.question,
+            source_text=self.source_text,
             answer_cases=[answer.censor() for answer in self.answer_cases],
         )
 
@@ -477,6 +479,7 @@ class Question(BaseModel):
         assert grounded.is_grounded
         return Question(
             question=self.question,
+            source_text=self.source_text or grounded.source_text,
             answer_cases=[a.uncensor(grounded) for a in self.answer_cases],
             transcript=self.transcript or grounded.transcript,
         )
@@ -508,6 +511,7 @@ class Question(BaseModel):
                 "is_grounded": self.is_grounded,
                 "is_elicited": self.is_elicited,
                 "is_argued": self.is_argued,
+                "has_source_text": self.source_text is not None,
             }.items()
             if v
         ]
@@ -601,6 +605,7 @@ class Question(BaseModel):
                 )
                 for answer in self.answer_cases
             ],
+            source_text=self.source_text,
             transcript=self.transcript,
         )
 

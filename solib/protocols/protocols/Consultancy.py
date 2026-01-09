@@ -4,7 +4,7 @@ from pathlib import Path
 from solib.datatypes import Question, Answer, TranscriptItem
 from solib.protocols.abstract import Protocol, QA_Agent, Judge
 from solib.utils.llm_utils import jinja_env
-from solib.utils.verification import generate_argument_with_verification
+from solib.utils.verification import generate_argument_with_verification, verify_quotes_in_text
 
 LOGGER = logging.getLogger(__name__)
 
@@ -97,6 +97,9 @@ class Consultancy(Protocol):
                 question=question,
                 answer_case=answer_case,
             )
+            # verify quotes
+            cons_resp = verify_quotes_in_text(cons_resp, question.source_text)
+
             question_ = question.append(TranscriptItem(
                 role=answer_case.short,
                 content=cons_resp,

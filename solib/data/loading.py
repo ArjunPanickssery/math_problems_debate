@@ -27,7 +27,7 @@ class Dataset:
         self.questions: List[Question] = []
 
     def to_question(
-        self, question: str, answer_correct: str, answer_incorrect: str, user_seed=0
+        self, question: str, answer_correct: str, answer_incorrect: str, user_seed=0, source_text: str | None = None
     ) -> Question:
         if random(question, user_seed=user_seed).random() > 0.5:
             correct_answer = Answer(
@@ -45,7 +45,7 @@ class Dataset:
             )
 
         return Question(
-            question=question, answer_cases=[correct_answer, incorrect_answer]
+            question=question, source_text=source_text, answer_cases=[correct_answer, incorrect_answer]
         )
 
     def extract_info(self, data_item: dict, user_seed=0) -> Tuple[str, str, str]:
@@ -57,11 +57,15 @@ class Dataset:
         raise NotImplementedError
 
     def transform(self, data_item: dict, user_seed=0) -> Question:
-        question, answer_correct, answer_incorrect = self.extract_info(
-            data_item, user_seed=user_seed
-        )
+        info = self.extract_info(data_item, user_seed=user_seed)
+        if len(info) == 3:
+            question, answer_correct, answer_incorrect = info
+            source_text = None
+        else:
+            question, answer_correct, answer_incorrect, source_text = info
+
         return self.to_question(
-            question, answer_correct, answer_incorrect, user_seed=user_seed
+            question, answer_correct, answer_incorrect, user_seed=user_seed, source_text=source_text
         )
 
     def from_json(self, path, user_seed=0, limit=None) -> list[Question]:
@@ -216,15 +220,15 @@ class PrOntoQA(Dataset):
         text = re.sub(r"__TEMP_IS_NOT__", "is", text)
         return text
 
-    def extract_info(self, data_item: dict, user_seed=0) -> Tuple[str, str, str]:
+    def extract_info(self, data_item: dict, user_seed=0) -> Tuple[str, str, str] | Tuple[str, str, str, str]:
         context = data_item["question"]
         query = data_item["query"].split(":")[1].strip()  # strip out the Prove: prefix
         correct_answer = True
         if random(query, user_seed=user_seed).random() > 0.5:
             correct_answer = False
             query = self.negate(query)
-        question = f"{context} \n\n True or False?: {query}"
-        return question, str(correct_answer), str(not correct_answer)
+        question = f"True or False?: {query}"
+        return question, str(correct_answer), str(not correct_answer), context
 
     @classmethod
     def data(cls, user_seed=0, limit=None):

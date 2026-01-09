@@ -6,6 +6,7 @@ answer case, with retry logic and comprehensive tracking.
 """
 
 import logging
+import re
 from typing import Callable, Any
 from pydantic import BaseModel, Field
 
@@ -57,6 +58,35 @@ async def verify_argument_alignment(
     )
 
     return result.is_aligned
+
+
+def verify_quotes_in_text(text: str, source_text: str | None) -> str:
+    """
+    Verify and format quotes in the text against the source text.
+    Valid quotes <quote>X</quote> where X is in source_text become <quote>X</quote> (verified).
+    Invalid quotes become [Invalid Quote: X].
+
+    The output format uses XML-like tags that the Judge can be instructed to trust (or simply
+    retains the <quote> tag which means 'verified' in this context, while removing/flagging invalid ones).
+
+    Here, we will change <quote> to <verified_quote> if valid, and <invalid_quote> if not.
+    """
+    if not source_text:
+        return text
+
+    def replace_quote(match):
+        content = match.group(1)
+        # Check if content (or trimmed content) is in source_text
+        if content in source_text:
+             return f"<quote_verified>{content}</quote_verified>"
+        if content.strip() in source_text:
+             return f"<quote_verified>{content}</quote_verified>"
+
+        return f"<quote_invalid>{content}</quote_invalid>"
+
+    pattern = r"<quote>(.*?)</quote>"
+    # re.DOTALL allows dot to match newlines inside the quote
+    return re.sub(pattern, replace_quote, text, flags=re.DOTALL)
 
 
 async def generate_argument_with_verification(

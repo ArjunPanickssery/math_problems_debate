@@ -4,7 +4,7 @@ from solib.datatypes import Question, Answer, TranscriptItem
 from solib.protocols.abstract import Protocol, QA_Agent, Judge
 from solib.data.loading import Dataset
 from solib.utils import write_json, write_jsonl_async, parallelized_call
-from solib.utils.verification import generate_argument_with_verification
+from solib.utils.verification import generate_argument_with_verification, verify_quotes_in_text
 
 LOGGER = logging.getLogger(__name__)
 
@@ -72,6 +72,8 @@ class Propaganda(Protocol):
             question=question,
             answer_case=answer_case,
         )
+        # verify quotes
+        agent_response = verify_quotes_in_text(agent_response, question.source_text)
 
         question = question.append(
             TranscriptItem(

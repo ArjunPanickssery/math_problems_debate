@@ -86,11 +86,13 @@ class QA_Agent(LLM_Agent):
         words_in_mouth = words_in_mouth or self.words_in_mouth
         if isinstance(question, Question):
             question_ = question.to_prompt()
+            source_text = question.source_text
             trans_len = (
                 len(question.transcript) if question.transcript is not None else 0
             )
         else:
             question_ = question
+            source_text = None
         if isinstance(answer_case, Answer):
             answer_case_ = answer_case.to_prompt()
         else:
@@ -113,6 +115,7 @@ class QA_Agent(LLM_Agent):
                 "role": "user",
                 "content": user_prompt.render(
                     question=question_,
+                    source_text=source_text,
                     answer_case=answer_case_,
                     context=context,
                     **(extra_user_renders or {}),
