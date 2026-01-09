@@ -57,6 +57,7 @@ class QA_Agent(LLM_Agent):
         question: Question = None,
         answer_case: Answer = None,
         context: str | None = None,
+        feedback: str | None = None,
         words_in_mouth: str | None = None,
         max_tokens: int = 2048,
         temperature: float = 0.4,
@@ -71,12 +72,17 @@ class QA_Agent(LLM_Agent):
         Args:
             words_in_mouth (str | None): e.g. " Sure, here's my response:\n\n". Only supported for HF / local models.
             context (str | None): context e.g. transcript of the conversation so far.
+            feedback (str | None): feedback to prepend to context for alignment verification retries.
             question (Question): question.
             answer_case (Answer): answer case to argue for.
             max_tokens (int): max tokens for the LLM.
             temperature (float): temperature for sampling.
             write (Path | str | None): Path to write prompt history to.
         """
+        # Prepend feedback to context if provided (for alignment verification retries)
+        if feedback:
+            context = f"{feedback}\n\n{context}" if context else feedback
+
         words_in_mouth = words_in_mouth or self.words_in_mouth
         if isinstance(question, Question):
             question_ = question.to_prompt()

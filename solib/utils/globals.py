@@ -37,6 +37,11 @@ HF_TOKEN = os.getenv("HF_TOKEN")
 ENABLE_PROMPT_HISTORY = os.getenv("ENABLE_PROMPT_HISTORY", "False").lower() == "true"
 RATE_LIMITER_FRAC_RATE_LIMIT = float(os.getenv("RATE_LIMITER_FRAC_RATE_LIMIT", "0.9"))
 
+# Argument alignment verification settings
+VERIFY_ALIGNMENT = os.getenv("VERIFY_ALIGNMENT", "False").lower() == "true"
+VERIFY_ALIGNMENT_N_TRIES = int(os.getenv("VERIFY_ALIGNMENT_N_TRIES", "3"))
+VERIFY_ALIGNMENT_MODEL = os.getenv("VERIFY_ALIGNMENT_MODEL", "gpt-4o-mini")
+
 TOOL_CALL_START_TAG = "<tool_call>"
 TOOL_CALL_END_TAG = "</tool_call>"
 TOOL_RESULT_START_TAG = "<tool_result>"

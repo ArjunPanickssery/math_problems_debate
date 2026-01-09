@@ -218,6 +218,13 @@ class Stats(BaseModel):
     ase_b1_std: Score
     ase_binf_mean: Score
     ase_binf_std: Score
+    # Verification stats (optional, only present if verification was enabled)
+    verification_enabled: Optional[bool] = None
+    verification_accepted_1try_rate: Optional[float] = None
+    verification_accepted_2tries_rate: Optional[float] = None
+    verification_accepted_3tries_rate: Optional[float] = None
+    verification_never_accepted_rate: Optional[float] = None
+    verification_avg_tries: Optional[float] = None
 
 
 class Answer(BaseModel):
@@ -731,8 +738,31 @@ class Question(BaseModel):
         )
 
     @staticmethod
-    def compute_stats(questions: list["Question"]) -> dict[str, Any]:
-        """Compute stats for a list of .is_argued Questions."""
+    def compute_stats(
+        questions: list["Question"],
+        exclude_unverified: bool = False,
+    ) -> dict[str, Any]:
+        """Compute stats for a list of .is_argued Questions.
+
+        Args:
+            questions: List of argued and grounded Questions
+            exclude_unverified: If True, exclude questions where any argument
+                               failed verification (was not aligned)
+        """
+        # Helper to check if all arguments in a question are verified as aligned
+        def _all_arguments_verified(q: "Question") -> bool:
+            if q.transcript is None:
+                return True
+            for item in q.transcript:
+                if item.metadata and "verification" in item.metadata:
+                    if not item.metadata["verification"].get("is_aligned", True):
+                        return False
+            return True
+
+        # Filter if requested
+        if exclude_unverified:
+            questions = [q for q in questions if _all_arguments_verified(q)]
+
         assert all(
             question.is_argued and question.is_grounded for question in questions
         )
@@ -757,6 +787,10 @@ class Question(BaseModel):
         ase_b1_std = Score.std(ase_b1s)
         ase_binf_mean = Score.mean(ase_binfs)
         ase_binf_std = Score.std(ase_binfs)
+
+        # Compute verification stats
+        verification_stats = Question._compute_verification_stats(questions)
+
         return Stats(
             asd_mean=asd_mean,
             asd_std=asd_std,
@@ -772,7 +806,38 @@ class Question(BaseModel):
             ase_b1_std=ase_b1_std,
             ase_binf_mean=ase_binf_mean,
             ase_binf_std=ase_binf_std,
+            **verification_stats,
         )
+
+    @staticmethod
+    def _compute_verification_stats(questions: list["Question"]) -> dict:
+        """Compute verification statistics across all questions."""
+        all_verifications = []
+
+        for q in questions:
+            if q.transcript is None:
+                continue
+            for item in q.transcript:
+                if item.metadata and "verification" in item.metadata:
+                    all_verifications.append(item.metadata["verification"])
+
+        if not all_verifications:
+            return {"verification_enabled": False}
+
+        n = len(all_verifications)
+        accepted_1try = sum(1 for v in all_verifications if v.get("accepted_on_try") == 1)
+        accepted_2tries = sum(1 for v in all_verifications if v.get("accepted_on_try") == 2)
+        accepted_3tries = sum(1 for v in all_verifications if v.get("accepted_on_try") == 3)
+        never_accepted = sum(1 for v in all_verifications if v.get("accepted_on_try") is None)
+
+        return {
+            "verification_enabled": True,
+            "verification_accepted_1try_rate": accepted_1try / n,
+            "verification_accepted_2tries_rate": accepted_2tries / n,
+            "verification_accepted_3tries_rate": accepted_3tries / n,
+            "verification_never_accepted_rate": never_accepted / n,
+            "verification_avg_tries": sum(v["tries"] for v in all_verifications) / n,
+        }
 
     # following methods apply for treating Question as a transcript
 

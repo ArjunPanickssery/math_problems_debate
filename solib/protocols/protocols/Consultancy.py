@@ -4,6 +4,7 @@ from pathlib import Path
 from solib.datatypes import Question, Answer, TranscriptItem
 from solib.protocols.abstract import Protocol, QA_Agent, Judge
 from solib.utils.llm_utils import jinja_env
+from solib.utils.verification import generate_argument_with_verification
 
 LOGGER = logging.getLogger(__name__)
 
@@ -59,18 +60,19 @@ class Consultancy(Protocol):
         write: Path | str | None = None,
         **rendering_components,
     ) -> Question:
-        # Create consultant messages
-
-        consultant = functools.partial(
-            agent,
-            system_prompt_template=self.consultant_system_template,
-            user_prompt_template=self.consultant_user_template,
-            question=question,
-            answer_case=answer_case,
-            cache_breaker=cache_breaker,
-            temperature=temperature,
-            write=write,
-        )
+        # Create callable for consultant that accepts feedback
+        async def consultant_callable(feedback: str = None):
+            return await agent(
+                system_prompt_template=self.consultant_system_template,
+                user_prompt_template=self.consultant_user_template,
+                question=question,
+                answer_case=answer_case,
+                context=self.ts_to_prompt(question),
+                feedback=feedback,
+                cache_breaker=cache_breaker,
+                temperature=temperature,
+                write=write,
+            )
 
         client_agent = QA_Agent(
             model=judge.model,
@@ -89,11 +91,21 @@ class Consultancy(Protocol):
         if (question.transcript in [None, []] and self.consultant_goes_first) or (
             question.transcript and question.transcript[-1].role == "client"
         ):
-            cons_resp = await consultant(context=self.ts_to_prompt(question))
-            question_ = question.append(TranscriptItem(role=answer_case.short, content=cons_resp))
+            # Consultant's turn - use verification
+            cons_resp, verification_metadata = await generate_argument_with_verification(
+                agent_callable=consultant_callable,
+                question=question,
+                answer_case=answer_case,
+            )
+            question_ = question.append(TranscriptItem(
+                role=answer_case.short,
+                content=cons_resp,
+                metadata=verification_metadata if verification_metadata else None,
+            ))
         elif (question.transcript in [None, []] and not self.consultant_goes_first) or (
             question.transcript and question.transcript[-1].role != "client"
         ):
+            # Client's turn - no verification needed (client is asking questions, not arguing)
             client_resp = await client(context=self.ts_to_prompt(question))
             question_ = question.append(TranscriptItem(role="client", content=client_resp))
         else:

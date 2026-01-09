@@ -4,6 +4,7 @@ from solib.datatypes import Question, Answer, TranscriptItem
 from solib.protocols.abstract import Protocol, QA_Agent, Judge
 from solib.data.loading import Dataset
 from solib.utils import write_json, write_jsonl_async, parallelized_call
+from solib.utils.verification import generate_argument_with_verification
 
 LOGGER = logging.getLogger(__name__)
 
@@ -51,17 +52,33 @@ class Propaganda(Protocol):
         # Ensure answer_case_short is always passed to the template
         extra_user_renders = rendering_components.get("extra_user_renders") or {}
         extra_user_renders["answer_case_short"] = answer_case.short
-        agent_response = await agent(
+
+        # Create callable for argument generation (accepts optional feedback)
+        async def generate_argument(feedback: str = None):
+            return await agent(
+                question=question,
+                answer_case=answer_case,
+                extra_user_renders=extra_user_renders,
+                context=self.ts_to_prompt(question),
+                feedback=feedback,
+                cache_breaker=cache_breaker,
+                temperature=temperature,
+                write=write,
+            )
+
+        # Generate with verification (if enabled)
+        agent_response, verification_metadata = await generate_argument_with_verification(
+            agent_callable=generate_argument,
             question=question,
             answer_case=answer_case,
-            extra_user_renders=extra_user_renders,
-            context=self.ts_to_prompt(question),
-            cache_breaker=cache_breaker,
-            temperature=temperature,
-            write=write,
         )
+
         question = question.append(
-            TranscriptItem(role=answer_case.short, content=agent_response)
+            TranscriptItem(
+                role=answer_case.short,
+                content=agent_response,
+                metadata=verification_metadata if verification_metadata else None,
+            )
         )
         assert question.transcript is not None
         result = await judge(

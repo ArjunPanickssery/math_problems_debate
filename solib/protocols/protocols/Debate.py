@@ -5,6 +5,7 @@ from pathlib import Path
 from solib.datatypes import Question, Answer, TranscriptItem
 from solib.protocols.abstract import Protocol, QA_Agent, Judge
 from solib.utils.llm_utils import jinja_env
+from solib.utils.verification import generate_argument_with_verification
 
 LOGGER = logging.getLogger(__name__)
 
@@ -54,58 +55,112 @@ class Debate(Protocol):
                     assert role == opp_case.short, f"{[ti.role for ti in question.transcript]}"
         trans_len = len(question.transcript) if question.transcript is not None else 0
 
-        debater_pro = functools.partial(
-            agent,
-            question=question,
-            answer_case=answer_case,
-            system_prompt_template=self.debater_system_template,
-            user_prompt_template=self.debater_user_template,
-            extra_user_renders={
-                "answer_case_short": answer_case.short,
-                "answer_opposite_short": opp_case.short,
-            },
-            cache_breaker=cache_breaker,
-            temperature=temperature,
-            write=write,
-        )
-        debater_con = functools.partial(
-            adversary,
-            question=question,
-            answer_case=opp_case,
-            system_prompt_template=self.debater_system_template,
-            user_prompt_template=self.debater_user_template,
-            extra_user_renders={
-                "answer_case_short": opp_case.short,
-                "answer_opposite_short": answer_case.short,
-            },
-            cache_breaker=cache_breaker,
-            temperature=temperature,
-            write=write,
-        )
+        # Create callables that accept feedback for verification retry
+        async def debater_pro_callable(feedback: str = None):
+            return await agent(
+                question=question,
+                answer_case=answer_case,
+                system_prompt_template=self.debater_system_template,
+                user_prompt_template=self.debater_user_template,
+                extra_user_renders={
+                    "answer_case_short": answer_case.short,
+                    "answer_opposite_short": opp_case.short,
+                },
+                context=self.ts_to_prompt(question),
+                feedback=feedback,
+                cache_breaker=cache_breaker,
+                temperature=temperature,
+                write=write,
+            )
+
+        async def debater_con_callable(feedback: str = None):
+            return await adversary(
+                question=question,
+                answer_case=opp_case,
+                system_prompt_template=self.debater_system_template,
+                user_prompt_template=self.debater_user_template,
+                extra_user_renders={
+                    "answer_case_short": opp_case.short,
+                    "answer_opposite_short": answer_case.short,
+                },
+                context=self.ts_to_prompt(question),
+                feedback=feedback,
+                cache_breaker=cache_breaker,
+                temperature=temperature,
+                write=write,
+            )
+
         if question.transcript is not None:
             assert len(question.transcript) == trans_len, f"{len(question.transcript)}=={trans_len}"
 
         if self.simultaneous:
-            tasks = [debater_pro(context=self.ts_to_prompt(question)), debater_con(context=self.ts_to_prompt(question))]
-            debater_pro_arg, debater_con_arg = await asyncio.gather(*tasks)
-            # debater_pro_arg = await debater_pro(context=self.ts_to_prompt(question))
-            # debater_con_arg = await debater_con(context=self.ts_to_prompt(question))
+            # Verify both in parallel
+            tasks = [
+                generate_argument_with_verification(
+                    debater_pro_callable, question, answer_case
+                ),
+                generate_argument_with_verification(
+                    debater_con_callable, question, opp_case
+                ),
+            ]
+            (debater_pro_arg, pro_meta), (debater_con_arg, con_meta) = await asyncio.gather(*tasks)
+
             if question.transcript is not None:
                 assert len(question.transcript) == trans_len, f"{len(question.transcript)}=={trans_len}"
-            question = question.append(TranscriptItem(role=answer_case.short, content=debater_pro_arg))
+            question = question.append(TranscriptItem(
+                role=answer_case.short,
+                content=debater_pro_arg,
+                metadata=pro_meta if pro_meta else None,
+            ))
             if question.transcript is not None:
                 assert len(question.transcript) == trans_len+1, f"{len(question.transcript)}=={trans_len}+1"
-            question = question.append(TranscriptItem(role=opp_case.short, content=debater_con_arg))
+            question = question.append(TranscriptItem(
+                role=opp_case.short,
+                content=debater_con_arg,
+                metadata=con_meta if con_meta else None,
+            ))
             assert len(question.transcript) == trans_len + 2, f"Simultaneous debate, {len(question.transcript)}=={trans_len}+2"
         else:
-            debater_pro_arg = await debater_pro(context=self.ts_to_prompt(question))
+            # Sequential: verify each argument after generation
+            debater_pro_arg, pro_meta = await generate_argument_with_verification(
+                debater_pro_callable, question, answer_case
+            )
             if question.transcript is not None:
                 assert len(question.transcript) == trans_len, f"Sequential debate, {len(question.transcript)}=={trans_len}"
-            question = question.append(TranscriptItem(role=answer_case.short, content=debater_pro_arg))
+            question = question.append(TranscriptItem(
+                role=answer_case.short,
+                content=debater_pro_arg,
+                metadata=pro_meta if pro_meta else None,
+            ))
             assert len(question.transcript) == trans_len + 1, f"Sequential debate, {len(question.transcript)}=={trans_len}+1"
-            debater_con_arg = await debater_con(context=self.ts_to_prompt(question))
+
+            # Note: for sequential, con sees updated transcript with pro's argument
+            async def debater_con_callable_seq(feedback: str = None):
+                return await adversary(
+                    question=question,
+                    answer_case=opp_case,
+                    system_prompt_template=self.debater_system_template,
+                    user_prompt_template=self.debater_user_template,
+                    extra_user_renders={
+                        "answer_case_short": opp_case.short,
+                        "answer_opposite_short": answer_case.short,
+                    },
+                    context=self.ts_to_prompt(question),
+                    feedback=feedback,
+                    cache_breaker=cache_breaker,
+                    temperature=temperature,
+                    write=write,
+                )
+
+            debater_con_arg, con_meta = await generate_argument_with_verification(
+                debater_con_callable_seq, question, opp_case
+            )
             assert len(question.transcript) == trans_len + 1, f"Sequential debate, {len(question.transcript)}=={trans_len}+1"
-            question = question.append(TranscriptItem(role=opp_case.short, content=debater_con_arg))
+            question = question.append(TranscriptItem(
+                role=opp_case.short,
+                content=debater_con_arg,
+                metadata=con_meta if con_meta else None,
+            ))
             assert len(question.transcript) == trans_len + 2, f"Sequential debate, {len(question.transcript)}=={trans_len}+2"
         return question
 
