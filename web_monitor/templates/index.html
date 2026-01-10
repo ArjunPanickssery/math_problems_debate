@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+
+{% block title %}Experiment Monitor - Home{% endblock %}
+
+{% block content %}
+<h1>Experiment Results</h1>
+
+{% if result_dirs %}
+<div class="results-list">
+    {% for dir in result_dirs %}
+    <div class="result-card">
+        <a href="{{ url_for('experiments_list', results_name=dir.name) }}">
+            <h2>{{ dir.name }}</h2>
+        </a>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<p class="empty-state">No experiment results found in the experiments directory.</p>
+{% endif %}
+{% endblock %}

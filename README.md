@@ -41,6 +41,16 @@ Logs are written to `.logs/` by default. In general use the logger rather than p
 
 `./clean.sh --all 5` will remove all but the 5 most recent items in each folder `.logs/`, `.litellm_cache/`, `.costly/`, and `tests/test_results/`. Options: `--logs`, `--cache`, `--costly`, `--tests`, `--all`. If you don't specify a number, it will remove everything.
 
+# Web monitor
+
+```
+uv run python web_monitor/app.py
+# or
+# uv run python web_monitor/app.py --port 8080 --debug
+```
+
+Then visit http://127.0.0.1:5000 in your browser.
+
 
 # Our experiment
 

@@ -1,0 +1,181 @@
+{% extends "base.html" %}
+
+{% block title %}Question {{ q_idx + 1 }} - Details{% endblock %}
+
+{% block breadcrumb %}
+<span> / </span>
+<a href="{{ url_for('experiments_list', results_name=results_name) }}">{{ results_name }}</a>
+<span> / </span>
+<a href="{{ url_for('questions_list', results_name=results_name, exp_path=exp_path) }}">{{ exp_path }}</a>
+<span> / </span>
+<span class="current">Question {{ q_idx + 1 }}</span>
+{% endblock %}
+
+{% block content %}
+<div class="question-nav">
+    {% if q_idx > 0 %}
+    <a href="{{ url_for('question_detail', results_name=results_name, exp_path=exp_path, q_idx=q_idx-1) }}" class="nav-btn">&larr; Previous</a>
+    {% endif %}
+    <span class="nav-counter">Question {{ q_idx + 1 }} of {{ total_questions }}</span>
+    {% if q_idx < total_questions - 1 %}
+    <a href="{{ url_for('question_detail', results_name=results_name, exp_path=exp_path, q_idx=q_idx+1) }}" class="nav-btn">Next &rarr;</a>
+    {% endif %}
+</div>
+
+<div class="question-detail">
+    <!-- Question Section -->
+    <section class="question-section">
+        <h2>Question</h2>
+        <div class="question-text">{{ question.data.question }}</div>
+    </section>
+
+    <!-- Answer Choices Section -->
+    <section class="answers-section">
+        <h2>Answer Choices</h2>
+        <div class="answer-cards">
+            {% for ans in question.data.answer_cases %}
+            <div class="answer-card {% if ans.value == 1.0 %}true-answer{% else %}false-answer{% endif %}">
+                <div class="answer-header">
+                    <span class="answer-label">({{ ans.short }})</span>
+                    <span class="answer-badge {% if ans.value == 1.0 %}badge-true{% else %}badge-false{% endif %}">
+                        {{ "TRUE" if ans.value == 1.0 else "FALSE" }}
+                    </span>
+                </div>
+                <div class="answer-content">{{ ans.long }}</div>
+
+                {% if ans.agent_score %}
+                <div class="agent-score">
+                    <h4>Agent Score (arguing for this answer)</h4>
+                    <div class="score-grid">
+                        <div class="score-item">
+                            <span class="score-label">Log:</span>
+                            <span class="score-value">{{ "%.3f"|format(ans.agent_score.log) }}</span>
+                        </div>
+                        <div class="score-item">
+                            <span class="score-label">Brier:</span>
+                            <span class="score-value">{{ "%.3f"|format(ans.agent_score.brier) }}</span>
+                        </div>
+                        <div class="score-item">
+                            <span class="score-label">Accuracy:</span>
+                            <span class="score-value {% if ans.agent_score.accuracy == 1.0 %}score-good{% else %}score-bad{% endif %}">
+                                {{ "%.0f%%"|format(ans.agent_score.accuracy * 100) }}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </section>
+
+    <!-- Transcript Section (for each answer case that was argued) -->
+    {% for ans in question.data.answer_cases %}
+    {% if ans.case_probs and ans.case_probs.transcript %}
+    <section class="transcript-section">
+        <h2>
+            Transcript when arguing for ({{ ans.short }})
+            <span class="{% if ans.value == 1.0 %}badge-true{% else %}badge-false{% endif %}">
+                {{ "TRUE" if ans.value == 1.0 else "FALSE" }}
+            </span>
+        </h2>
+
+        <div class="transcript">
+            {% for item in ans.case_probs.transcript %}
+            <div class="transcript-item role-{{ item.role|lower }}">
+                <div class="transcript-role">{{ item.role }}</div>
+                <div class="transcript-content">{{ item.content }}</div>
+                {% if item.metadata %}
+                <div class="transcript-metadata">
+                    <details>
+                        <summary>Metadata</summary>
+                        <pre>{{ item.metadata | tojson(indent=2) }}</pre>
+                    </details>
+                </div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+
+        <!-- Judge's Probabilities After This Argument -->
+        <div class="judge-probabilities">
+            <h3>Judge's Probabilities</h3>
+            <div class="prob-bars">
+                {% for prob_ans in ans.case_probs.answer_cases %}
+                <div class="prob-bar-container">
+                    <div class="prob-label">({{ prob_ans.short }}) {{ "TRUE" if prob_ans.value == 1.0 else "FALSE" }}</div>
+                    <div class="prob-bar">
+                        <div class="prob-fill {% if prob_ans.value == 1.0 %}fill-true{% else %}fill-false{% endif %}"
+                             style="width: {{ (prob_ans.judge_prob.prob * 100)|round(1) }}%">
+                        </div>
+                        <span class="prob-value">{{ "%.1f%%"|format(prob_ans.judge_prob.prob * 100) }}</span>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- Judge Score for this scenario -->
+        {% if ans.case_probs.judge_score %}
+        <div class="judge-score">
+            <h3>Judge Score</h3>
+            <div class="score-grid">
+                <div class="score-item">
+                    <span class="score-label">Log:</span>
+                    <span class="score-value">{{ "%.3f"|format(ans.case_probs.judge_score.log) }}</span>
+                </div>
+                <div class="score-item">
+                    <span class="score-label">Brier:</span>
+                    <span class="score-value">{{ "%.3f"|format(ans.case_probs.judge_score.brier) }}</span>
+                </div>
+                <div class="score-item">
+                    <span class="score-label">Accuracy:</span>
+                    <span class="score-value {% if ans.case_probs.judge_score.accuracy == 1.0 %}score-good{% else %}score-bad{% endif %}">
+                        {{ "Correct" if ans.case_probs.judge_score.accuracy == 1.0 else "Wrong" }}
+                    </span>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </section>
+    {% endif %}
+    {% endfor %}
+
+    <!-- Overall Summary -->
+    <section class="summary-section">
+        <h2>Summary</h2>
+        <div class="summary-grid">
+            {% set true_ans = question.data.answer_cases | selectattr('value', 'equalto', 1.0) | first %}
+            {% set false_ans = question.data.answer_cases | selectattr('value', 'equalto', -1.0) | first %}
+
+            <div class="summary-card">
+                <h4>When Agent Argues for Truth</h4>
+                {% if true_ans and true_ans.case_probs and true_ans.case_probs.judge_score %}
+                <p class="{% if true_ans.case_probs.judge_score.accuracy == 1.0 %}score-good{% else %}score-bad{% endif %}">
+                    Judge gets it {{ "Correct" if true_ans.case_probs.judge_score.accuracy == 1.0 else "Wrong" }}
+                </p>
+                <p>Prob for true: {{ "%.1f%%"|format(true_ans.case_probs.answer_cases[0].judge_prob.prob * 100 if true_ans.case_probs.answer_cases[0].value == 1.0 else true_ans.case_probs.answer_cases[1].judge_prob.prob * 100) }}</p>
+                {% else %}
+                <p>N/A</p>
+                {% endif %}
+            </div>
+
+            <div class="summary-card">
+                <h4>When Agent Argues for Falsehood</h4>
+                {% if false_ans and false_ans.case_probs and false_ans.case_probs.judge_score %}
+                <p class="{% if false_ans.case_probs.judge_score.accuracy == 1.0 %}score-good{% else %}score-bad{% endif %}">
+                    Judge gets it {{ "Correct" if false_ans.case_probs.judge_score.accuracy == 1.0 else "Wrong" }}
+                </p>
+                {% for pa in false_ans.case_probs.answer_cases %}
+                    {% if pa.value == 1.0 %}
+                <p>Prob for true: {{ "%.1f%%"|format(pa.judge_prob.prob * 100) }}</p>
+                    {% endif %}
+                {% endfor %}
+                {% else %}
+                <p>N/A</p>
+                {% endif %}
+            </div>
+        </div>
+    </section>
+</div>
+{% endblock %}

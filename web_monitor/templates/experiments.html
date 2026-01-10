@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+
+{% block title %}{{ results_name }} - Experiments{% endblock %}
+
+{% block breadcrumb %}
+<span> / </span>
+<span class="current">{{ results_name }}</span>
+{% endblock %}
+
+{% block content %}
+<h1>Experiments in {{ results_name }}</h1>
+
+{% if experiments %}
+<table class="experiments-table">
+    <thead>
+        <tr>
+            <th>Protocol</th>
+            <th>Configuration</th>
+            <th>Agent</th>
+            <th>Judge</th>
+            <th>Progress</th>
+            <th>Status</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for exp in experiments %}
+        <tr class="{% if exp.has_stats %}complete{% elif exp.completed > 0 %}in-progress{% else %}pending{% endif %}">
+            <td class="protocol">{{ exp.protocol }}</td>
+            <td class="run-name">
+                <a href="{{ url_for('questions_list', results_name=results_name, exp_path=exp.path) }}">
+                    {{ exp.run_name }}
+                </a>
+            </td>
+            <td class="agent">
+                {% if exp.config and exp.config.agent %}
+                    {{ exp.config.agent.dict.model.split('/')[-1] if exp.config.agent.dict else 'N/A' }}
+                {% else %}
+                    N/A
+                {% endif %}
+            </td>
+            <td class="judge">
+                {% if exp.config and exp.config.judge %}
+                    {{ exp.config.judge.dict.model.split('/')[-1] if exp.config.judge.dict else 'N/A' }}
+                {% else %}
+                    N/A
+                {% endif %}
+            </td>
+            <td class="progress">
+                <div class="progress-bar">
+                    <div class="progress-fill" style="width: {{ (exp.completed / 100 * 100) if exp.total == 0 else (exp.completed / exp.total * 100) }}%"></div>
+                </div>
+                <span class="progress-text">{{ exp.completed }} completed</span>
+            </td>
+            <td class="status">
+                {% if exp.has_stats %}
+                    <span class="badge badge-success">Complete</span>
+                {% elif exp.completed > 0 %}
+                    <span class="badge badge-warning">In Progress</span>
+                {% else %}
+                    <span class="badge badge-pending">Pending</span>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p class="empty-state">No experiments found in this results directory.</p>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+
+{% block title %}Questions - {{ exp_path }}{% endblock %}
+
+{% block breadcrumb %}
+<span> / </span>
+<a href="{{ url_for('experiments_list', results_name=results_name) }}">{{ results_name }}</a>
+<span> / </span>
+<span class="current">{{ exp_path }}</span>
+{% endblock %}
+
+{% block content %}
+<h1>Questions</h1>
+
+{% if config %}
+<div class="config-summary">
+    <h3>Configuration</h3>
+    <div class="config-grid">
+        {% if config.protocol %}
+        <div class="config-item">
+            <span class="label">Protocol:</span>
+            <span class="value">{{ config.protocol.__class__ if config.protocol.__class__ else config.protocol }}</span>
+        </div>
+        {% endif %}
+        {% if config.agent %}
+        <div class="config-item">
+            <span class="label">Agent:</span>
+            <span class="value">{{ config.agent.dict.model if config.agent.dict else 'N/A' }}</span>
+        </div>
+        {% endif %}
+        {% if config.judge %}
+        <div class="config-item">
+            <span class="label">Judge:</span>
+            <span class="value">{{ config.judge.dict.model if config.judge.dict else 'N/A' }}</span>
+        </div>
+        {% endif %}
+        {% if config.adversary %}
+        <div class="config-item">
+            <span class="label">Adversary:</span>
+            <span class="value">{{ config.adversary.dict.model if config.adversary.dict else 'N/A' }}</span>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+{% if questions %}
+<table class="questions-table">
+    <thead>
+        <tr>
+            <th>#</th>
+            <th>Question</th>
+            <th>True Answer</th>
+            <th>Judge Accuracy</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for q in questions %}
+        <tr>
+            <td>{{ q.index + 1 }}</td>
+            <td>
+                <a href="{{ url_for('question_detail', results_name=results_name, exp_path=exp_path, q_idx=q.index) }}">
+                    {{ q.question_text }}
+                </a>
+            </td>
+            <td class="answer">
+                {% set true_ans = q.data.answer_cases | selectattr('value', 'equalto', 1.0) | first %}
+                {% if true_ans %}
+                    ({{ true_ans.short }})
+                {% endif %}
+            </td>
+            <td class="score">
+                {% set true_ans = q.data.answer_cases | selectattr('value', 'equalto', 1.0) | first %}
+                {% if true_ans and true_ans.case_probs and true_ans.case_probs.judge_score %}
+                    {% set acc = true_ans.case_probs.judge_score.accuracy %}
+                    <span class="{% if acc == 1.0 %}score-good{% else %}score-bad{% endif %}">
+                        {{ "Correct" if acc == 1.0 else "Wrong" }}
+                    </span>
+                {% else %}
+                    N/A
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p class="empty-state">No questions have been processed yet.</p>
+{% endif %}
+{% endblock %}
