@@ -23,9 +23,9 @@ DISABLE_COSTLY = os.getenv("DISABLE_COSTLY", "False").lower() == "true"
 CACHING = os.getenv("CACHING", "True").lower() == "true"
 NUM_LOGITS = 5
 MAX_WORDS = 100
-DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "claude-3-haiku-20240307")
+DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "openrouter/openai/gpt-oss-20b")
 DEFAULT_BON_MODEL = os.getenv(
-    "DEFAULT_BON_MODEL", "claude-3-haiku-20240307"
+    "DEFAULT_BON_MODEL", "openrouter/openai/gpt-oss-20b"
 )  # default Best-of-N ranker
 RUNLOCAL = os.getenv("RUNLOCAL", "False").lower() == "true"
 USE_TQDM = os.getenv("USE_TQDM", "True").lower() == "true"
@@ -41,7 +41,7 @@ RATE_LIMITER_FRAC_RATE_LIMIT = float(os.getenv("RATE_LIMITER_FRAC_RATE_LIMIT", "
 # Argument alignment verification settings
 VERIFY_ALIGNMENT = os.getenv("VERIFY_ALIGNMENT", "False").lower() == "true"
 VERIFY_ALIGNMENT_N_TRIES = int(os.getenv("VERIFY_ALIGNMENT_N_TRIES", "3"))
-VERIFY_ALIGNMENT_MODEL = os.getenv("VERIFY_ALIGNMENT_MODEL", "gpt-4o-mini")
+VERIFY_ALIGNMENT_MODEL = os.getenv("VERIFY_ALIGNMENT_MODEL", "openrouter/openai/gpt-oss-20b")
 
 TOOL_CALL_START_TAG = "<tool_call>"
 TOOL_CALL_END_TAG = "</tool_call>"
@@ -73,6 +73,10 @@ class Custom_Estimator(LLM_API_Estimation):
         "openrouter/nvidia/nemotron-3-nano-30b-a3b": {
             "input_cost_per_token": 6e-8,      # $0.06 per million tokens
             "output_cost_per_token": 2.4e-7,   # $0.24 per million tokens
+        },
+        "openrouter/openai/gpt-oss-20b": {
+            "input_cost_per_token": 2e-8,      # $0.06 per million tokens
+            "output_cost_per_token": 1e-7,   # $0.24 per million tokens
         },
         "openrouter/x-ai/grok-4.1-fast": {
             "input_cost_per_token": 2e-7,
