@@ -76,7 +76,13 @@ class Dataset:
         self.set_questions(data, user_seed=user_seed)
 
     def set_questions(self, data: list[dict], user_seed: int, limit=None):
-        if limit is not None:
+        # Convert HuggingFace Dataset to list if needed
+        if hasattr(data, 'select'):
+            # It's a HuggingFace Dataset
+            if limit is not None:
+                data = data.select(range(limit))
+            data = list(data)
+        elif limit is not None:
             data = data[:limit]
         self.questions = [self.transform(item, user_seed=user_seed) for item in data]
 
@@ -94,6 +100,9 @@ class Dataset:
 
 
 class GPQA(Dataset):
+    """
+    Get access here: https://huggingface.co/datasets/Idavidrein/gpqa
+    """
     def extract_info(self, data_item: dict, user_seed=0) -> Tuple[str, str, str]:
         return (
             data_item["Question"],
@@ -105,9 +114,11 @@ class GPQA(Dataset):
 
     @classmethod
     def data(cls, user_seed=0, limit=None):
-        dset = load_dataset("Idavidrein/gpqa", "gpqa_main")
+        dset = load_dataset("Idavidrein/gpqa", "gpqa_main")["train"]
         inst = cls()
-        inst.set_questions(dset["train"], user_seed, limit=limit)
+        if limit is not None:
+            dset = dset.select(range(limit))
+        inst.set_questions(dset, user_seed)
         return inst
 
 

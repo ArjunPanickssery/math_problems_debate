@@ -142,5 +142,5 @@ COSTLY_PARAMS = {
     "estimator": Custom_Estimator.get_cost_real,
     "response_model": "response_format",
     "disable_costly": DISABLE_COSTLY,
-    "fast": True,
+    # "fast": True,
 }
