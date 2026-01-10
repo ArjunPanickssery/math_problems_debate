@@ -73,6 +73,10 @@ class Custom_Estimator(LLM_API_Estimation):
         "openrouter/nvidia/nemotron-3-nano-30b-a3b": {
             "input_cost_per_token": 6e-8,      # $0.06 per million tokens
             "output_cost_per_token": 2.4e-7,   # $0.24 per million tokens
+        },
+        "openrouter/x-ai/grok-4.1-fast": {
+            "input_cost_per_token": 2e-7,
+            "output_cost_per_token": 5e-7,
         }
     }    
 
@@ -96,6 +100,7 @@ class LLM_Simulator(LLM_Simulator_Faker):
         response_model: type = str,
         cost_log: Costlog = None,
         description: list[str] = None,
+        fast: bool = False,
     ) -> ModelResponse:
         output: str | BaseModel = super().simulate_llm_call(
             input_string,
@@ -105,6 +110,7 @@ class LLM_Simulator(LLM_Simulator_Faker):
             response_model,
             cost_log,
             description,
+            fast=fast,
         )
         if isinstance(output, BaseModel):
             output = output.model_dump_json()
