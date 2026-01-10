@@ -3,14 +3,17 @@ from pathlib import Path
 from datetime import datetime
 from solib.protocols.protocols import *  # noqa
 from solib.Experiment import Experiment
-from solib.data.loading import GSM8K
+from solib.data.loading import GSM8K, MMLU, TruthfulQA, PrOntoQA, GPQA
 from solib.utils.default_tools import math_eval
 
-questions = GSM8K.data(limit=1)
+gsm8k = GSM8K.data(limit=1)
+mmlu = MMLU.data(limit=1)
+truthfulqa = TruthfulQA.data(limit=1)
+prontoqa = PrOntoQA.data(limit=1) # has source_text for quotes
+gpqa = GPQA.data(limit=1)
 
-init_exp = Experiment(
-    questions=questions,
-    agent_models=[
+EXP_CONFIG = {
+    "agent_models": [
         "openrouter/deepseek/deepseek-v3.2",
         "openrouter/openai/gpt-oss-120b:exacto",
         # "deepinfra/openai/gpt-oss-120b" # cheaper than openrouter but I don't want to buy credits
@@ -21,20 +24,21 @@ init_exp = Experiment(
         "claude-haiku-4-5-20251001",
         # "novita/xiaomimimo/mimo-v2-flash"
     ],
-    agent_toolss=[[], [math_eval]],
-    judge_models=[
+    "agent_toolss": [[], [math_eval]],
+    "judge_models": [
         "openrouter/nvidia/nemotron-3-nano-30b-a3b",
         "openrouter/openai/gpt-oss-20b",
         # "gpt-5-nano",
         "gemini/gemini-2.5-flash-lite"
     ],
-    protocols=["blind", "propaganda", "debate", "consultancy"],
-    bon_ns=[1],#,4],#[1,4],  # , 8],#, 16, 32],
-    write_path=Path(__file__).parent
+    "protocols": ["blind", "propaganda", "debate", "consultancy"],
+    "bon_ns": [1],#,4],#[1,4],  # , 8],#, 16, 32],
+    "write_path": Path(__file__).parent
     / "results"
     / f"gsm_8k_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}",
-    # continue_from = Path(__file__).parent / "results" / "init_exp_2025-02-14_07-50-51",
-)
+    # "continue_from": Path(__file__).parent / "results" / "init_exp_2025-02-14_07-50-51",
+}
 
+EXP = Experiment(questions=prontoqa, **EXP_CONFIG)
 
-asyncio.run(init_exp.experiment(max_configs=None))
+asyncio.run(EXP.experiment(max_configs=None))
