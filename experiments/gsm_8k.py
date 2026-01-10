@@ -11,13 +11,13 @@ questions = GSM8K.data(limit=100)
 init_exp = Experiment(
     questions=questions,
     agent_models=[
-        "openrouter/deepseek/deepseek-v3.2"
+        "openrouter/deepseek/deepseek-v3.2",
         "openrouter/openai/gpt-oss-120b:exacto",
         # "deepinfra/openai/gpt-oss-120b" # cheaper than openrouter but I don't want to buy credits
         "openrouter/x-ai/grok-4.1-fast",
         "openrouter/minimax/minimax-m2.1",
         # "openai/gpt-5-mini",
-        "gemini/gemini-3-flash-preview"
+        "gemini/gemini-3-flash-preview",
         "claude-haiku-4-5-20251001",
         # "novita/xiaomimimo/mimo-v2-flash"
     ],
