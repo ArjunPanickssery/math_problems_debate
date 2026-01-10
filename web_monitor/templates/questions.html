@@ -4,7 +4,7 @@
 
 {% block breadcrumb %}
 <span> / </span>
-<a href="{{ url_for('experiments_list', results_name=results_name) }}">{{ results_name }}</a>
+<a href="{{ url_for('experiments_list', results_path=results_name) }}">{{ results_name }}</a>
 <span> / </span>
 <span class="current">{{ exp_path }}</span>
 {% endblock %}
@@ -59,7 +59,7 @@
         <tr>
             <td>{{ q.index + 1 }}</td>
             <td>
-                <a href="{{ url_for('question_detail', results_name=results_name, exp_path=exp_path, q_idx=q.index) }}">
+                <a href="{{ url_for('question_detail', results_path=results_name, exp_path=exp_path, q_idx=q.index) }}">
                     {{ q.question_text }}
                 </a>
             </td>

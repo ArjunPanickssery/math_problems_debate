@@ -4,9 +4,9 @@
 
 {% block breadcrumb %}
 <span> / </span>
-<a href="{{ url_for('experiments_list', results_name=results_name) }}">{{ results_name }}</a>
+<a href="{{ url_for('experiments_list', results_path=results_name) }}">{{ results_name }}</a>
 <span> / </span>
-<a href="{{ url_for('questions_list', results_name=results_name, exp_path=exp_path) }}">{{ exp_path }}</a>
+<a href="{{ url_for('questions_list', results_path=results_name, exp_path=exp_path) }}">{{ exp_path }}</a>
 <span> / </span>
 <span class="current">Question {{ q_idx + 1 }}</span>
 {% endblock %}
@@ -14,11 +14,11 @@
 {% block content %}
 <div class="question-nav">
     {% if q_idx > 0 %}
-    <a href="{{ url_for('question_detail', results_name=results_name, exp_path=exp_path, q_idx=q_idx-1) }}" class="nav-btn">&larr; Previous</a>
+    <a href="{{ url_for('question_detail', results_path=results_name, exp_path=exp_path, q_idx=q_idx-1) }}" class="nav-btn">&larr; Previous</a>
     {% endif %}
     <span class="nav-counter">Question {{ q_idx + 1 }} of {{ total_questions }}</span>
     {% if q_idx < total_questions - 1 %}
-    <a href="{{ url_for('question_detail', results_name=results_name, exp_path=exp_path, q_idx=q_idx+1) }}" class="nav-btn">Next &rarr;</a>
+    <a href="{{ url_for('question_detail', results_path=results_name, exp_path=exp_path, q_idx=q_idx+1) }}" class="nav-btn">Next &rarr;</a>
     {% endif %}
 </div>
 

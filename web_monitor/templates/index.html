@@ -9,8 +9,11 @@
 <div class="results-list">
     {% for dir in result_dirs %}
     <div class="result-card">
-        <a href="{{ url_for('experiments_list', results_name=dir.name) }}">
+        <a href="{{ url_for('experiments_list', results_path=dir.path) }}">
             <h2>{{ dir.name }}</h2>
+            {% if dir.path != dir.name %}
+            <p class="result-path">{{ dir.path }}</p>
+            {% endif %}
         </a>
     </div>
     {% endfor %}

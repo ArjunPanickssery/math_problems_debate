@@ -10,15 +10,45 @@ from flask import Flask, render_template, jsonify, abort
 app = Flask(__name__)
 
 # Base directory for experiment results
-RESULTS_BASE = Path(__file__).parent.parent / "experiments"
+EXPERIMENTS_BASE = Path(__file__).parent.parent / "experiments"
 
 
 def find_result_dirs():
-    """Find all result directories (results_* folders)."""
+    """Find all result directories recursively.
+
+    Looks for directories containing experiment results (protocol subdirs with config.json).
+    Searches in experiments/ and experiments/results/ and similar nested structures.
+    """
     result_dirs = []
-    for p in RESULTS_BASE.iterdir():
-        if p.is_dir() and p.name.startswith("results"):
-            result_dirs.append(p)
+
+    def is_results_dir(p: Path) -> bool:
+        """Check if a directory contains experiment results (has protocol subdirs)."""
+        if not p.is_dir():
+            return False
+        # Check if it has subdirs that look like protocols (contain config.json in their subdirs)
+        for subdir in p.iterdir():
+            if subdir.is_dir() and subdir.name not in ("prompt_history", "__pycache__", "analysis"):
+                for run_dir in subdir.iterdir():
+                    if run_dir.is_dir() and (run_dir / "config.json").exists():
+                        return True
+        return False
+
+    def scan_for_results(base: Path, depth: int = 0):
+        """Recursively scan for result directories up to depth 2."""
+        if depth > 2 or not base.is_dir():
+            return
+
+        for p in base.iterdir():
+            if not p.is_dir() or p.name.startswith(".") or p.name == "__pycache__":
+                continue
+
+            if is_results_dir(p):
+                result_dirs.append(p)
+            else:
+                # Look deeper
+                scan_for_results(p, depth + 1)
+
+    scan_for_results(EXPERIMENTS_BASE)
     return sorted(result_dirs, key=lambda x: x.name, reverse=True)
 
 
@@ -113,26 +143,38 @@ def load_questions(run_dir: Path):
 def index():
     """List all result directories."""
     result_dirs = find_result_dirs()
-    return render_template("index.html", result_dirs=result_dirs)
+    # Create display info with relative paths from EXPERIMENTS_BASE
+    result_info = []
+    for d in result_dirs:
+        try:
+            rel_path = d.relative_to(EXPERIMENTS_BASE)
+        except ValueError:
+            rel_path = d.name
+        result_info.append({
+            "name": d.name,
+            "path": str(rel_path),
+            "full_path": str(d),
+        })
+    return render_template("index.html", result_dirs=result_info)
 
 
-@app.route("/results/<path:results_name>")
-def experiments_list(results_name):
+@app.route("/results/<path:results_path>")
+def experiments_list(results_path):
     """List all experiments in a results directory."""
-    results_dir = RESULTS_BASE / results_name
+    results_dir = EXPERIMENTS_BASE / results_path
     if not results_dir.exists():
         abort(404)
 
     experiments = get_experiment_configs(results_dir)
     return render_template("experiments.html",
-                          results_name=results_name,
+                          results_name=results_path,
                           experiments=experiments)
 
 
-@app.route("/results/<path:results_name>/experiment/<path:exp_path>")
-def questions_list(results_name, exp_path):
+@app.route("/results/<path:results_path>/experiment/<path:exp_path>")
+def questions_list(results_path, exp_path):
     """List all questions in an experiment."""
-    run_dir = RESULTS_BASE / results_name / exp_path
+    run_dir = EXPERIMENTS_BASE / results_path / exp_path
     if not run_dir.exists():
         abort(404)
 
@@ -149,16 +191,16 @@ def questions_list(results_name, exp_path):
             pass
 
     return render_template("questions.html",
-                          results_name=results_name,
+                          results_name=results_path,
                           exp_path=exp_path,
                           questions=questions,
                           config=config)
 
 
-@app.route("/results/<path:results_name>/experiment/<path:exp_path>/question/<int:q_idx>")
-def question_detail(results_name, exp_path, q_idx):
+@app.route("/results/<path:results_path>/experiment/<path:exp_path>/question/<int:q_idx>")
+def question_detail(results_path, exp_path, q_idx):
     """Show detailed view of a single question's protocol run."""
-    run_dir = RESULTS_BASE / results_name / exp_path
+    run_dir = EXPERIMENTS_BASE / results_path / exp_path
     if not run_dir.exists():
         abort(404)
 
@@ -179,7 +221,7 @@ def question_detail(results_name, exp_path, q_idx):
             pass
 
     return render_template("question_detail.html",
-                          results_name=results_name,
+                          results_name=results_path,
                           exp_path=exp_path,
                           q_idx=q_idx,
                           question=question,
@@ -192,13 +234,20 @@ def question_detail(results_name, exp_path, q_idx):
 def api_results():
     """API endpoint to list all result directories."""
     result_dirs = find_result_dirs()
-    return jsonify([{"name": d.name, "path": str(d)} for d in result_dirs])
+    result_info = []
+    for d in result_dirs:
+        try:
+            rel_path = d.relative_to(EXPERIMENTS_BASE)
+        except ValueError:
+            rel_path = d.name
+        result_info.append({"name": d.name, "path": str(rel_path)})
+    return jsonify(result_info)
 
 
-@app.route("/api/results/<path:results_name>/experiments")
-def api_experiments(results_name):
+@app.route("/api/results/<path:results_path>/experiments")
+def api_experiments(results_path):
     """API endpoint to list experiments in a results directory."""
-    results_dir = RESULTS_BASE / results_name
+    results_dir = EXPERIMENTS_BASE / results_path
     if not results_dir.exists():
         return jsonify({"error": "Not found"}), 404
 
@@ -215,5 +264,5 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     print(f"Starting experiment monitor on http://{args.host}:{args.port}")
-    print(f"Looking for results in: {RESULTS_BASE}")
+    print(f"Looking for results in: {EXPERIMENTS_BASE}")
     app.run(host=args.host, port=args.port, debug=args.debug)
