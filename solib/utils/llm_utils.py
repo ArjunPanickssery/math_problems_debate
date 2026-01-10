@@ -58,22 +58,14 @@ def supports_tool_use(model: str) -> bool:
     if is_local(model) or is_localhf(model):
         return False
 
-    # Claude models support tools
-    if "claude" in model.lower():
-        return True
 
-    # OpenAI models generally support tools
-    if any(x in model.lower() for x in ["gpt-4", "gpt-3.5"]):
-        return True
-
-    # Specific model checks
     model_lower = model.lower()
+    if any(x in model_lower for x in ["gpt", "openai", "minimax", "gemini", "claude", "x-ai", "grok"]):
+        return True
+    if "deepseek" in model_lower and "3.2" in model_lower:
+        return True
     if "deepseek" in model_lower:
-        return False  # is currently buggy, don't use this
-    if "gemini" in model_lower:
-        return True
-    if "mistral" in model_lower:
-        return True
+        return False  # earlier versions can't
     if "llama" in model_lower and not is_local(model):
         return True
 

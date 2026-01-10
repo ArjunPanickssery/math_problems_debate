@@ -6,7 +6,7 @@ from solib.Experiment import Experiment
 from solib.data.loading import GSM8K
 from solib.utils.default_tools import math_eval
 
-questions = GSM8K.data(limit=100)
+questions = GSM8K.data(limit=1)
 
 init_exp = Experiment(
     questions=questions,
@@ -23,10 +23,10 @@ init_exp = Experiment(
     ],
     agent_toolss=[[], [math_eval]],
     judge_models=[
-        "nvidia/nemotron-3-nano-30b-a3b",
+        "openrouter/nvidia/nemotron-3-nano-30b-a3b",
         "openrouter/openai/gpt-oss-20b",
-        "openai/gpt-5-nano",
-        "google/gemini-2.5-flash-lite"
+        # "gpt-5-nano",
+        "gemini/gemini-2.5-flash-lite"
     ],
     protocols=["blind", "propaganda", "debate", "consultancy"],
     bon_ns=[1],#,4],#[1,4],  # , 8],#, 16, 32],

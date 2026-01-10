@@ -1,6 +1,7 @@
 import logging
 import os
 from costly.simulators.llm_simulator_faker import LLM_Simulator_Faker
+from costly.estimators.llm_api_estimation import LLM_API_Estimation
 from dotenv import load_dotenv
 from costly import Costlog
 from jinja2 import Environment, FileSystemLoader
@@ -66,7 +67,18 @@ TOOL_CALL_TEMPLATE = jinja_env.get_template("tool_use/tool_call.jinja")
 TOOL_RESULT_TEMPLATE = jinja_env.get_template("tool_use/tool_result.jinja")
 
 
+
+class Custom_Estimator(LLM_API_Estimation):
+    PRICES = LLM_API_Estimation.PRICES | {
+        "openrouter/nvidia/nemotron-3-nano-30b-a3b": {
+            "input_cost_per_token": 6e-8,      # $0.06 per million tokens
+            "output_cost_per_token": 2.4e-7,   # $0.24 per million tokens
+        }
+    }    
+
 class LLM_Simulator(LLM_Simulator_Faker):
+    ESTIMATOR = Custom_Estimator
+
     @classmethod
     def _fake_custom(cls, t: type):
         assert issubclass(t, Prob)
@@ -115,9 +127,10 @@ class LLM_Simulator(LLM_Simulator_Faker):
             ],
         )
 
-
 COSTLY_PARAMS = {
     "simulator": LLM_Simulator.simulate_llm_call,
+    "estimator": Custom_Estimator.get_cost_real,
     "response_model": "response_format",
     "disable_costly": DISABLE_COSTLY,
+    "fast": True,
 }
