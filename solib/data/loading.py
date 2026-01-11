@@ -270,3 +270,111 @@ class TruthfulQA(Dataset):
         inst = cls()
         inst.set_questions(dset, user_seed)
         return inst
+
+
+class QuALITY(Dataset):
+    """
+    QuALITY dataset loader.
+    Dataset is stored in solib/data/quality.zip
+    """
+    zip_path = osp.join(file_path(), "quality.zip")
+    output_dir = osp.join(file_path(), "quality")
+    
+    @staticmethod
+    def extract_zip():
+        """Extract the quality.zip file if not already extracted."""
+        if not osp.exists(QuALITY.output_dir):
+            os.makedirs(QuALITY.output_dir, exist_ok=True)
+            with zipfile.ZipFile(QuALITY.zip_path, "r") as zip_ref:
+                zip_ref.extractall(QuALITY.output_dir)
+            LOGGER.info(f"Extracted QuALITY dataset to {QuALITY.output_dir}")
+
+    def extract_info(self, data_item: dict, user_seed=0) -> Tuple[str, str, str, str]:
+        """
+        Extract question info from a QuALITY data item.
+        data_item should have: question (str), options (list), gold_label (int, 1-indexed), article (str)
+        """
+        question_text = data_item["question"]
+        options = data_item["options"]
+        gold_label = data_item["gold_label"]  # 1-indexed
+        
+        # Get correct answer (gold_label is 1-indexed, so subtract 1 for list index)
+        correct_answer = options[gold_label - 1]
+        
+        # Get incorrect answers (all options except the correct one)
+        incorrect_options = [opt for i, opt in enumerate(options) if i != (gold_label - 1)]
+        
+        # Randomly select an incorrect answer
+        incorrect_answer = random(question_text, user_seed=user_seed).choice(incorrect_options)
+        
+        # Get source text (article)
+        source_text = data_item.get("article", None)
+        
+        return question_text, correct_answer, incorrect_answer, source_text
+
+    @classmethod
+    def _load_jsonl(cls, file_path: str, limit: int | None = None):
+        """Load JSONL file and return list of data items."""
+        data = []
+        with open(file_path, "r", encoding="utf-8") as f:
+            for line in f:
+                if limit is not None and len(data) >= limit:
+                    break
+                if line.strip():  # Skip empty lines
+                    article_data = json.loads(line)
+                    article_text = article_data.get("article", "")
+                    questions = article_data.get("questions", [])
+                    
+                    # Create a data item for each question
+                    for q in questions:
+                        if limit is not None and len(data) >= limit:
+                            break
+                        # Skip questions without gold_label (e.g., test set without ground truth)
+                        if "gold_label" not in q:
+                            continue
+                        data_item = {
+                            "question": q["question"],
+                            "options": q["options"],
+                            "gold_label": q["gold_label"],
+                            "article": article_text,
+                        }
+                        data.append(data_item)
+        return data
+
+    @classmethod
+    def data(cls, user_seed=0, limit=None, split="train"):
+        """
+        Load QuALITY dataset.
+        
+        Args:
+            user_seed: Random seed for shuffling answers
+            limit: Maximum number of questions to load
+            split: Dataset split to load ("train", "dev", or "test")
+        """
+        cls.extract_zip()
+        
+        # Map split names to file names
+        split_map = {
+            "train": "QuALITY.v1.0.1.htmlstripped.train",
+            "dev": "QuALITY.v1.0.1.htmlstripped.dev",
+            "test": "QuALITY.v1.0.1.htmlstripped.test",
+        }
+        
+        if split not in split_map:
+            raise ValueError(f"Invalid split: {split}. Must be one of {list(split_map.keys())}")
+        
+        file_name = split_map[split]
+        file_path = osp.join(cls.output_dir, file_name)
+        
+        if not osp.exists(file_path):
+            raise FileNotFoundError(
+                f"QuALITY {split} file not found at {file_path}. "
+                f"Make sure {cls.zip_path} exists and contains the dataset."
+            )
+        
+        # Load data from JSONL file
+        data = cls._load_jsonl(file_path, limit=limit)
+        
+        inst = cls()
+        inst.set_questions(data, user_seed=user_seed)
+        return inst
