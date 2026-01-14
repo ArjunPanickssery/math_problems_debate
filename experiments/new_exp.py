@@ -6,6 +6,32 @@ from solib.Experiment import Experiment
 from solib.data.loading import GSM8K, MMLU, TruthfulQA, PrOntoQA, GPQA, QuALITY
 from solib.utils.default_tools import math_eval
 
+N = 1
+AGENT_MODELS = [
+        "openrouter/deepseek/deepseek-v3.2",
+        # "openrouter/openai/gpt-oss-120b:exacto",
+        # "deepinfra/openai/gpt-oss-120b" # cheaper than openrouter but I don't want to buy credits
+        # "openrouter/x-ai/grok-4.1-fast",
+        # "openrouter/minimax/minimax-m2.1",
+        "openai/gpt-5-mini",
+        "gemini/gemini-3-flash-preview",
+        "claude-haiku-4-5-20251001",
+        # "novita/xiaomimimo/mimo-v2-flash"
+    ]
+JUDGE_MODELS = [
+    "openrouter/nvidia/nemotron-3-nano-30b-a3b",
+    # "openrouter/openai/gpt-oss-20b",
+    "gpt-5-nano",
+    "gemini/gemini-2.5-flash-lite",
+]
+AGENT_TOOLS = [[]]
+AGENT_TOOLS_MATH = [[math_eval]]
+PROTOCOLS = ["blind", "propaganda", "debate", "consultancy"]
+BON_NS = [1]
+NUM_TURNSS = [2]
+NUM_TURNSS_GPQA = [2, 4, 6]
+DEBATE_TOGGLE = [True] # simultaneous only
+CONSULTANCY_TOGGLE = [True] # consultant_goes_first only
 
 def make_write_path(dataset_name: str):
     return (
@@ -14,7 +40,6 @@ def make_write_path(dataset_name: str):
         / f"{dataset_name}_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
     )
 
-N = 1
 datasets = {
     "gsm8k": GSM8K.data(limit=N),
     "mmlu": MMLU.data(limit=N),
@@ -25,30 +50,14 @@ datasets = {
 }
 
 CONFIG_1 = {
-    "agent_models": [
-        "openrouter/deepseek/deepseek-v3.2",
-        # "openrouter/openai/gpt-oss-120b:exacto",
-        # "deepinfra/openai/gpt-oss-120b" # cheaper than openrouter but I don't want to buy credits
-        # "openrouter/x-ai/grok-4.1-fast",
-        # "openrouter/minimax/minimax-m2.1",
-        "openai/gpt-5-mini",
-        "gemini/gemini-3-flash-preview",
-        "claude-haiku-4-5-20251001",
-        # "novita/xiaomimimo/mimo-v2-flash"
-    ],
-    # "agent_toolss": [[], [math_eval]],
-    "agent_toolss": [[]],
-    "judge_models": [
-        "openrouter/nvidia/nemotron-3-nano-30b-a3b",
-        # "openrouter/openai/gpt-oss-20b",
-        "gpt-5-nano",
-        "gemini/gemini-2.5-flash-lite",
-    ],
-    "protocols": ["blind", "propaganda", "debate", "consultancy"],
-    "num_turnss": [2],
-    "bon_ns": [1],  # ,4],#[1,4],  # , 8],#, 16, 32],
-    "debate_toggle": [True],
-    "consultancy_toggle": [True],
+    "agent_models": AGENT_MODELS,
+    "agent_toolss": AGENT_TOOLS,
+    "judge_models": JUDGE_MODELS,
+    "protocols": PROTOCOLS,
+    "num_turnss": NUM_TURNSS,
+    "bon_ns": BON_NS,
+    "debate_toggle": DEBATE_TOGGLE,
+    "consultancy_toggle": CONSULTANCY_TOGGLE,
     # "write_path": Path(__file__).parent
     # / "results"
     # / f"gsm_8k_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}",
@@ -56,30 +65,14 @@ CONFIG_1 = {
 }
 
 CONFIG_GPQA = {
-    "agent_models": [
-        "openrouter/deepseek/deepseek-v3.2",
-        # "openrouter/openai/gpt-oss-120b:exacto",
-        # "deepinfra/openai/gpt-oss-120b" # cheaper than openrouter but I don't want to buy credits
-        # "openrouter/x-ai/grok-4.1-fast",
-        # "openrouter/minimax/minimax-m2.1",
-        "openai/gpt-5-mini",
-        "gemini/gemini-3-flash-preview",
-        "claude-haiku-4-5-20251001",
-        # "novita/xiaomimimo/mimo-v2-flash"
-    ],
-    # "agent_toolss": [[], [math_eval]],
-    "agent_toolss": [[]],
-    "judge_models": [
-        "openrouter/nvidia/nemotron-3-nano-30b-a3b",
-        # "openrouter/openai/gpt-oss-20b",
-        "gpt-5-nano",
-        "gemini/gemini-2.5-flash-lite",
-    ],
-    "protocols": ["blind", "propaganda", "debate", "consultancy"],
-    "num_turnss": [2, 4, 6],
-    "bon_ns": [1],  # ,4],#[1,4],  # , 8],#, 16, 32],
-    "debate_toggle": [True],
-    "consultancy_toggle": [True],
+    "agent_models": AGENT_MODELS,
+    "agent_toolss": AGENT_TOOLS,
+    "judge_models": JUDGE_MODELS,
+    "protocols": PROTOCOLS,
+    "num_turnss": NUM_TURNSS_GPQA,
+    "bon_ns": BON_NS,
+    "debate_toggle": DEBATE_TOGGLE,
+    "consultancy_toggle": CONSULTANCY_TOGGLE,
     # "write_path": Path(__file__).parent
     # / "results"
     # / f"gsm_8k_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}",
@@ -87,30 +80,14 @@ CONFIG_GPQA = {
 }
 
 CONFIG_MATH = {
-    "agent_models": [
-        "openrouter/deepseek/deepseek-v3.2",
-        # "openrouter/openai/gpt-oss-120b:exacto",
-        # "deepinfra/openai/gpt-oss-120b" # cheaper than openrouter but I don't want to buy credits
-        # "openrouter/x-ai/grok-4.1-fast",
-        # "openrouter/minimax/minimax-m2.1",
-        "openai/gpt-5-mini",
-        "gemini/gemini-3-flash-preview",
-        "claude-haiku-4-5-20251001",
-        # "novita/xiaomimimo/mimo-v2-flash"
-    ],
-    "agent_toolss": [[], [math_eval]],
-    # "agent_toolss": [[]],
-    "judge_models": [
-        "openrouter/nvidia/nemotron-3-nano-30b-a3b",
-        # "openrouter/openai/gpt-oss-20b",
-        "gpt-5-nano",
-        "gemini/gemini-2.5-flash-lite",
-    ],
-    "protocols": ["blind", "propaganda", "debate", "consultancy"],
-    "num_turnss": [2],
-    "bon_ns": [1],  # ,4],#[1,4],  # , 8],#, 16, 32],
-    "debate_toggle": [True],
-    "consultancy_toggle": [True],
+    "agent_models": AGENT_MODELS,
+    "agent_toolss": AGENT_TOOLS_MATH,
+    "judge_models": JUDGE_MODELS,
+    "protocols": PROTOCOLS,
+    "num_turnss": NUM_TURNSS,
+    "bon_ns": BON_NS,
+    "debate_toggle": DEBATE_TOGGLE,
+    "consultancy_toggle": CONSULTANCY_TOGGLE,
     # "write_path": Path(__file__).parent
     # / "results"
     # / f"gsm_8k_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}",
@@ -125,14 +102,6 @@ asyncio.run(
     ).experiment(max_configs=None)
 )
 
-# asyncio.run(
-#     Experiment(
-#         questions=datasets["mmlu"],
-#         write_path=make_write_path("mmlu"),
-#         **CONFIG_1,
-#     ).experiment(max_configs=None)
-# )
-
 asyncio.run(
     Experiment(
         questions=datasets["truthfulqa"],
@@ -140,14 +109,6 @@ asyncio.run(
         **CONFIG_1,
     ).experiment(max_configs=None)
 )
-
-# asyncio.run(
-#     Experiment(
-#         questions=datasets["prontoqa"],
-#         write_path=make_write_path("prontoqa"),
-#         **CONFIG_1,
-#     ).experiment(max_configs=None)
-# )
 
 asyncio.run(
     Experiment(
@@ -164,3 +125,21 @@ asyncio.run(
         **CONFIG_1,
     ).experiment(max_configs=None)
 )
+
+
+# asyncio.run(
+#     Experiment(
+#         questions=datasets["mmlu"],
+#         write_path=make_write_path("mmlu"),
+#         **CONFIG_1,
+#     ).experiment(max_configs=None)
+# )
+
+
+# asyncio.run(
+#     Experiment(
+#         questions=datasets["prontoqa"],
+#         write_path=make_write_path("prontoqa"),
+#         **CONFIG_1,
+#     ).experiment(max_configs=None)
+# )
