@@ -60,22 +60,65 @@ async def verify_argument_alignment(
     return result.is_aligned
 
 
-def verify_quotes_in_text(text: str, source_text: str | None) -> str:
+def _truncate_at_word_boundary(text: str, max_length: int) -> str:
+    """
+    Truncate text to max_length characters, preferring word boundaries.
+    
+    Args:
+        text: Text to truncate
+        max_length: Maximum length in characters
+        
+    Returns:
+        Truncated text with ellipsis if truncated
+    """
+    if len(text) <= max_length:
+        return text
+    
+    # Reserve space for ellipsis
+    effective_max = max_length - 3
+    
+    # Try to find a word boundary (space or newline) near the limit
+    # Look backwards from effective_max for up to 20% of the length
+    search_start = max(0, effective_max - max(1, effective_max // 5))
+    boundary_pos = text.rfind(' ', search_start, effective_max)
+    if boundary_pos == -1:
+        boundary_pos = text.rfind('\n', search_start, effective_max)
+    
+    if boundary_pos > search_start:
+        # Found a word boundary, truncate there
+        return text[:boundary_pos] + "..."
+    else:
+        # No word boundary found, truncate at exact limit
+        return text[:effective_max] + "..."
+
+
+def verify_quotes_in_text(text: str, source_text: str | None, max_length: int | None = None) -> str:
     """
     Verify and format quotes in the text against the source text.
-    Valid quotes <quote>X</quote> where X is in source_text become <quote>X</quote> (verified).
-    Invalid quotes become [Invalid Quote: X].
+    Valid quotes <quote>X</quote> where X is in source_text become <quote_verified>X</quote_verified>.
+    Invalid quotes become <quote_invalid>X</quote_invalid>.
+    
+    If max_length is specified, quotes exceeding this length will be truncated at word boundaries
+    with ellipsis added.
 
-    The output format uses XML-like tags that the Judge can be instructed to trust (or simply
-    retains the <quote> tag which means 'verified' in this context, while removing/flagging invalid ones).
+    Args:
+        text: Text containing quote tags to verify
+        source_text: Source text to verify quotes against
+        max_length: Maximum character length for quotes. If None, no limit is applied.
 
-    Here, we will change <quote> to <verified_quote> if valid, and <invalid_quote> if not.
+    Returns:
+        Text with verified/invalid quote tags, and quotes truncated if necessary.
     """
     if not source_text:
         return text
 
     def replace_quote(match):
         content = match.group(1)
+        
+        # Truncate if max_length is specified and content exceeds it
+        if max_length is not None and len(content) > max_length:
+            content = _truncate_at_word_boundary(content, max_length)
+        
         # Check if content (or trimmed content) is in source_text
         if content in source_text:
              return f"<quote_verified>{content}</quote_verified>"

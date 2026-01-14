@@ -60,6 +60,9 @@ class Consultancy(Protocol):
         write: Path | str | None = None,
         **rendering_components,
     ) -> Question:
+        # Extract quote_max_length from rendering_components
+        quote_max_length = rendering_components.get("quote_max_length")
+        
         # Create callable for consultant that accepts feedback
         async def consultant_callable(feedback: str = None):
             return await agent(
@@ -98,7 +101,7 @@ class Consultancy(Protocol):
                 answer_case=answer_case,
             )
             # verify quotes
-            cons_resp = verify_quotes_in_text(cons_resp, question.source_text)
+            cons_resp = verify_quotes_in_text(cons_resp, question.source_text, max_length=quote_max_length)
 
             question_ = question.append(TranscriptItem(
                 role=answer_case.short,

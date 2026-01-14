@@ -73,7 +73,8 @@ class Propaganda(Protocol):
             answer_case=answer_case,
         )
         # verify quotes
-        agent_response = verify_quotes_in_text(agent_response, question.source_text)
+        quote_max_length = rendering_components.get("quote_max_length")
+        agent_response = verify_quotes_in_text(agent_response, question.source_text, max_length=quote_max_length)
 
         question = question.append(
             TranscriptItem(

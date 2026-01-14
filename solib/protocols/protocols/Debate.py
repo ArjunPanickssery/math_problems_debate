@@ -54,6 +54,9 @@ class Debate(Protocol):
                 else:
                     assert role == opp_case.short, f"{[ti.role for ti in question.transcript]}"
         trans_len = len(question.transcript) if question.transcript is not None else 0
+        
+        # Extract quote_max_length from rendering_components
+        quote_max_length = rendering_components.get("quote_max_length")
 
         # Create callables that accept feedback for verification retry
         async def debater_pro_callable(feedback: str = None):
@@ -106,8 +109,8 @@ class Debate(Protocol):
             (debater_pro_arg, pro_meta), (debater_con_arg, con_meta) = await asyncio.gather(*tasks)
 
             # verify quotes
-            debater_pro_arg = verify_quotes_in_text(debater_pro_arg, question.source_text)
-            debater_con_arg = verify_quotes_in_text(debater_con_arg, question.source_text)
+            debater_pro_arg = verify_quotes_in_text(debater_pro_arg, question.source_text, max_length=quote_max_length)
+            debater_con_arg = verify_quotes_in_text(debater_con_arg, question.source_text, max_length=quote_max_length)
 
             if question.transcript is not None:
                 assert len(question.transcript) == trans_len, f"{len(question.transcript)}=={trans_len}"
@@ -130,7 +133,7 @@ class Debate(Protocol):
                 debater_pro_callable, question, answer_case
             )
             # verify quotes
-            debater_pro_arg = verify_quotes_in_text(debater_pro_arg, question.source_text)
+            debater_pro_arg = verify_quotes_in_text(debater_pro_arg, question.source_text, max_length=quote_max_length)
 
             if question.transcript is not None:
                 assert len(question.transcript) == trans_len, f"Sequential debate, {len(question.transcript)}=={trans_len}"
@@ -163,7 +166,7 @@ class Debate(Protocol):
                 debater_con_callable_seq, question, opp_case
             )
             # verify quotes
-            debater_con_arg = verify_quotes_in_text(debater_con_arg, question.source_text)
+            debater_con_arg = verify_quotes_in_text(debater_con_arg, question.source_text, max_length=quote_max_length)
 
             assert len(question.transcript) == trans_len + 1, f"Sequential debate, {len(question.transcript)}=={trans_len}+1"
             question = question.append(TranscriptItem(

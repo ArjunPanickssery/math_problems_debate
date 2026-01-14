@@ -73,6 +73,7 @@ class Experiment:
         shuffle: bool = False,
         random_seed: int = None,
         continue_from: Path = None,
+        quote_max_length: int | None = None,
     ):
         """
         Args:
@@ -93,6 +94,7 @@ class Experiment:
                 True = consultant goes first, False = client goes first.
             write_path: Folder directory to write the results to.
             continue_from: Path to look for existing results to continue from.
+            quote_max_length: Maximum character length for quotes from source text. If None, no limit is applied.
         """
         self.default_quant_config = True
         self.questions = questions
@@ -134,6 +136,7 @@ class Experiment:
         self.consultancy_toggle = consultancy_toggle
         self.write_path = write_path
         self.continue_from = continue_from
+        self.quote_max_length = quote_max_length
 
     protocols = {
         "blind": Blind,
@@ -180,11 +183,14 @@ class Experiment:
 
     @property
     def other_componentss(self):
+        base_components = {}
+        if self.quote_max_length is not None:
+            base_components["quote_max_length"] = self.quote_max_length
         return {
-            "blind": [{}],
-            "propaganda": [{}],
-            "debate": [{"adversary": agent} for agent in self.agents],
-            "consultancy": [{}],
+            "blind": [base_components.copy()],
+            "propaganda": [base_components.copy()],
+            "debate": [{**base_components, "adversary": agent} for agent in self.agents],
+            "consultancy": [base_components.copy()],
         }
 
     @property
