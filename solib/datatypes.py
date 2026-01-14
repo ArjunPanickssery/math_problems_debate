@@ -483,6 +483,7 @@ class Question(BaseModel):
             source_text=self.source_text or grounded.source_text,
             answer_cases=[a.uncensor(grounded) for a in self.answer_cases],
             transcript=self.transcript or grounded.transcript,
+            judge_prompt=self.judge_prompt or grounded.judge_prompt,
         )
 
     @property
@@ -608,6 +609,7 @@ class Question(BaseModel):
             ],
             source_text=self.source_text,
             transcript=self.transcript,
+            judge_prompt=self.judge_prompt,
         )
 
     @computed_field
