@@ -66,6 +66,8 @@ class Experiment:
         protocols: dict[str, type[Protocol]] | list[str] = None,
         num_turnss: list[int] = None,
         bon_ns: list[int] = None,
+        debate_toggle: list[bool] = None,
+        consultancy_toggle: list[bool] = None,
         write_path: Path = Path("experiments")
         / f"results_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}",
         shuffle: bool = False,
@@ -85,6 +87,10 @@ class Experiment:
                 If None or [1], will only run with PLAIN agents.
                 If [1, ...], will run with PLAIN and BestOfN agents.
                 If [...] without 1, will only run with BestOfN agents.
+            debate_toggle: Settings to run Debate with: None, [True], [False], or [True, False]. 
+                True = simultaneous, False = sequential.
+            consultancy_toggle: Settings to run Consultancy with: None, [True], [False], or [True, False].
+                True = consultant goes first, False = client goes first.
             write_path: Folder directory to write the results to.
             continue_from: Path to look for existing results to continue from.
         """
@@ -118,8 +124,14 @@ class Experiment:
             num_turnss = [2, 4]
         if bon_ns is None:
             bon_ns = [1]
+        if debate_toggle is None:
+            debate_toggle = [True, False]
+        if consultancy_toggle is None:
+            consultancy_toggle = [True, False]
         self.num_turnss = num_turnss
         self.bon_ns = bon_ns
+        self.debate_toggle = debate_toggle
+        self.consultancy_toggle = consultancy_toggle
         self.write_path = write_path
         self.continue_from = continue_from
 
@@ -179,12 +191,12 @@ class Experiment:
     def init_kwargss(self):
         init_kwargss_debate = [
             {"simultaneous": t, "num_turns": n}
-            for t in [True, False]
+            for t in self.debate_toggle
             for n in self.num_turnss
         ]
         init_kwargss_consultancy = [
             {"consultant_goes_first": t, "num_turns": n}
-            for t in [True, False]
+            for t in self.consultancy_toggle
             for n in self.num_turnss
         ]
         return {

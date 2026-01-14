@@ -58,7 +58,7 @@ The experiment we perform is in experiments/init_exp.py
 
 # TODO
 
-- [ ] discard extra protocols (simultaneous vs sequential, n=2 vs 4 for non-advanced etc)
+- [x] discard extra protocols (simultaneous vs sequential, n=2 vs 4 for non-advanced etc)
 - [ ] see how much quality costs
-- [ ] discard prontoqa; doesn't really make sense
+- [x] discard prontoqa; doesn't really make sense
 - [ ] make sure quotations are length-limited
