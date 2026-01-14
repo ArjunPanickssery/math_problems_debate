@@ -48,6 +48,9 @@ class JustAskProbabilitiesJudge(JustAskProbabilityJudge):
         # print(response, type(response))
         # print(response.probabilities)
 
+        # Format the prompt for display
+        judge_prompt = f"=== USER ===\n{prompt}"
+
         # Convert response into Answer objects with probabilities
         result = Question(
             question=question.question,
@@ -58,6 +61,7 @@ class JustAskProbabilitiesJudge(JustAskProbabilityJudge):
                 for a in question.answer_cases
             ],
             transcript=question.transcript,
+            judge_prompt=judge_prompt,
         )
 
         assert result.is_elicited

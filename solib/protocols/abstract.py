@@ -52,6 +52,16 @@ class QA_Agent(LLM_Agent):
             "user_prompt": jinja_env.get_source(user_prompt_file),
         }
 
+    @staticmethod
+    def format_messages_as_prompt(messages: list[dict]) -> str:
+        """Format messages list into a readable prompt string for display."""
+        parts = []
+        for msg in messages:
+            role = msg.get("role", "unknown").upper()
+            content = msg.get("content", "")
+            parts.append(f"=== {role} ===\n{content}")
+        return "\n\n".join(parts)
+
     async def __call__(
         self,
         question: Question = None,
@@ -66,7 +76,8 @@ class QA_Agent(LLM_Agent):
         user_prompt_template: str | None = None,
         write: Path | str | None = None,
         cache_breaker: str | int | None = None,
-    ) -> str:
+        return_prompt: bool = False,
+    ) -> str | tuple[str, str]:
         """Simulate an AI arguing to convince the judge in favour of answer_case.
 
         Args:
@@ -78,6 +89,11 @@ class QA_Agent(LLM_Agent):
             max_tokens (int): max tokens for the LLM.
             temperature (float): temperature for sampling.
             write (Path | str | None): Path to write prompt history to.
+            return_prompt (bool): If True, return (response, prompt_str) tuple instead of just response.
+
+        Returns:
+            str: The response if return_prompt=False
+            tuple[str, str]: (response, prompt_string) if return_prompt=True
         """
         # Prepend feedback to context if provided (for alignment verification retries)
         if feedback:
@@ -158,6 +174,8 @@ class QA_Agent(LLM_Agent):
                 len(question.transcript) if question.transcript is not None else 0
             ) == trans_len, DEBUG_INFO
 
+        if return_prompt:
+            return resp, self.format_messages_as_prompt(messages)
         return resp
 
     def __repr__(self):

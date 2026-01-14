@@ -58,8 +58,8 @@ class Debate(Protocol):
         # Extract quote_max_length from rendering_components
         quote_max_length = rendering_components.get("quote_max_length")
 
-        # Create callables that accept feedback for verification retry
-        async def debater_pro_callable(feedback: str = None):
+        # Create callables that accept feedback and return_prompt for verification retry
+        async def debater_pro_callable(feedback: str = None, return_prompt: bool = False):
             return await agent(
                 question=question,
                 answer_case=answer_case,
@@ -74,9 +74,10 @@ class Debate(Protocol):
                 cache_breaker=cache_breaker,
                 temperature=temperature,
                 write=write,
+                return_prompt=return_prompt,
             )
 
-        async def debater_con_callable(feedback: str = None):
+        async def debater_con_callable(feedback: str = None, return_prompt: bool = False):
             return await adversary(
                 question=question,
                 answer_case=opp_case,
@@ -91,6 +92,7 @@ class Debate(Protocol):
                 cache_breaker=cache_breaker,
                 temperature=temperature,
                 write=write,
+                return_prompt=return_prompt,
             )
 
         if question.transcript is not None:
@@ -100,13 +102,13 @@ class Debate(Protocol):
             # Verify both in parallel
             tasks = [
                 generate_argument_with_verification(
-                    debater_pro_callable, question, answer_case
+                    debater_pro_callable, question, answer_case, return_prompt=True
                 ),
                 generate_argument_with_verification(
-                    debater_con_callable, question, opp_case
+                    debater_con_callable, question, opp_case, return_prompt=True
                 ),
             ]
-            (debater_pro_arg, pro_meta), (debater_con_arg, con_meta) = await asyncio.gather(*tasks)
+            (debater_pro_arg, pro_meta, pro_prompt), (debater_con_arg, con_meta, con_prompt) = await asyncio.gather(*tasks)
 
             # verify quotes
             debater_pro_arg = verify_quotes_in_text(debater_pro_arg, question.source_text, max_length=quote_max_length)
@@ -118,6 +120,7 @@ class Debate(Protocol):
                 role=answer_case.short,
                 content=debater_pro_arg,
                 metadata=pro_meta if pro_meta else None,
+                prompt=pro_prompt,
             ))
             if question.transcript is not None:
                 assert len(question.transcript) == trans_len+1, f"{len(question.transcript)}=={trans_len}+1"
@@ -125,12 +128,13 @@ class Debate(Protocol):
                 role=opp_case.short,
                 content=debater_con_arg,
                 metadata=con_meta if con_meta else None,
+                prompt=con_prompt,
             ))
             assert len(question.transcript) == trans_len + 2, f"Simultaneous debate, {len(question.transcript)}=={trans_len}+2"
         else:
             # Sequential: verify each argument after generation
-            debater_pro_arg, pro_meta = await generate_argument_with_verification(
-                debater_pro_callable, question, answer_case
+            debater_pro_arg, pro_meta, pro_prompt = await generate_argument_with_verification(
+                debater_pro_callable, question, answer_case, return_prompt=True
             )
             # verify quotes
             debater_pro_arg = verify_quotes_in_text(debater_pro_arg, question.source_text, max_length=quote_max_length)
@@ -141,11 +145,12 @@ class Debate(Protocol):
                 role=answer_case.short,
                 content=debater_pro_arg,
                 metadata=pro_meta if pro_meta else None,
+                prompt=pro_prompt,
             ))
             assert len(question.transcript) == trans_len + 1, f"Sequential debate, {len(question.transcript)}=={trans_len}+1"
 
             # Note: for sequential, con sees updated transcript with pro's argument
-            async def debater_con_callable_seq(feedback: str = None):
+            async def debater_con_callable_seq(feedback: str = None, return_prompt: bool = False):
                 return await adversary(
                     question=question,
                     answer_case=opp_case,
@@ -160,10 +165,11 @@ class Debate(Protocol):
                     cache_breaker=cache_breaker,
                     temperature=temperature,
                     write=write,
+                    return_prompt=return_prompt,
                 )
 
-            debater_con_arg, con_meta = await generate_argument_with_verification(
-                debater_con_callable_seq, question, opp_case
+            debater_con_arg, con_meta, con_prompt = await generate_argument_with_verification(
+                debater_con_callable_seq, question, opp_case, return_prompt=True
             )
             # verify quotes
             debater_con_arg = verify_quotes_in_text(debater_con_arg, question.source_text, max_length=quote_max_length)
@@ -173,6 +179,7 @@ class Debate(Protocol):
                 role=opp_case.short,
                 content=debater_con_arg,
                 metadata=con_meta if con_meta else None,
+                prompt=con_prompt,
             ))
             assert len(question.transcript) == trans_len + 2, f"Sequential debate, {len(question.transcript)}=={trans_len}+2"
         return question

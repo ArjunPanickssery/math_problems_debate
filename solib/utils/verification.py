@@ -137,19 +137,23 @@ async def generate_argument_with_verification(
     question: Question,
     answer_case: Answer,
     max_tries: int | None = None,
-) -> tuple[str, dict]:
+    return_prompt: bool = False,
+) -> tuple[str, dict, str | None] | tuple[str, dict]:
     """
     Generate an argument with alignment verification and retry logic.
 
     Args:
         agent_callable: Async function that generates argument string.
-                       Should accept optional 'feedback' keyword argument.
+                       Should accept optional 'feedback' and 'return_prompt' keyword arguments.
         question: The question being answered
         answer_case: The answer to argue for
         max_tries: Override for VERIFY_ALIGNMENT_N_TRIES
+        return_prompt: If True, also return the prompt used to generate the argument
 
     Returns:
-        Tuple of (final_argument, verification_metadata)
+        If return_prompt=False: Tuple of (final_argument, verification_metadata)
+        If return_prompt=True: Tuple of (final_argument, verification_metadata, prompt_string)
+
         verification_metadata is empty dict if VERIFY_ALIGNMENT is False,
         otherwise contains:
         {
@@ -160,15 +164,24 @@ async def generate_argument_with_verification(
             }
         }
     """
+    prompt_str = None
+
     if not VERIFY_ALIGNMENT:
-        argument = await agent_callable()
-        return argument, {}
+        result = await agent_callable(return_prompt=return_prompt)
+        if return_prompt:
+            argument, prompt_str = result
+            return argument, {}, prompt_str
+        return result, {}
 
     max_tries = max_tries or VERIFY_ALIGNMENT_N_TRIES
 
     for try_num in range(1, max_tries + 1):
         if try_num == 1:
-            argument = await agent_callable()
+            result = await agent_callable(return_prompt=return_prompt)
+            if return_prompt:
+                argument, prompt_str = result
+            else:
+                argument = result
         else:
             feedback = (
                 f"[FEEDBACK: No, you're supposed to argue for answer "
@@ -177,7 +190,11 @@ async def generate_argument_with_verification(
                 f"to the feedback, JUST give the proper argument taking this "
                 f"feedback into account.]"
             )
-            argument = await agent_callable(feedback=feedback)
+            result = await agent_callable(feedback=feedback, return_prompt=return_prompt)
+            if return_prompt:
+                argument, prompt_str = result
+            else:
+                argument = result
 
         is_aligned = await verify_argument_alignment(
             argument=argument,
@@ -189,13 +206,16 @@ async def generate_argument_with_verification(
             LOGGER.info(
                 f"Argument alignment verified on try {try_num}/{max_tries}"
             )
-            return argument, {
+            metadata = {
                 "verification": {
                     "is_aligned": True,
                     "tries": try_num,
                     "accepted_on_try": try_num,
                 }
             }
+            if return_prompt:
+                return argument, metadata, prompt_str
+            return argument, metadata
         else:
             LOGGER.warning(
                 f"Argument alignment failed on try {try_num}/{max_tries}"
@@ -212,10 +232,13 @@ async def generate_argument_with_verification(
         f"All {max_tries} tries exhausted. Final argument aligned: {final_aligned}"
     )
 
-    return argument, {
+    metadata = {
         "verification": {
             "is_aligned": final_aligned,
             "tries": max_tries,
             "accepted_on_try": None,  # Never accepted during retry loop
         }
     }
+    if return_prompt:
+        return argument, metadata, prompt_str
+    return argument, metadata

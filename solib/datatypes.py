@@ -448,6 +448,7 @@ class Question(BaseModel):
     source_text: str | None = None
     answer_cases: list[Answer]
     transcript: list["TranscriptItem"] | None = None
+    judge_prompt: str | None = None  # Full prompt used by judge to generate probabilities
 
     # not necessary, it's enough to validate this in Answer
     # @model_validator(mode="after")
@@ -862,6 +863,7 @@ class TranscriptItem(BaseModel):
     role: str  # e.g. answer_case_short, or "client"
     content: str
     metadata: dict | None = None
+    prompt: str | None = None  # Full prompt used to generate this content
 
 
 class BetterJSONEncoder(json.JSONEncoder):

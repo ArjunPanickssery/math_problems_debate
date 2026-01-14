@@ -85,6 +85,14 @@
             <div class="transcript-item role-{{ item.role|lower }}">
                 <div class="transcript-role">{{ item.role }}</div>
                 <div class="transcript-content">{{ item.content }}</div>
+                {% if item.prompt %}
+                <div class="transcript-prompt">
+                    <details>
+                        <summary>View prompt</summary>
+                        <pre>{{ item.prompt }}</pre>
+                    </details>
+                </div>
+                {% endif %}
                 {% if item.metadata %}
                 <div class="transcript-metadata">
                     <details>
@@ -113,6 +121,14 @@
                 </div>
                 {% endfor %}
             </div>
+            {% if ans.case_probs.judge_prompt %}
+            <div class="judge-prompt">
+                <details>
+                    <summary>View prompt</summary>
+                    <pre>{{ ans.case_probs.judge_prompt }}</pre>
+                </details>
+            </div>
+            {% endif %}
         </div>
 
         <!-- Judge Score for this scenario -->

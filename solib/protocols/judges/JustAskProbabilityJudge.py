@@ -44,18 +44,22 @@ class JustAskProbabilityJudge(Judge):
         # we don't pass in temperature here since ToT Judge always uses 0.0, and
         # we don't distinguish between judge type in the code
         """Returns a .is_elicited Question."""
+        prompt_parts = []
 
         async def get_prob(answer_case: Answer) -> Prob:
+            prompt_content = self.user_template.render(
+                question=question.to_prompt(),
+                answer_case=answer_case.short,
+                context=context,
+            )
             messages = [
                 {
                     "role": "user",
-                    "content": self.user_template.render(
-                        question=question.to_prompt(),
-                        answer_case=answer_case.short,
-                        context=context,
-                    ),
+                    "content": prompt_content,
                 },
             ]
+            # Store the prompt for this answer case
+            prompt_parts.append(f"=== Prompt for answer {answer_case.short} ===\n{prompt_content}")
 
             response = await self.get_response(
                 messages=messages,
@@ -70,6 +74,10 @@ class JustAskProbabilityJudge(Judge):
             return response
 
         probs_ = await parallelized_call(get_prob, question.answer_cases)
+
+        # Combine all prompts into a single string
+        judge_prompt = "\n\n".join(prompt_parts)
+
         result = Question(
             question=question.question,
             answer_cases=[
@@ -77,6 +85,7 @@ class JustAskProbabilityJudge(Judge):
                 for a, p in zip(question.answer_cases, probs_)
             ],
             transcript=question.transcript,
+            judge_prompt=judge_prompt,
         )
         assert result.is_elicited
         return result.normalize_probs()

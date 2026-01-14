@@ -53,8 +53,8 @@ class Propaganda(Protocol):
         extra_user_renders = rendering_components.get("extra_user_renders") or {}
         extra_user_renders["answer_case_short"] = answer_case.short
 
-        # Create callable for argument generation (accepts optional feedback)
-        async def generate_argument(feedback: str = None):
+        # Create callable for argument generation (accepts optional feedback and return_prompt)
+        async def generate_argument(feedback: str = None, return_prompt: bool = False):
             return await agent(
                 question=question,
                 answer_case=answer_case,
@@ -64,13 +64,15 @@ class Propaganda(Protocol):
                 cache_breaker=cache_breaker,
                 temperature=temperature,
                 write=write,
+                return_prompt=return_prompt,
             )
 
         # Generate with verification (if enabled)
-        agent_response, verification_metadata = await generate_argument_with_verification(
+        agent_response, verification_metadata, agent_prompt = await generate_argument_with_verification(
             agent_callable=generate_argument,
             question=question,
             answer_case=answer_case,
+            return_prompt=True,
         )
         # verify quotes
         quote_max_length = rendering_components.get("quote_max_length")
@@ -81,6 +83,7 @@ class Propaganda(Protocol):
                 role=answer_case.short,
                 content=agent_response,
                 metadata=verification_metadata if verification_metadata else None,
+                prompt=agent_prompt,
             )
         )
         assert question.transcript is not None

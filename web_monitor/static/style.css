@@ -387,23 +387,43 @@ td a:hover {
     word-wrap: break-word;
 }
 
-.transcript-metadata {
+.transcript-metadata,
+.transcript-prompt,
+.judge-prompt {
     margin-top: 12px;
     font-size: 13px;
 }
 
-.transcript-metadata summary {
+.transcript-metadata summary,
+.transcript-prompt summary,
+.judge-prompt summary {
     cursor: pointer;
     color: var(--text-muted);
+    padding: 4px 8px;
+    background: var(--bg-color);
+    border-radius: 4px;
+    display: inline-block;
 }
 
-.transcript-metadata pre {
+.transcript-metadata summary:hover,
+.transcript-prompt summary:hover,
+.judge-prompt summary:hover {
+    background: var(--border-color);
+}
+
+.transcript-metadata pre,
+.transcript-prompt pre,
+.judge-prompt pre {
     margin-top: 8px;
     padding: 12px;
     background: var(--bg-color);
     border-radius: 4px;
     overflow-x: auto;
     font-size: 12px;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    max-height: 400px;
+    overflow-y: auto;
 }
 
 /* Probability bars */

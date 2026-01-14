@@ -42,13 +42,14 @@ class TipOfTongueJudge(Judge):
         write: Path | str | None = None,
         cache_breaker: str | int | None = None,
     ) -> Question:
+        prompt_content = self.user_template.render(
+            question=question.to_prompt(),
+            context=context,
+        )
         messages = [
             {
                 "role": "user",
-                "content": self.user_template.render(
-                    question=question.to_prompt(),
-                    context=context,
-                ),
+                "content": prompt_content,
             },
         ]
 
@@ -60,6 +61,9 @@ class TipOfTongueJudge(Judge):
             cache_breaker=cache_breaker,
         )
 
+        # Format the prompt for display
+        judge_prompt = f"=== USER ===\n{prompt_content}"
+
         result = Question(
             question=question.question,
             answer_cases=[
@@ -69,6 +73,7 @@ class TipOfTongueJudge(Judge):
                 for a in question.answer_cases
             ],
             transcript=question.transcript,
+            judge_prompt=judge_prompt,
         )
         assert result.is_elicited
         return result

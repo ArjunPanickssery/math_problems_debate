@@ -63,8 +63,8 @@ class Consultancy(Protocol):
         # Extract quote_max_length from rendering_components
         quote_max_length = rendering_components.get("quote_max_length")
         
-        # Create callable for consultant that accepts feedback
-        async def consultant_callable(feedback: str = None):
+        # Create callable for consultant that accepts feedback and return_prompt
+        async def consultant_callable(feedback: str = None, return_prompt: bool = False):
             return await agent(
                 system_prompt_template=self.consultant_system_template,
                 user_prompt_template=self.consultant_user_template,
@@ -75,30 +75,23 @@ class Consultancy(Protocol):
                 cache_breaker=cache_breaker,
                 temperature=temperature,
                 write=write,
+                return_prompt=return_prompt,
             )
 
         client_agent = QA_Agent(
             model=judge.model,
             tools=judge.tools,
         )
-        client = functools.partial(
-            client_agent,
-            question=question,
-            system_prompt_template=self.client_system_template,
-            user_prompt_template=self.client_user_template,
-            cache_breaker=cache_breaker,
-            temperature=temperature,
-            write=write,
-        )
 
         if (question.transcript in [None, []] and self.consultant_goes_first) or (
             question.transcript and question.transcript[-1].role == "client"
         ):
             # Consultant's turn - use verification
-            cons_resp, verification_metadata = await generate_argument_with_verification(
+            cons_resp, verification_metadata, cons_prompt = await generate_argument_with_verification(
                 agent_callable=consultant_callable,
                 question=question,
                 answer_case=answer_case,
+                return_prompt=True,
             )
             # verify quotes
             cons_resp = verify_quotes_in_text(cons_resp, question.source_text, max_length=quote_max_length)
@@ -107,13 +100,23 @@ class Consultancy(Protocol):
                 role=answer_case.short,
                 content=cons_resp,
                 metadata=verification_metadata if verification_metadata else None,
+                prompt=cons_prompt,
             ))
         elif (question.transcript in [None, []] and not self.consultant_goes_first) or (
             question.transcript and question.transcript[-1].role != "client"
         ):
             # Client's turn - no verification needed (client is asking questions, not arguing)
-            client_resp = await client(context=self.ts_to_prompt(question))
-            question_ = question.append(TranscriptItem(role="client", content=client_resp))
+            client_resp, client_prompt = await client_agent(
+                question=question,
+                system_prompt_template=self.client_system_template,
+                user_prompt_template=self.client_user_template,
+                context=self.ts_to_prompt(question),
+                cache_breaker=cache_breaker,
+                temperature=temperature,
+                write=write,
+                return_prompt=True,
+            )
+            question_ = question.append(TranscriptItem(role="client", content=client_resp, prompt=client_prompt))
         else:
             raise ValueError("Logic is no longer valid in this universe. Please try another one.")
         return question_
