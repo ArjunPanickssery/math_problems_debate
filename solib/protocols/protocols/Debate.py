@@ -186,6 +186,7 @@ class Debate(Protocol):
         cache_breaker: str | int | None = None,
         temperature: float = 0.4,
         write: Path | str | None = None,
+        **other_components,
     ) -> Question:
         """Debate specifically is symmetric, so we can subclass this to only run the
         debate once."""
@@ -199,6 +200,7 @@ class Debate(Protocol):
                 cache_breaker=cache_breaker,
                 temperature=temperature,
                 write=write,
+                **other_components,
             )
         case_probs_0 = await self.run(
             agent=agent,
@@ -209,6 +211,7 @@ class Debate(Protocol):
             cache_breaker=cache_breaker,
             temperature=temperature,
             write=write,
+            **other_components,
         )  # elicited probs after arguing for answer_cases[0]
         # but this is the same as the elicited probs after arguing for answer_cases[1]
         # because the adversary is arguing for the opposite answer

@@ -32,6 +32,7 @@ NUM_TURNSS = [2]
 NUM_TURNSS_GPQA = [2, 4, 6]
 DEBATE_TOGGLE = [True] # simultaneous only
 CONSULTANCY_TOGGLE = [True] # consultant_goes_first only
+QUOTE_MAX_LENGTH_QUALITY = 500
 
 def make_write_path(dataset_name: str):
     return (
@@ -94,6 +95,24 @@ CONFIG_MATH = {
     # "continue_from": Path(__file__).parent / "results" / "init_exp_2025-02-14_07-50-51",
 }
 
+
+CONFIG_QUALITY = {
+    "agent_models": AGENT_MODELS,
+    "agent_toolss": AGENT_TOOLS,
+    "judge_models": JUDGE_MODELS,
+    "protocols": PROTOCOLS,
+    "num_turnss": NUM_TURNSS,
+    "bon_ns": BON_NS,
+    "debate_toggle": DEBATE_TOGGLE,
+    "consultancy_toggle": CONSULTANCY_TOGGLE,
+    "quote_max_length": QUOTE_MAX_LENGTH_QUALITY,
+    # "write_path": Path(__file__).parent
+    # / "results"
+    # / f"gsm_8k_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}",
+    # "continue_from": Path(__file__).parent / "results" / "init_exp_2025-02-14_07-50-51",
+}
+
+
 asyncio.run(
     Experiment(
         questions=datasets["gsm8k"],
@@ -122,7 +141,7 @@ asyncio.run(
     Experiment(
         questions=datasets["quality"],
         write_path=make_write_path("quality"),
-        **CONFIG_1,
+        **CONFIG_QUALITY,
     ).experiment(max_configs=None)
 )
 
