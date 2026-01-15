@@ -45,8 +45,9 @@ class BestOfN_Agent(QA_Agent):
         extra_user_renders: dict | None = None,
         cache_breaker: str | int | None = None,
         write: Path | str | None = None,
+        return_prompt: bool = False,
         **rendering_components,
-    ) -> str:
+    ) -> str | tuple[str, str]:
         async def run_agent(kwargs: dict):
             transcript = await self.protocol.step(
                 agent=self.agent,
@@ -62,13 +63,14 @@ class BestOfN_Agent(QA_Agent):
                 **self.other_components,
             )
             response = transcript.transcript[-1].content
+            prompt_str = transcript.transcript[-1].prompt
             result = await self.judge(
                 question=transcript, context=self.protocol.ts_to_prompt(transcript),
                 cache_breaker=kwargs["cache_breaker"],
                 write=write,
             )
             agent_score = Score.calc(result, kwargs["answer_case"]).log
-            return response, agent_score
+            return response, agent_score, prompt_str
 
         results = await parallelized_call(
             run_agent,
@@ -83,6 +85,8 @@ class BestOfN_Agent(QA_Agent):
             ],
         )
 
-        best_response, best_score = max(results, key=lambda x: x[1])
+        best_response, best_score, best_prompt = max(results, key=lambda x: x[1])
 
+        if return_prompt:
+            return best_response, best_prompt
         return best_response

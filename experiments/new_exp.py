@@ -11,9 +11,9 @@ AGENT_MODELS = [
         "openrouter/deepseek/deepseek-v3.2",
         # "openrouter/openai/gpt-oss-120b:exacto",
         # "deepinfra/openai/gpt-oss-120b" # cheaper than openrouter but I don't want to buy credits
-        # "openrouter/x-ai/grok-4.1-fast",
+        "openrouter/x-ai/grok-4.1-fast",
         # "openrouter/minimax/minimax-m2.1",
-        "openai/gpt-5-mini",
+        # "openai/gpt-5-mini",
         "gemini/gemini-3-flash-preview",
         "claude-haiku-4-5-20251001",
         # "novita/xiaomimimo/mimo-v2-flash"
@@ -27,7 +27,7 @@ JUDGE_MODELS = [
 AGENT_TOOLS = [[]]
 AGENT_TOOLS_MATH = [[math_eval]]
 PROTOCOLS = ["blind", "propaganda", "debate", "consultancy"]
-BON_NS = [1]
+BON_NS = [1, 4, 8]
 NUM_TURNSS = [2]
 NUM_TURNSS_GPQA = [2, 4, 6]
 DEBATE_TOGGLE = [True] # simultaneous only
@@ -146,13 +146,13 @@ asyncio.run(
 )
 
 
-# asyncio.run(
-#     Experiment(
-#         questions=datasets["mmlu"],
-#         write_path=make_write_path("mmlu"),
-#         **CONFIG_1,
-#     ).experiment(max_configs=None)
-# )
+asyncio.run(
+    Experiment(
+        questions=datasets["mmlu"],
+        write_path=make_write_path("mmlu"),
+        **CONFIG_1,
+    ).experiment(max_configs=None)
+)
 
 
 # asyncio.run(
